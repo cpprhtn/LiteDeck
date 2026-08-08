@@ -39,9 +39,15 @@ capture() {
 	printf '  %-28s' "$name"
 	ssh -o BatchMode=no "$HOST" \
 		"powershell -NoProfile -NonInteractive -EncodedCommand $enc" \
-		>"$OUT/$name.out" 2>"$OUT/$name.err"
+		>"$OUT/$name.out" 2>"$OUT/$name.err.raw"
 	status=$?
 	echo "$status" >"$OUT/$name.exit"
+	# The ssh client writes its own advisories to the same stream as the remote
+	# command's stderr. Left in, every single capture appeared to have 222 bytes
+	# of stderr, which makes "did this command actually fail?" unanswerable at a
+	# glance and puts a client-side warning into a server golden file.
+	grep -v '^\*\* ' "$OUT/$name.err.raw" >"$OUT/$name.err" || true
+	rm -f "$OUT/$name.err.raw"
 	if [ -s "$OUT/$name.err" ]; then
 		echo "exit=$status  (stderr $(wc -c <"$OUT/$name.err" | tr -d ' ') bytes)"
 	else
@@ -106,10 +112,17 @@ capture docker-version 'docker version --format "{{json .}}"'
 capture docker-ps 'docker ps -a --no-trunc --format "{{json .}}"'
 
 # --- shape of failure -----------------------------------------------------
-# What a missing cmdlet and a permission denial actually look like. The adapter
-# has to tell them apart, and guessing at the text is how parsers end up wrong.
+# What a missing cmdlet looks like. The adapter has to tell "this capability is
+# absent" from "this broke", and guessing at the text is how parsers end up
+# wrong. PowerShell 5.1 wraps error records in CLIXML when stdout is not a
+# console, which is only visible in a real capture.
 capture missing-cmdlet "${PRELUDE}Get-NoSuchCmdlet"
-capture eventlog-denied "${PRELUDE}Get-WinEvent -LogName Security -MaxEvents 1 | ConvertTo-Json -Compress"
+
+# A permission failure, without reading anything privileged. Get-WinEvent on the
+# Security log was tried first and is not usable as a fixture: on an
+# administrator account it succeeds, so it records an audit-log entry from
+# someone's machine instead of the error shape it was meant to capture.
+capture access-denied "${PRELUDE}[IO.File]::ReadAllText('C:\\Windows\\System32\\config\\SAM')"
 
 # --- single-element JSON --------------------------------------------------
 # ConvertTo-Json emits a bare object, not a one-element array, when the pipeline
@@ -117,14 +130,107 @@ capture eventlog-denied "${PRELUDE}Get-WinEvent -LogName Security -MaxEvents 1 |
 # capture makes it impossible to forget.
 capture single-service "${PRELUDE}Get-Service | Select-Object -First 1 Name,Status | ConvertTo-Json -Compress"
 
+# --- anonymise -------------------------------------------------------------
+# These files are committed to a public repository, and a capture of a real
+# machine carries its computer name, its account names and its LAN addressing.
+# None of that is what a golden file is for: the parser never looks at the
+# hostname, it looks at whether Status is the integer 1 and State is the string
+# "Stopped" and whether a Korean description survived the encoding. So the
+# identities are replaced and everything structural is left exactly as it
+# arrived — same key order, same enum values, same /Date(ms)/ serialisation, same
+# CRLF line endings.
+#
+# Done here rather than by hand so the next person capturing from their own box
+# does not have to remember, or notice.
+echo
+echo "anonymising"
+python3 - "$OUT" <<'PY'
+import json, pathlib, re, sys
+
+out = pathlib.Path(sys.argv[1])
+
+machine = user = None
+try:
+    who = json.loads((out / "whoami.out").read_text(encoding="utf-8"))
+    full = who.get("user", "")           # DESKTOP-ABC123\SOMEUSER
+    if "\\" in full:
+        machine, user = full.split("\\", 1)
+except Exception:
+    pass
+
+# Exact-string substitutions first, so a username that happens to be a substring
+# of something else cannot be partially rewritten.
+subs = []
+if machine:
+    subs.append((machine, "DESKTOP-EXAMPLE"))
+if user:
+    subs.append((user, "TESTUSER"))
+
+# RFC 5737 documentation range for the routable/LAN v4 address. Loopback and
+# link-local are kept: they are the same on every machine and the exposure logic
+# is tested against them.
+#
+# Only quoted values, and only in .out files. A bare dotted-quad regex also
+# matches things that are not addresses: the first version of this rewrote the
+# CLIXML schema version in every stderr capture, turning
+# <Objs Version="1.1.0.1"> into <Objs Version="192.0.2.14"> and corrupting the
+# very fixtures the decoder is written against.
+def redact_ipv4(text):
+    def repl(m):
+        ip = m.group(1)
+        if ip.startswith(("127.", "169.254.", "0.")):
+            return m.group(0)
+        return '"192.0.2.14"'
+    return re.sub(r'"((?:\d{1,3}\.){3}\d{1,3})"', repl, text)
+
+# The interface identifier of a link-local address is derived from, or randomised
+# per, the adapter — either way it identifies the machine. The fe80::/64 prefix
+# and the %zone suffix are what the parser cares about, so only the middle goes.
+def redact_ipv6_iid(text):
+    return re.sub(r"fe80::[0-9a-f:]+", "fe80::1111:2222:3333:4444", text, flags=re.I)
+
+count = 0
+for p in sorted(out.iterdir()):
+    if p.suffix not in (".out", ".err", ".txt"):
+        continue
+    try:
+        s = original = p.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        # Not UTF-8. Left byte-for-byte on purpose: docker-*.err is captured
+        # without the encoding prelude and arrives in the OEM codepage, which is
+        # the evidence that the prelude is load-bearing. Rewriting it would
+        # destroy the only mojibake fixture in the tree.
+        continue
+    for old, new in subs:
+        s = s.replace(old, new)
+    # Addresses only where addresses belong. stderr carries no host addressing,
+    # and it does carry version strings that look like one.
+    if p.suffix == ".out":
+        s = redact_ipv4(s)
+    s = redact_ipv6_iid(s)
+    if s != original:
+        p.write_text(s, encoding="utf-8")
+        count += 1
+
+print(f"  rewrote {count} file(s); machine={machine!r} user={user!r}")
+PY
+
 {
-	echo "host:      $HOST"
+	echo "host:      (anonymised)"
 	echo "captured:  $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 	echo "client:    $(uname -sr)"
 	echo "transport: ssh + powershell -NoProfile -NonInteractive -EncodedCommand"
 	echo
-	echo "Raw output as it arrived over SSH. Not reformatted — the encoding and"
-	echo "line endings are part of what is being recorded."
+	echo "Output as it arrived over SSH. Structure is verbatim — key order, enum"
+	echo "values, /Date(ms)/ serialisation, CRLF line endings and UTF-8 non-ASCII"
+	echo "text are all exactly what the server sent."
+	echo
+	echo "Identities are not verbatim. The capture script replaces the computer"
+	echo "name with DESKTOP-EXAMPLE, the account with TESTUSER, routable IPv4 with"
+	echo "192.0.2.14 and link-local interface identifiers with a fixed value,"
+	echo "because these files are public and none of it is what a parser reads."
+	echo "Loopback and 169.254 addresses are kept: they are identical on every"
+	echo "machine and the exposed-binding logic is tested against them."
 } >"$OUT/provenance.txt"
 
 echo

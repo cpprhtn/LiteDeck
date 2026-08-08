@@ -17,7 +17,12 @@
 
 # Go
 *.test
-*.out
+# Coverage profiles. Narrow rather than a bare *.out, which also swallowed every
+# captured stdout in testdata/windows/golden — the golden files would have been
+# committed as .err/.exit metadata with the actual data silently missing.
+*.cover.out
+coverage.out
+profile.out
 
 # Developer credentials for the manual integration hosts. In .gitignore rather
 # than .git/info/exclude on purpose: this one should be visible to anyone who
