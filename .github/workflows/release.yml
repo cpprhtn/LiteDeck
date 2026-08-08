@@ -169,10 +169,32 @@ jobs:
             SmartScreen이 경고를 띄웁니다. 서명·공증에는 비용이 들어 초기 릴리스는
             미서명으로 배포하며, 체크섬은 서명의 대체물이 아닙니다.
 
-            - **macOS**: `litedeck-macos.zip` 압축 해제 후 `litedeck.app`
-              첫 실행은 우클릭 → 열기 (Gatekeeper 우회)
-              Intel·Apple Silicon 공용 바이너리입니다
-            - **Windows**: `litedeck-amd64-installer.exe` (설치형) 또는 `litedeck.exe` (포터블)
-              WebView2가 없으면 설치 프롬프트가 뜹니다
-            - **Linux**: `litedeck-linux-amd64.tar.gz` 해제 후 `./litedeck`
-              `libwebkit2gtk`와 `libgtk-3`가 필요합니다
+            ### macOS
+
+            `litedeck-macos.zip` 압축 해제 후 `litedeck.app`.
+            Intel·Apple Silicon 공용 바이너리입니다.
+
+            첫 실행에서 `Apple could not verify "litedeck" is free of malware…`
+            가 뜹니다. **시스템 설정 → 개인정보 보호 및 보안** 에서 아래로
+            내려가면 **"그래도 열기"** 가 있습니다. 또는:
+
+            ```
+            xattr -d com.apple.quarantine litedeck.app
+            ```
+
+            우클릭 → 열기는 macOS 15부터 Apple이 없앴습니다 — 14 이하에서만 됩니다.
+
+            ### Windows
+
+            `litedeck-amd64-installer.exe` (설치형) 또는 `litedeck.exe` (포터블).
+            WebView2가 없으면 설치 프롬프트가 뜹니다.
+
+            SmartScreen 경고는 **추가 정보 → 실행** 으로 넘깁니다.
+
+            ### Linux
+
+            `libwebkit2gtk`와 `libgtk-3`가 필요합니다.
+
+            ```
+            tar xzf litedeck-linux-amd64.tar.gz && chmod +x litedeck && ./litedeck
+            ```

@@ -81,6 +81,28 @@ $ sudo -S -p '' -- systemctl restart -- myapp.service        310ms
 
 > **현재 릴리스는 서명되어 있지 않습니다.** macOS는 Gatekeeper가, Windows는 SmartScreen이 경고합니다. 서명·공증에는 비용이 들어 초기에는 미서명으로 배포하며, 함께 배포하는 SHA256 체크섬은 **서명의 대체물이 아닙니다.** 신뢰가 필요하면 아래처럼 직접 빌드하세요.
 
+### 첫 실행 — 경고를 넘기는 법
+
+**macOS 15 (Sequoia) 이상** — `Apple could not verify "litedeck" is free of malware…` 가 뜹니다. 이 대화상자에는 "휴지통으로 이동"과 "취소"밖에 없습니다.
+
+**시스템 설정 → 개인정보 보호 및 보안** 을 열고 아래 보안 항목까지 내려가면 `"litedeck"이(가) 차단되었습니다` 옆에 **"그래도 열기"** 가 있습니다. 누르고 인증하면 이후로는 그냥 열립니다.
+
+터미널이 빠르면:
+
+```bash
+xattr -d com.apple.quarantine /Applications/litedeck.app
+```
+
+> 예전에 흔히 안내되던 **우클릭 → 열기** 는 macOS 15부터 Apple이 없앴습니다. 14 이하에서는 여전히 그 방법이 됩니다.
+
+**Windows** — SmartScreen이 `Windows에서 PC를 보호했습니다` 를 띄웁니다. **추가 정보 → 실행** 을 누르면 됩니다.
+
+**Linux** — 별도 절차가 없습니다. 압축을 풀고 실행 권한을 주면 됩니다.
+
+```bash
+tar xzf litedeck-linux-amd64.tar.gz && chmod +x litedeck && ./litedeck
+```
+
 ## 소스에서 빌드
 
 ```bash
@@ -118,7 +140,7 @@ v0.1.0-beta는 **검증된 것과 검증되지 않은 것을 구분해서** 적�
 
 | | 어디서 | 무엇을 |
 |---|---|---|
-| **클라이언트** | macOS 26.5.2 · arm64 | 개발·실행·전 기능 |
+| **클라이언트** | macOS 26.5.2 · arm64 | 개발·실행·전 기능. 릴리스 universal 바이너리 실행도 확인 |
 | **서버** | Ubuntu 22.04.5 / systemd 249 | 전체 플로우 — 서비스(JSON 경로)·파일·프로세스·타이머·저널 팔로우·권한 상승 |
 | **서버** | Ubuntu 20.04.6 / systemd 245 | 서비스 **표 폴백 경로** (JSON 미지원 버전) |
 | **서버** | Alpine 3.20 + OpenSSH | 전송 계층 — SFTP·재연결·인젝션 방어·동시 세션 |
