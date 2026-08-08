@@ -3,7 +3,12 @@
 # committed: Wails silently regenerates whatever is missing from its own
 # defaults, so an uncommitted appicon.png means CI ships the Wails logo.
 /build/bin/
-/frontend/dist/
+# dist itself is build output, but the directory has to exist in a fresh clone:
+# main.go does `//go:embed all:frontend/dist`, and an absent directory makes
+# `go vet`, `go build` and `go test ./...` all fail before doing any work. The
+# `all:` prefix matches dotfiles, so an empty .gitkeep is enough to satisfy it.
+/frontend/dist/*
+!/frontend/dist/.gitkeep
 /frontend/node_modules/
 
 # Wails generates these from the Go bindings on every build; they are derived,
