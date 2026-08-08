@@ -60,7 +60,7 @@ type MetricsView struct {
 
 // HostMetrics takes one health snapshot (§4.7).
 func (a *App) HostMetrics(hostID string) (MetricsView, error) {
-	info, err := a.requireAdapter(hostID)
+	info, err := a.requireCapability(hostID, adapter.CapMetrics, "상태 정보")
 	if err != nil {
 		return MetricsView{}, err
 	}

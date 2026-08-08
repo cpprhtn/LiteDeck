@@ -420,10 +420,14 @@ function renderTab(
       return <ProcessView hostID={hostID} visible onError={onError} />
 
     case 'services':
-      if (!info.hasSystemd) {
+      // Keyed on the capability, not on hasSystemd. Asking about systemd directly
+      // meant a Windows host — which has a service adapter and no systemd — was
+      // told it had no init system, over the top of a working service list.
+      // The capability map is the one place that knows what each platform can do.
+      if (!info.capabilities?.services) {
         return (
           <Unavailable
-            title="이 서버에는 systemd가 없습니다"
+            title="이 서버의 서비스 목록을 읽을 수 없습니다"
             detail={`${info.prettyName || '알 수 없는 배포판'} — systemctl을 찾지 못했습니다.`}
             hint="OpenRC(Alpine)·SysVinit 어댑터는 아직 없습니다. 프로세스 탭은 그대로 쓸 수 있습니다."
           />
@@ -444,6 +448,27 @@ function renderTab(
       return <ContainerView hostID={hostID} visible onError={onError} />
 
     case 'network':
+      // The one view that had no check at all. Tabs stay clickable by design, so
+      // every branch has to answer for itself — without this, opening the tab on
+      // Windows ran `ip -j addr` and `ss -tulnp` against cmd.exe every few
+      // seconds and filled the Command Log with console-codepage errors.
+      if (!info.capabilities?.network) {
+        return (
+          <Unavailable
+            title="이 서버의 네트워크 정보를 읽을 수 없습니다"
+            detail={
+              info.platform === 'windows'
+                ? 'Windows 어댑터에 네트워크 뷰가 아직 없습니다.'
+                : `${info.prettyName || '이 서버'} — iproute2(ip, ss)를 찾지 못했습니다.`
+            }
+            hint={
+              info.platform === 'windows'
+                ? 'Get-NetIPAddress와 Get-NetTCPConnection으로 만들 수 있습니다 — 아직 구현하지 않았습니다.'
+                : '배포판에 따라 iproute2 패키지를 설치하면 됩니다. 다른 탭은 그대로 쓸 수 있습니다.'
+            }
+          />
+        )
+      }
       return <NetworkView hostID={hostID} visible onError={onError} />
 
     case 'terminal':

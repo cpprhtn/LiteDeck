@@ -58,6 +58,26 @@ func Args(script string) []string {
 	}
 }
 
+// LogLine renders a script for the Command Log.
+//
+// The literal command line is `powershell … -EncodedCommand <4000 characters of
+// base64>`, which is exactly what ran and completely unreadable. The Command Log
+// exists so a user can see what the GUI did and copy it; a base64 blob satisfies
+// the letter of that and none of its purpose.
+//
+// So the script is shown decoded, and the mechanism is named rather than hidden:
+// the line still says -EncodedCommand, so nobody is misled about how it was sent.
+// The encoding prelude is elided behind a visible marker because it is identical
+// on every command and, in a single-line log, would be the only thing on screen.
+func LogLine(script string) string {
+	body := strings.TrimPrefix(script, Prelude)
+	elided := ""
+	if body != script {
+		elided = "⟨utf8 prelude⟩ "
+	}
+	return Executable + " -EncodedCommand " + elided + strings.TrimSpace(body)
+}
+
 // Encode converts a script to the UTF-16LE base64 that -EncodedCommand expects.
 //
 // PowerShell requires little-endian UTF-16 without a BOM. Passing UTF-8 produces

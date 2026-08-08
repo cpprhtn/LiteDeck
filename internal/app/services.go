@@ -9,7 +9,6 @@ import (
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
 	"github.com/cpprhtn/LiteDeck/internal/adapter/linuxsystemd"
-	"github.com/cpprhtn/LiteDeck/internal/adapter/windowspowershell"
 	"github.com/cpprhtn/LiteDeck/internal/sshcore"
 )
 
@@ -119,6 +118,27 @@ func (a *App) requireAdapter(hostID string) (ServerInfoView, error) {
 	return info, nil
 }
 
+// requireCapability refuses a view the server cannot serve.
+//
+// Keyed on the capability map rather than on a platform test, so there is one
+// place that knows what each adapter implements. The frontend asks the same map:
+// checking hasSystemd directly is what told a Windows host it had no init system
+// while the service list underneath it worked perfectly.
+func (a *App) requireCapability(hostID string, c adapter.Capability, what string) (ServerInfoView, error) {
+	info, err := a.requireAdapter(hostID)
+	if err != nil {
+		return info, err
+	}
+	if !info.Capabilities[c] {
+		name := info.PrettyName
+		if name == "" {
+			name = string(info.Platform)
+		}
+		return info, fmt.Errorf("%s에서 %s을(를) 읽을 수 없습니다", name, what)
+	}
+	return info, nil
+}
+
 // ListServices returns the merged service table (§4.3).
 //
 // Two commands, because neither alone is enough: list-units knows the runtime
@@ -129,7 +149,7 @@ func (a *App) ListServices(hostID string) ([]linuxsystemd.ServiceUnit, error) {
 	if err != nil {
 		return nil, err
 	}
-	info, err := a.requireAdapter(hostID)
+	info, err := a.requireCapability(hostID, adapter.CapServices, "서비스 목록")
 	if err != nil {
 		return nil, err
 	}
@@ -145,10 +165,6 @@ func (a *App) ListServices(hostID string) ([]linuxsystemd.ServiceUnit, error) {
 			return nil, err
 		}
 		return adapter.ParseWindowsServices(out)
-	}
-
-	if !info.HasSystemd {
-		return nil, fmt.Errorf("app: %s has no systemd", hostID)
 	}
 
 	unitArgs := []string{"list-units", "--type=service", "--all"}
@@ -231,7 +247,7 @@ func (a *App) ServiceAction(hostID, unit, action string, elevate bool) ActionRes
 	if !serviceActions[action] {
 		return failResult(fmt.Errorf("app: unsupported service action %q", action))
 	}
-	info, err := a.requireAdapter(hostID)
+	info, err := a.requireCapability(hostID, adapter.CapServices, "서비스 목록")
 	if err != nil {
 		return failResult(err)
 	}
@@ -254,8 +270,7 @@ func (a *App) ServiceAction(hostID, unit, action string, elevate bool) ActionRes
 		if err != nil {
 			return failResult(err)
 		}
-		res, err := conn.ExecOpts(ctx, sshcore.ExecOptions{},
-			windowspowershell.Executable, windowspowershell.Args(script)...)
+		res, err := a.execPowerShell(ctx, conn, sshcore.CommandAction, script)
 		return windowsActionResult(res, err)
 	}
 

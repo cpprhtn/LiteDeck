@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
-	"github.com/cpprhtn/LiteDeck/internal/adapter/windowspowershell"
 	"github.com/cpprhtn/LiteDeck/internal/sshcore"
 )
 
@@ -14,7 +13,7 @@ import (
 
 // ListProcesses returns the process table, optionally ordered as a tree.
 func (a *App) ListProcesses(hostID string, asTree bool) ([]adapter.ProcessInfo, error) {
-	info, err := a.requireAdapter(hostID)
+	info, err := a.requireCapability(hostID, adapter.CapProcesses, "프로세스 목록")
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +84,7 @@ func (a *App) KillProcess(hostID string, pid int, signal string, elevate bool) A
 	if pid < 1 {
 		return failResult(fmt.Errorf("app: invalid pid %d", pid))
 	}
-	info, err := a.requireAdapter(hostID)
+	info, err := a.requireCapability(hostID, adapter.CapProcesses, "프로세스 목록")
 	if err != nil {
 		return failResult(err)
 	}
@@ -114,8 +113,7 @@ func (a *App) KillProcess(hostID string, pid int, signal string, elevate bool) A
 		if err != nil {
 			return failResult(err)
 		}
-		res, err := conn.ExecOpts(ctx, sshcore.ExecOptions{},
-			windowspowershell.Executable, windowspowershell.Args(script)...)
+		res, err := a.execPowerShell(ctx, conn, sshcore.CommandAction, script)
 		return windowsActionResult(res, err)
 	}
 
@@ -144,7 +142,7 @@ func (a *App) Renice(hostID string, pid, nice int, elevate bool) ActionResult {
 	if pid < 1 {
 		return failResult(fmt.Errorf("app: invalid pid %d", pid))
 	}
-	info, err := a.requireAdapter(hostID)
+	info, err := a.requireCapability(hostID, adapter.CapProcesses, "프로세스 목록")
 	if err != nil {
 		return failResult(err)
 	}
@@ -161,8 +159,7 @@ func (a *App) Renice(hostID string, pid, nice int, elevate bool) ActionResult {
 		if err != nil {
 			return failResult(err)
 		}
-		res, err := conn.ExecOpts(ctx, sshcore.ExecOptions{},
-			windowspowershell.Executable, windowspowershell.Args(script)...)
+		res, err := a.execPowerShell(ctx, conn, sshcore.CommandAction, script)
 		return windowsActionResult(res, err)
 	}
 

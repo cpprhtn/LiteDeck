@@ -16,6 +16,18 @@ import (
 	"github.com/cpprhtn/LiteDeck/internal/sshcore"
 )
 
+// execPowerShell runs a script and returns the raw result.
+//
+// Every PowerShell command goes through here so the Command Log gets the readable
+// form in one place. Without LogLine the log shows four thousand characters of
+// base64 — literally what ran, and useless to the person the log exists for.
+func (a *App) execPowerShell(ctx context.Context, conn *sshcore.Conn, kind sshcore.CommandKind, script string) (*sshcore.Result, error) {
+	return conn.ExecOpts(ctx, sshcore.ExecOptions{
+		Kind:    kind,
+		LogLine: windowspowershell.LogLine(windowspowershell.Prelude + script),
+	}, windowspowershell.Executable, windowspowershell.Args(script)...)
+}
+
 // runPowerShell executes a script and returns stdout.
 //
 // Errors carry the decoded CLIXML rather than the envelope. PowerShell 5.1 writes
@@ -23,8 +35,7 @@ import (
 // is, so the raw form is a schema URL and _x000D__x000A_ escapes wrapped around
 // the one sentence worth reading.
 func (a *App) runPowerShell(ctx context.Context, conn *sshcore.Conn, kind sshcore.CommandKind, script string) ([]byte, error) {
-	args := windowspowershell.Args(script)
-	res, err := conn.ExecOpts(ctx, sshcore.ExecOptions{Kind: kind}, windowspowershell.Executable, args...)
+	res, err := a.execPowerShell(ctx, conn, kind, script)
 	if err != nil {
 		return nil, err
 	}

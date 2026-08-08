@@ -24,7 +24,10 @@ type NetworkView struct {
 // The two commands are independent, so one missing tool does not empty the
 // whole tab — each failure becomes a warning and the other half still renders.
 func (a *App) HostNetwork(hostID string) (NetworkView, error) {
-	if _, err := a.requireAdapter(hostID); err != nil {
+	// Gated on the capability: the network view was the one that had no check at
+	// all, so opening the tab on Windows ran `ip -j addr` and `ss -tulnp` against
+	// cmd.exe on a timer and filled the log with console-codepage errors.
+	if _, err := a.requireCapability(hostID, adapter.CapNetwork, "네트워크 정보"); err != nil {
 		return NetworkView{}, err
 	}
 	conn, err := a.mgr.Conn(hostID)
