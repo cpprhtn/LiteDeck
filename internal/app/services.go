@@ -51,6 +51,20 @@ func (c *detectCache) forget(id string) {
 type ServerInfoView struct {
 	adapter.ServerInfo
 	Capabilities map[adapter.Capability]bool `json:"capabilities"`
+	// Supported is sent rather than left for the frontend to work out from the
+	// platform string. It was worked out there — `platform !== 'linux'` — and when
+	// the Windows adapter landed, Go started supporting it while the UI went on
+	// showing "this server is not supported" over a working adapter. One source of
+	// truth for a question asked on both sides.
+	Supported bool `json:"supported"`
+}
+
+func newServerInfoView(info adapter.ServerInfo) ServerInfoView {
+	return ServerInfoView{
+		ServerInfo:   info,
+		Capabilities: info.Capabilities(),
+		Supported:    info.Platform.Supported(),
+	}
 }
 
 // DetectHost probes a connected server, caching the result for the life of the
@@ -58,7 +72,7 @@ type ServerInfoView struct {
 // looks at changes while the user is logged in.
 func (a *App) DetectHost(hostID string) (ServerInfoView, error) {
 	if info, ok := a.detected.get(hostID); ok {
-		return ServerInfoView{ServerInfo: info, Capabilities: info.Capabilities()}, nil
+		return newServerInfoView(info), nil
 	}
 
 	conn, err := a.mgr.Conn(hostID)
@@ -73,7 +87,7 @@ func (a *App) DetectHost(hostID string) (ServerInfoView, error) {
 		return ServerInfoView{}, err
 	}
 	a.detected.put(hostID, info)
-	return ServerInfoView{ServerInfo: info, Capabilities: info.Capabilities()}, nil
+	return newServerInfoView(info), nil
 }
 
 // requireAdapter refuses work on a host no adapter can drive.

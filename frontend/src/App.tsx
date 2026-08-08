@@ -192,9 +192,12 @@ export default function App() {
   const activeInfo = activeID ? info[activeID] : undefined
   const connected = active?.state === 'connected'
   // A reachable host with no adapter. Not an error — the connection is fine and
-  // files and terminals work — but nothing that reads /proc or talks to systemd
-  // can run, so the polling views must not start.
-  const unsupported = !!activeInfo && activeInfo.platform !== 'linux'
+  // files and terminals work — but none of the polling views can run.
+  //
+  // The answer comes from Go. Deriving it here as `platform !== 'linux'` is what
+  // made the Windows adapter invisible: the backend supported the host and this
+  // side went on rendering "not supported" on top of it.
+  const unsupported = !!activeInfo && !activeInfo.supported
 
   return (
     <div className="app">
@@ -380,16 +383,20 @@ function renderTab(
   //
   // files and terminal fall through deliberately: SFTP and a PTY are provided by
   // SSH itself, so they work here.
-  if (info.platform !== 'linux' && tab !== 'files' && tab !== 'terminal') {
-    const name = PLATFORM_LABEL[info.platform] ?? '이 OS'
+  if (!info.supported && tab !== 'files' && tab !== 'terminal') {
+    const name = info.prettyName || PLATFORM_LABEL[info.platform] || '이 OS'
+    // prettyName first: once detection has an answer, saying "the server did not
+    // respond" over the top of "Windows 10 Pro" in the header is a contradiction
+    // the user has to resolve, and they cannot.
+    const detail = info.prettyName
+      ? `서버가 ${info.prettyName} 로 확인됐습니다. 이 OS를 다루는 어댑터가 아직 없습니다.`
+      : info.kernel
+        ? `서버가 ${info.kernel} 로 응답했습니다.`
+        : '서버가 어떤 OS인지 확인할 수 없었습니다 — 아래 감지 과정을 참고하세요.'
     return (
       <Unavailable
         title={`${name} 서버는 아직 지원하지 않습니다`}
-        detail={
-          info.kernel
-            ? `서버가 ${info.kernel} 로 응답했습니다. LiteDeck의 서비스·프로세스·컨테이너·네트워크 뷰는 systemd 기반 Linux를 전제로 만들어져 있습니다.`
-            : '서버가 uname에도, ver에도 응답하지 않아 어떤 OS인지 확인할 수 없었습니다.'
-        }
+        detail={detail}
         hint="파일 탭과 터미널 탭은 그대로 쓸 수 있습니다 — SFTP와 PTY는 SSH가 직접 제공하기 때문입니다. 어댑터 기여는 환영합니다 (CONTRIBUTING.md)."
       >
         {/* The probe transcript, shown only when detection gave up. Without it

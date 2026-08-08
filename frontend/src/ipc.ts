@@ -43,8 +43,12 @@ export interface BootstrapData {
 export type ServerPlatform = 'linux' | 'windows' | 'darwin' | 'bsd' | 'unknown'
 
 export interface ServerInfo {
-  /** Only 'linux' has an adapter. Anything else means every field below is zero. */
   platform: ServerPlatform
+  /** Whether an adapter exists for this platform. Comes from Go rather than being
+   *  derived from `platform` here — deriving it meant the UI kept showing
+   *  "unsupported" over a working Windows adapter because this side still said
+   *  `platform !== 'linux'`. */
+  supported: boolean
   /** Raw `uname -s`, or the Windows `ver` line. Verbatim, for bug reports. */
   kernel?: string
   prettyName: string
