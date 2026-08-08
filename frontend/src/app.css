@@ -417,6 +417,13 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Marks where a multi-line command wrapped. Dimmed because it is punctuation
+   about the command, not part of it — the distinction matters on a surface that
+   promises to show exactly what ran. */
+.cmdlog-nl {
+  color: var(--fg-faint);
+}
 .cmdlog-row[data-status='failed'] .cmdlog-line,
 .cmdlog-row[data-status='error'] .cmdlog-line {
   color: var(--danger);

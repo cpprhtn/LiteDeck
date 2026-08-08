@@ -45,14 +45,24 @@ import { initPlatform } from './platform'
 
 type Tab = 'services' | 'files' | 'processes' | 'containers' | 'network' | 'terminal'
 
+// files and terminal have no capability because they need nothing but SSH
+// itself — SFTP and a PTY. That is what keeps them working on a host no adapter
+// can drive, such as a Windows box running OpenSSH.
 const TABS: { id: Tab; label: string; capability?: string }[] = [
   { id: 'files', label: '파일' },
   { id: 'services', label: '서비스', capability: 'services' },
   { id: 'processes', label: '프로세스', capability: 'processes' },
   { id: 'containers', label: '컨테이너', capability: 'containers' },
-  { id: 'network', label: '네트워크' },
+  { id: 'network', label: '네트워크', capability: 'network' },
   { id: 'terminal', label: '터미널' },
 ]
+
+const PLATFORM_LABEL: Record<string, string> = {
+  windows: 'Windows',
+  darwin: 'macOS',
+  bsd: 'BSD',
+  unknown: '알 수 없는 OS',
+}
 
 export default function App() {
   const [benchMode, setBenchMode] = useState<boolean | null>(null)
@@ -123,8 +133,16 @@ export default function App() {
       setActiveID(id)
       const detected = await DetectHost(id)
       setInfo((prev) => ({ ...prev, [id]: detected }))
-      // Land on a tab the server can actually serve.
-      setTab(detected.capabilities?.services ? 'services' : 'processes')
+      // Land on a tab the server can actually serve. On a host with no adapter
+      // every capability is false, and 'processes' would be a dead landing —
+      // files is the one that always works.
+      setTab(
+        detected.capabilities?.services
+          ? 'services'
+          : detected.capabilities?.processes
+            ? 'processes'
+            : 'files',
+      )
     } catch (e) {
       setError(String(e))
     } finally {
@@ -173,6 +191,10 @@ export default function App() {
   const active = hosts.find((h) => h.id === activeID) ?? null
   const activeInfo = activeID ? info[activeID] : undefined
   const connected = active?.state === 'connected'
+  // A reachable host with no adapter. Not an error — the connection is fine and
+  // files and terminals work — but nothing that reads /proc or talks to systemd
+  // can run, so the polling views must not start.
+  const unsupported = !!activeInfo && activeInfo.platform !== 'linux'
 
   return (
     <div className="app">
@@ -198,12 +220,21 @@ export default function App() {
                 <div className="muted small">
                   {active.user}@{active.hostname}
                   {activeInfo && ` · ${activeInfo.prettyName}`}
+                  {unsupported && ` · ${activeInfo?.kernel || PLATFORM_LABEL[activeInfo!.platform]}`}
                   {activeInfo?.hasSystemd && ` · systemd ${activeInfo.systemdVersion}`}
                   {activeInfo && !activeInfo.systemdJson && activeInfo.hasSystemd && (
                     <span title="systemd 246 미만 — 표 파싱으로 폴백"> (표 폴백)</span>
                   )}
                 </div>
               </div>
+              {unsupported && (
+                <span
+                  className="badge warn"
+                  title="LiteDeck은 systemd 기반 Linux만 다룹니다. 파일과 터미널은 그대로 쓸 수 있습니다"
+                >
+                  {PLATFORM_LABEL[activeInfo!.platform] ?? '미지원 OS'} — 일부 기능만
+                </span>
+              )}
               {boot && !boot.keychainOk && (
                 <span className="badge warn" title="OS 키체인을 사용할 수 없어 비밀번호를 저장하지 않습니다">
                   키체인 없음
@@ -227,10 +258,14 @@ export default function App() {
         {active && connected && (
           <>
             {/* Above the tabs, so "is this box healthy" is answered wherever
-                the user happens to be (§4.7). */}
-            <ErrorBoundary key={`metrics:${active.id}`} label="상태 표시줄">
-              <MetricsBar hostID={active.id} />
-            </ErrorBoundary>
+                the user happens to be (§4.7). Omitted entirely on a host with no
+                adapter: it reads /proc, so leaving it mounted meant a failing
+                command every two seconds for as long as the app was open. */}
+            {!unsupported && (
+              <ErrorBoundary key={`metrics:${active.id}`} label="상태 표시줄">
+                <MetricsBar hostID={active.id} />
+              </ErrorBoundary>
+            )}
 
             {/* Tabs stay clickable even when the server cannot serve them.
                 Greying one out tells the user nothing about why, and a tooltip
@@ -324,6 +359,28 @@ function renderTab(
 ) {
   if (!info) {
     return <div className="placeholder">서버를 확인하는 중…</div>
+  }
+
+  // No adapter for this platform. Checked before the per-tab logic because the
+  // reason is the same for all four views, and because the alternative — letting
+  // them mount and fail — is what produced a wall of console-codepage errors on
+  // a Windows host while never saying the server was Windows.
+  //
+  // files and terminal fall through deliberately: SFTP and a PTY are provided by
+  // SSH itself, so they work here.
+  if (info.platform !== 'linux' && tab !== 'files' && tab !== 'terminal') {
+    const name = PLATFORM_LABEL[info.platform] ?? '이 OS'
+    return (
+      <Unavailable
+        title={`${name} 서버는 아직 지원하지 않습니다`}
+        detail={
+          info.kernel
+            ? `서버가 ${info.kernel} 로 응답했습니다. LiteDeck의 서비스·프로세스·컨테이너·네트워크 뷰는 systemd 기반 Linux를 전제로 만들어져 있습니다.`
+            : '서버가 uname에도, ver에도 응답하지 않아 어떤 OS인지 확인할 수 없었습니다.'
+        }
+        hint="파일 탭과 터미널 탭은 그대로 쓸 수 있습니다 — SFTP와 PTY는 SSH가 직접 제공하기 때문입니다. 어댑터 기여는 환영합니다 (CONTRIBUTING.md)."
+      />
+    )
   }
 
   switch (tab) {

@@ -75,6 +75,33 @@ func (a *App) DetectHost(hostID string) (ServerInfoView, error) {
 	return ServerInfoView{ServerInfo: info, Capabilities: info.Capabilities()}, nil
 }
 
+// requireLinux refuses work that needs a POSIX host.
+//
+// The guard is here rather than in the UI for the usual reason: a greyed-out tab
+// is a suggestion, and a binding called directly walks straight past it. The
+// error names the platform that was actually found, because "unsupported" alone
+// sends people looking for a bug that is not there.
+//
+// Files and terminals are deliberately not gated — Windows OpenSSH ships
+// sftp-server, and a PTY running cmd.exe is a perfectly good terminal, so those
+// two keep working on a host nothing else can drive.
+func (a *App) requireLinux(hostID string) (ServerInfoView, error) {
+	info, err := a.DetectHost(hostID)
+	if err != nil {
+		return info, err
+	}
+	if !info.Platform.Supported() {
+		name := info.Kernel
+		if name == "" {
+			name = string(info.Platform)
+		}
+		return info, fmt.Errorf(
+			"LiteDeck은 아직 이 서버를 지원하지 않습니다 (%s). systemd 기반 Linux만 다룰 수 있습니다 — "+
+				"파일 탐색과 터미널은 그대로 쓸 수 있습니다", name)
+	}
+	return info, nil
+}
+
 // ListServices returns the merged service table (§4.3).
 //
 // Two commands, because neither alone is enough: list-units knows the runtime

@@ -58,6 +58,9 @@ type MetricsView struct {
 
 // HostMetrics takes one health snapshot (§4.7).
 func (a *App) HostMetrics(hostID string) (MetricsView, error) {
+	if _, err := a.requireLinux(hostID); err != nil {
+		return MetricsView{}, err
+	}
 	conn, err := a.mgr.Conn(hostID)
 	if err != nil {
 		return MetricsView{}, err

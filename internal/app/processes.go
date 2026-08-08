@@ -11,6 +11,9 @@ import (
 
 // ListProcesses returns the process table, optionally ordered as a tree.
 func (a *App) ListProcesses(hostID string, asTree bool) ([]adapter.ProcessInfo, error) {
+	if _, err := a.requireLinux(hostID); err != nil {
+		return nil, err
+	}
 	conn, err := a.mgr.Conn(hostID)
 	if err != nil {
 		return nil, err
@@ -65,6 +68,9 @@ func (a *App) KillProcess(hostID string, pid int, signal string, elevate bool) A
 	if pid < 1 {
 		return failResult(fmt.Errorf("app: invalid pid %d", pid))
 	}
+	if _, err := a.requireLinux(hostID); err != nil {
+		return failResult(err)
+	}
 
 	conn, err := a.mgr.Conn(hostID)
 	if err != nil {
@@ -97,6 +103,9 @@ func (a *App) Renice(hostID string, pid, nice int, elevate bool) ActionResult {
 	}
 	if pid < 1 {
 		return failResult(fmt.Errorf("app: invalid pid %d", pid))
+	}
+	if _, err := a.requireLinux(hostID); err != nil {
+		return failResult(err)
 	}
 
 	conn, err := a.mgr.Conn(hostID)

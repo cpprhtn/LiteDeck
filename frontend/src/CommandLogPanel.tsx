@@ -115,7 +115,20 @@ export function CommandLogPanel({
               title="클릭해서 복사"
             >
               <span className="cmdlog-marker">$</span>
-              <span className="mono cmdlog-line">{e.line}</span>
+              {/* Newlines shown as ⏎ rather than collapsed to whitespace by the
+                  browser. A multi-line command such as the metrics script read as
+                  `... | head -1 echo '#mem'` — a command that would be broken if
+                  you typed it. On the one surface whose whole job is showing
+                  exactly what ran, that is not a cosmetic issue. The clipboard
+                  gets e.line untouched, so a paste still works. */}
+              <span className="mono cmdlog-line">
+                {e.line.split('\n').map((part, i) => (
+                  <span key={i}>
+                    {i > 0 && <span className="cmdlog-nl" title="줄바꿈">⏎ </span>}
+                    {part}
+                  </span>
+                ))}
+              </span>
               <span className="cmdlog-meta muted">
                 {e.status === 'running' && '실행 중'}
                 {e.status === 'ok' && `${e.durationMs}ms`}

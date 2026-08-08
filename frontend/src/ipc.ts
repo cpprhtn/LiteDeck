@@ -40,7 +40,13 @@ export interface BootstrapData {
   startupError?: string
 }
 
+export type ServerPlatform = 'linux' | 'windows' | 'darwin' | 'bsd' | 'unknown'
+
 export interface ServerInfo {
+  /** Only 'linux' has an adapter. Anything else means every field below is zero. */
+  platform: ServerPlatform
+  /** Raw `uname -s`, or the Windows `ver` line. Verbatim, for bug reports. */
+  kernel?: string
   prettyName: string
   id: string
   version: string
