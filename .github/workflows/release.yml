@@ -34,7 +34,14 @@ jobs:
             artifact: litedeck-macos
           - os: windows-latest
             name: Windows (amd64)
-            wails_args: -platform windows/amd64 -nsis
+            # Portable exe, no installer. -nsis was here and did nothing: the
+            # runner has no NSIS, and wails only warns and carries on, so the
+            # build "succeeded" while quietly dropping the installer — v0.1.0-beta
+            # shipped promising a file that was never built. LiteDeck is a single
+            # self-contained binary, so an installer buys a Start Menu entry and
+            # an uninstaller and little else. Dropping the flag makes the
+            # workflow say what it actually does.
+            wails_args: -platform windows/amd64
             artifact: litedeck-windows
           - os: ubuntu-latest
             name: Linux (amd64)
@@ -186,7 +193,8 @@ jobs:
 
             ### Windows
 
-            `litedeck-amd64-installer.exe` (설치형) 또는 `litedeck.exe` (포터블).
+            `litedeck.exe` 를 그대로 실행합니다. 설치 관리자는 없습니다 — 받은
+            파일을 원하는 곳에 두고 쓰시고, 지울 때는 파일만 지우면 됩니다.
             WebView2가 없으면 설치 프롬프트가 뜹니다.
 
             SmartScreen 경고는 **추가 정보 → 실행** 으로 넘깁니다.
