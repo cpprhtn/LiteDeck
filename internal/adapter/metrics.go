@@ -82,6 +82,11 @@ type Metrics struct {
 	Load1  float64 `json:"load1"`
 	Load5  float64 `json:"load5"`
 	Load15 float64 `json:"load15"`
+	// HasLoad is false where the concept does not exist. Windows has no load
+	// average and nothing that stands in for one, so the summary bar drops the
+	// tile rather than showing 0.00 — which reads as an idle machine instead of as
+	// a figure that was never available.
+	HasLoad bool `json:"hasLoad"`
 
 	UptimeSeconds int64 `json:"uptimeSeconds"`
 
@@ -122,6 +127,10 @@ func ParseMetrics(data []byte, prev CPUTimes) (Metrics, error) {
 			m.Load1, _ = strconv.ParseFloat(f[0], 64)
 			m.Load5, _ = strconv.ParseFloat(f[1], 64)
 			m.Load15, _ = strconv.ParseFloat(f[2], 64)
+			// Set only once the figures actually parsed. A kernel without
+			// /proc/loadavg is unusual but the flag has to mean "these numbers are
+			// real" rather than "this is Linux".
+			m.HasLoad = true
 		}
 	}
 

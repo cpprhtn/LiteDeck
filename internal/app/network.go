@@ -24,7 +24,7 @@ type NetworkView struct {
 // The two commands are independent, so one missing tool does not empty the
 // whole tab — each failure becomes a warning and the other half still renders.
 func (a *App) HostNetwork(hostID string) (NetworkView, error) {
-	if _, err := a.requireLinux(hostID); err != nil {
+	if _, err := a.requireAdapter(hostID); err != nil {
 		return NetworkView{}, err
 	}
 	conn, err := a.mgr.Conn(hostID)

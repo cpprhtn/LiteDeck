@@ -3,8 +3,10 @@ package app
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
+	"github.com/cpprhtn/LiteDeck/internal/sshcore"
 )
 
 // The monitoring summary bar (§4.7).
@@ -58,7 +60,8 @@ type MetricsView struct {
 
 // HostMetrics takes one health snapshot (§4.7).
 func (a *App) HostMetrics(hostID string) (MetricsView, error) {
-	if _, err := a.requireLinux(hostID); err != nil {
+	info, err := a.requireAdapter(hostID)
+	if err != nil {
 		return MetricsView{}, err
 	}
 	conn, err := a.mgr.Conn(hostID)
@@ -68,6 +71,23 @@ func (a *App) HostMetrics(hostID string) (MetricsView, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), pollTimeout)
 	defer cancel()
+
+	if info.Platform == adapter.PlatformWindows {
+		out, err := a.runPowerShell(ctx, conn, sshcore.CommandPoll, adapter.WindowsMetricsScript())
+		if err != nil {
+			return MetricsView{}, err
+		}
+		m, err := adapter.ParseWindowsMetrics(out, time.Now().UnixMilli())
+		if err != nil {
+			return MetricsView{}, err
+		}
+		// No CPU history to record: the counter is already a percentage, so
+		// there is no cumulative sample to difference against next time.
+		return MetricsView{
+			Metrics: m,
+			Disks:   adapter.InterestingFilesystems(m.Filesystems),
+		}, nil
+	}
 
 	// One round trip for everything. The script is a compile-time constant with
 	// nothing interpolated, which is why passing it to `sh -c` does not violate

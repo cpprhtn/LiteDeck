@@ -45,9 +45,11 @@ const (
 	PlatformUnknown Platform = "unknown"
 )
 
-// Supported reports whether an adapter exists for this platform. Only Linux
-// does today; the rest are identified so the UI can name what it found.
-func (p Platform) Supported() bool { return p == PlatformLinux }
+// Supported reports whether an adapter exists for this platform. macOS and BSD
+// are identified so the UI can name what it found rather than saying "unknown".
+func (p Platform) Supported() bool {
+	return p == PlatformLinux || p == PlatformWindows
+}
 
 // ServerInfo is what one probe of a server yields.
 type ServerInfo struct {
@@ -121,6 +123,20 @@ func (i ServerInfo) Capabilities() map[Capability]bool {
 			CapNetwork:    false,
 		}
 	}
+	if i.Platform == PlatformWindows {
+		return map[Capability]bool{
+			CapServices:  true, // Win32_Service
+			CapProcesses: true, // Win32_Process + Get-Process
+			CapMetrics:   true, // performance counters, Win32_OperatingSystem
+			// Docker Desktop speaks the same CLI, so the existing container
+			// parser applies unchanged when the binary is present.
+			CapContainers: i.HasDocker,
+			// Get-NetIPAddress and Get-NetTCPConnection would cover this, but
+			// nothing reads them yet and claiming the tab works would be worse
+			// than the tab saying it does not.
+			CapNetwork: false,
+		}
+	}
 	return map[Capability]bool{
 		CapServices:   i.HasSystemd,
 		CapProcesses:  true, // ps is on every POSIX host
@@ -143,16 +159,23 @@ func Detect(ctx context.Context, r Runner) (ServerInfo, error) {
 	// that say nothing a user can act on.
 	var notes []string
 	info.Platform, info.Kernel, notes = detectPlatform(ctx, r)
-	if !info.Platform.Supported() {
+
+	if info.Platform == PlatformWindows {
 		// Identification already produced the friendly name, so put it where the
 		// Linux path puts its own: PrettyName is what the header renders, and
 		// Kernel is for the raw self-description. Asking WMI a second time just
 		// to fill a different field would be a round trip for nothing.
-		if info.Platform == PlatformWindows && info.Kernel != "" {
+		if info.Kernel != "" {
 			info.PrettyName = info.Kernel
 			info.ID = "windows"
 			info.Kernel = ""
 		}
+		detectWindows(ctx, r, &info)
+		info.Warnings = append(info.Warnings, notes...)
+		return info, nil
+	}
+
+	if !info.Platform.Supported() {
 		// Keep the transcript for every unsupported host, not just the ones
 		// detection gave up on. Restricting it to PlatformUnknown threw away the
 		// evidence in exactly the case that most needs it: a host identified only
@@ -359,6 +382,40 @@ func windowsIdentity(ctx context.Context, r Runner, notes *[]string) (caption, v
 	default:
 		return fields[0], fields[1], fields[2], true
 	}
+}
+
+// detectWindows fills in what the Windows adapter needs beyond the OS name.
+//
+// Deliberately short: there is no init-system version to gate on, no sudo, and no
+// journal group. Privilege is binary here — either the SSH account is in the
+// Administrators group or the operation simply cannot be retried, which is why the
+// UI must not offer the "retry as administrator" button it offers on Linux.
+func detectWindows(ctx context.Context, r Runner, info *ServerInfo) {
+	const script = `$id=[Security.Principal.WindowsIdentity]::GetCurrent();` +
+		`$p=[Security.Principal.WindowsPrincipal]$id;` +
+		"\"$($p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))`t" +
+		"$(if (Get-Command docker -ErrorAction SilentlyContinue) {'1'} else {'0'})\""
+
+	res, err := r.Probe(ctx, windowspowershell.Executable, windowspowershell.Args(script)...)
+	if err != nil || res == nil || !res.OK() {
+		if res != nil && len(res.Stderr) > 0 {
+			info.Warnings = append(info.Warnings,
+				"windows capabilities: "+firstLine([]byte(windowspowershell.ErrorText(res.Stderr))))
+		}
+		return
+	}
+
+	fields := strings.Split(strings.TrimSpace(string(res.Stdout)), "\t")
+	if len(fields) > 0 && strings.EqualFold(strings.TrimSpace(fields[0]), "True") {
+		// The nearest thing to root. Recorded under the same name the Linux path
+		// uses so the UI does not need a second concept.
+		info.IsRoot = true
+	}
+	if len(fields) > 1 && strings.TrimSpace(fields[1]) == "1" {
+		info.HasDocker = true
+	}
+	// HasSudo stays false: there is no elevation command to run. An action that
+	// needs administrator on Windows needs a different login, not a prefix.
 }
 
 // firstLine trims output to something that fits in a warning line. Detection

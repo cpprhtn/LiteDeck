@@ -82,7 +82,12 @@ capture osinfo "${PRELUDE}Get-CimInstance Win32_OperatingSystem | Select-Object 
 # which Get-Service exposes. Both are captured so the trade-off is documented in
 # real output rather than from memory.
 capture get-service "${PRELUDE}Get-Service | Select-Object Name,DisplayName,Status,StartType | ConvertTo-Json -Compress -Depth 3"
-capture win32-service "${PRELUDE}Get-CimInstance Win32_Service | Select-Object Name,DisplayName,State,StartMode,Status,ProcessId,PathName,StartName,Description,AcceptStop,AcceptPause | ConvertTo-Json -Compress -Depth 3"
+# DelayedAutoStart is the field that makes the failed filter usable. Without it,
+# StartMode=Auto + State=Stopped looks like a service that should be running, and
+# on a stock Windows box that is four false positives — edgeupdate, MapsBroker and
+# sppsvc are all Automatic (Delayed Start) and are meant to be stopped. ExitCode
+# catches a service that tried to start and could not.
+capture win32-service "${PRELUDE}Get-CimInstance Win32_Service | Select-Object Name,DisplayName,State,StartMode,Status,ProcessId,PathName,StartName,Description,AcceptStop,AcceptPause,DelayedAutoStart,ExitCode,ServiceSpecificExitCode | ConvertTo-Json -Compress -Depth 3"
 
 # --- processes ------------------------------------------------------------
 # Two sources again: Win32_Process has the command line and parent PID (the tree
@@ -99,6 +104,11 @@ capture process-owner "${PRELUDE}Get-CimInstance Win32_Process | ForEach-Object 
 # timings in the .exit files decide which the adapter uses.
 capture counter-cpu "${PRELUDE}(Get-Counter '\\Processor(_Total)\\% Processor Time' -ErrorAction Stop).CounterSamples | Select-Object CookedValue | ConvertTo-Json -Compress"
 capture perf-cpu "${PRELUDE}Get-CimInstance Win32_PerfFormattedData_PerfOS_Processor | Where-Object Name -eq '_Total' | Select-Object PercentProcessorTime | ConvertTo-Json -Compress"
+# Per-process CPU. Get-Process reports cumulative CPU seconds since start, which
+# is not a percentage and is meaningless for a process that has been up for a
+# week; this class gives the instantaneous figure the table column wants.
+capture perf-proc "${PRELUDE}Get-CimInstance Win32_PerfFormattedData_PerfProc_Process | Select-Object IDProcess,PercentProcessorTime,Name | ConvertTo-Json -Compress"
+capture pagefile "${PRELUDE}Get-CimInstance Win32_PageFileUsage | Select-Object Name,AllocatedBaseSize,CurrentUsage,PeakUsage | ConvertTo-Json -Compress"
 capture logicaldisk "${PRELUDE}Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | Select-Object DeviceID,VolumeName,Size,FreeSpace,FileSystem | ConvertTo-Json -Compress"
 
 # --- network --------------------------------------------------------------
@@ -129,6 +139,11 @@ capture access-denied "${PRELUDE}[IO.File]::ReadAllText('C:\\Windows\\System32\\
 # yields exactly one item. Every PowerShell JSON parser gets this wrong once; the
 # capture makes it impossible to forget.
 capture single-service "${PRELUDE}Get-Service | Select-Object -First 1 Name,Status | ConvertTo-Json -Compress"
+# The same shape from the source the service adapter actually reads. The
+# Get-Service capture above is not interchangeable with it: its Status is an enum
+# integer, so feeding it to the Win32_Service parser tests nothing but the type
+# mismatch between two different projections.
+capture single-win32-service "${PRELUDE}Get-CimInstance Win32_Service | Select-Object -First 1 Name,DisplayName,State,StartMode,Status,ProcessId,PathName,StartName,Description,AcceptStop,AcceptPause,DelayedAutoStart,ExitCode,ServiceSpecificExitCode | ConvertTo-Json -Compress -Depth 3"
 
 # --- anonymise -------------------------------------------------------------
 # These files are committed to a public repository, and a capture of a real

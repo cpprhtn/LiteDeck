@@ -205,6 +205,9 @@ export interface MetricsView {
   load1: number
   load5: number
   load15: number
+  /** False where the OS has no load average at all — Windows. The tile is hidden
+   *  rather than showing 0.00, which reads as an idle machine. */
+  hasLoad: boolean
   uptimeSeconds: number
   filesystems: Filesystem[]
   /** The filtered, sorted subset worth showing. */

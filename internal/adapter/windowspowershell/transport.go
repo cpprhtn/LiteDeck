@@ -107,6 +107,43 @@ func JSON(pipeline string, depth int) string {
 	return fmt.Sprintf("ConvertTo-Json -InputObject @(%s) -Depth %d -Compress", pipeline, depth)
 }
 
+// SingleQuote wraps s as a PowerShell single-quoted string literal.
+//
+// -EncodedCommand makes the *outer* shell inert, but it does nothing for text
+// interpolated into the script itself. A service name arrives from the server or
+// from the user and ends up inside `Stop-Service -Name <here>`, so this is the
+// same front line internal/shellquote holds on the POSIX side, and it is held
+// the same way: one quoting style, applied always, with no safe-character
+// shortcut. Real service names contain spaces and parentheses — "Intel(R)
+// Platform License Manager Service" is on the test box — so an unquoted form
+// would be broken long before it was dangerous.
+//
+// Single quotes rather than double: PowerShell performs no expansion inside them,
+// so $(...), $var, backticks and & are all literal. The only escape needed is a
+// single quote itself, written twice.
+//
+// A NUL is rejected rather than encoded. It cannot appear in a service or process
+// name, and the failure mode of passing it through — the argument silently ending
+// early — is the one shellquote refuses for the same reason.
+func SingleQuote(s string) (string, error) {
+	if strings.ContainsRune(s, 0) {
+		return "", fmt.Errorf("windowspowershell: argument contains NUL: %q", s)
+	}
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'", nil
+}
+
+// MustSingleQuote is SingleQuote for values already known not to contain NUL —
+// compile-time constants and values that have been through a validating parser.
+// It panics rather than returning a quoted NUL, because a caller that ignores the
+// error here is building a command out of unchecked input.
+func MustSingleQuote(s string) string {
+	q, err := SingleQuote(s)
+	if err != nil {
+		panic(err)
+	}
+	return q
+}
+
 // IsMissingCmdlet reports whether stderr is PowerShell saying the command does
 // not exist, as opposed to the command existing and failing.
 //

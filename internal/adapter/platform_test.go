@@ -87,8 +87,8 @@ func TestDetectWindowsServer(t *testing.T) {
 	if info.Platform != PlatformWindows {
 		t.Errorf("platform = %q, want %q", info.Platform, PlatformWindows)
 	}
-	if info.Platform.Supported() {
-		t.Error("Windows reported as supported; no adapter can drive it")
+	if !info.Platform.Supported() {
+		t.Error("Windows reported as unsupported; there is an adapter for it now")
 	}
 
 	// The edition, in PrettyName, where the header renders it — the same field the
@@ -114,14 +114,22 @@ func TestDetectWindowsServer(t *testing.T) {
 		}
 	}
 
-	// Every capability off. This is the assertion that stops the poll loop: the
-	// UI and the Go guards both read it, and `ps` used to be hardcoded true on
-	// the grounds that "ps is on every POSIX host" — true, but nothing checked
-	// that the host was POSIX.
-	for cap, on := range info.Capabilities() {
-		if on {
-			t.Errorf("capability %q enabled on a Windows host", cap)
+	// The capability map is what stops a view polling something that cannot
+	// answer, so it has to say exactly what is implemented and nothing more.
+	caps := info.Capabilities()
+	for _, c := range []Capability{CapServices, CapProcesses, CapMetrics} {
+		if !caps[c] {
+			t.Errorf("capability %q off; the Windows adapter implements it", c)
 		}
+	}
+	// Not implemented. Claiming it would put the view back to polling a host that
+	// cannot answer — the failure this whole gate exists to prevent.
+	if caps[CapNetwork] {
+		t.Error("network capability claimed; nothing reads Get-NetTCPConnection yet")
+	}
+	// docker was not found by the capability probe in this fixture.
+	if caps[CapContainers] {
+		t.Error("containers claimed without docker on the host")
 	}
 
 	// Detection must not have gone on to run the Linux probes; each one would be

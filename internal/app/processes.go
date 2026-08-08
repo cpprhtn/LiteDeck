@@ -3,15 +3,19 @@ package app
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
+	"github.com/cpprhtn/LiteDeck/internal/adapter/windowspowershell"
+	"github.com/cpprhtn/LiteDeck/internal/sshcore"
 )
 
 // The process view (§4.4) and its destructive actions (§7.4).
 
 // ListProcesses returns the process table, optionally ordered as a tree.
 func (a *App) ListProcesses(hostID string, asTree bool) ([]adapter.ProcessInfo, error) {
-	if _, err := a.requireLinux(hostID); err != nil {
+	info, err := a.requireAdapter(hostID)
+	if err != nil {
 		return nil, err
 	}
 	conn, err := a.mgr.Conn(hostID)
@@ -22,17 +26,30 @@ func (a *App) ListProcesses(hostID string, asTree bool) ([]adapter.ProcessInfo, 
 	ctx, cancel := context.WithTimeout(context.Background(), pollTimeout)
 	defer cancel()
 
-	res, err := conn.Poll(ctx, "ps", adapter.PSArgs()...)
-	if err != nil {
-		return nil, err
-	}
-	if err := res.Err(); err != nil {
-		return nil, err
-	}
-
-	procs, err := adapter.ParsePS(res.Stdout)
-	if err != nil {
-		return nil, err
+	var procs []adapter.ProcessInfo
+	if info.Platform == adapter.PlatformWindows {
+		out, err := a.runPowerShell(ctx, conn, sshcore.CommandPoll, adapter.WindowsProcessScript())
+		if err != nil {
+			return nil, err
+		}
+		// The clock is passed in rather than read inside the parser so the
+		// elapsed column can be tested against a fixed capture.
+		procs, err = adapter.ParseWindowsProcesses(out, time.Now().UnixMilli())
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		res, err := conn.Poll(ctx, "ps", adapter.PSArgs()...)
+		if err != nil {
+			return nil, err
+		}
+		if err := res.Err(); err != nil {
+			return nil, err
+		}
+		procs, err = adapter.ParsePS(res.Stdout)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if asTree {
 		return adapter.Tree(procs), nil
@@ -68,7 +85,8 @@ func (a *App) KillProcess(hostID string, pid int, signal string, elevate bool) A
 	if pid < 1 {
 		return failResult(fmt.Errorf("app: invalid pid %d", pid))
 	}
-	if _, err := a.requireLinux(hostID); err != nil {
+	info, err := a.requireAdapter(hostID)
+	if err != nil {
 		return failResult(err)
 	}
 
@@ -78,6 +96,28 @@ func (a *App) KillProcess(hostID string, pid int, signal string, elevate bool) A
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), PromptTimeout+pollTimeout)
 	defer cancel()
+
+	if info.Platform == adapter.PlatformWindows {
+		// There is no signal vocabulary here. Stop-Process asks a windowed
+		// process to close and -Force terminates outright, so the UI's TERM
+		// becomes the polite form and KILL the forced one. HUP and INT have no
+		// counterpart at all and are refused rather than quietly treated as a
+		// kill — a reload request that silently terminates the service instead
+		// is exactly the kind of surprise this project keeps removing.
+		switch signal {
+		case "TERM", "KILL":
+		default:
+			return failResult(fmt.Errorf(
+				"Windows에는 %s 시그널이 없습니다 — 종료(TERM)나 강제 종료(KILL)만 가능합니다", signal))
+		}
+		script, err := adapter.WindowsKillScript(pid, signal == "KILL")
+		if err != nil {
+			return failResult(err)
+		}
+		res, err := conn.ExecOpts(ctx, sshcore.ExecOptions{},
+			windowspowershell.Executable, windowspowershell.Args(script)...)
+		return windowsActionResult(res, err)
+	}
 
 	// `--` keeps a negative PID from being read as an option — without it,
 	// `kill -TERM -1` signals every process the user can reach.
@@ -104,7 +144,8 @@ func (a *App) Renice(hostID string, pid, nice int, elevate bool) ActionResult {
 	if pid < 1 {
 		return failResult(fmt.Errorf("app: invalid pid %d", pid))
 	}
-	if _, err := a.requireLinux(hostID); err != nil {
+	info, err := a.requireAdapter(hostID)
+	if err != nil {
 		return failResult(err)
 	}
 
@@ -114,6 +155,16 @@ func (a *App) Renice(hostID string, pid, nice int, elevate bool) ActionResult {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), PromptTimeout+pollTimeout)
 	defer cancel()
+
+	if info.Platform == adapter.PlatformWindows {
+		script, err := adapter.WindowsPriorityScript(pid, nice)
+		if err != nil {
+			return failResult(err)
+		}
+		res, err := conn.ExecOpts(ctx, sshcore.ExecOptions{},
+			windowspowershell.Executable, windowspowershell.Args(script)...)
+		return windowsActionResult(res, err)
+	}
 
 	res, err := a.execMaybeElevated(ctx, conn, hostID, elevate,
 		"renice", "-n", fmt.Sprint(nice), "-p", fmt.Sprint(pid))

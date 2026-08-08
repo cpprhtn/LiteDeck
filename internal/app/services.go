@@ -9,6 +9,7 @@ import (
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
 	"github.com/cpprhtn/LiteDeck/internal/adapter/linuxsystemd"
+	"github.com/cpprhtn/LiteDeck/internal/adapter/windowspowershell"
 	"github.com/cpprhtn/LiteDeck/internal/sshcore"
 )
 
@@ -75,28 +76,30 @@ func (a *App) DetectHost(hostID string) (ServerInfoView, error) {
 	return ServerInfoView{ServerInfo: info, Capabilities: info.Capabilities()}, nil
 }
 
-// requireLinux refuses work that needs a POSIX host.
+// requireAdapter refuses work on a host no adapter can drive.
 //
 // The guard is here rather than in the UI for the usual reason: a greyed-out tab
-// is a suggestion, and a binding called directly walks straight past it. The
-// error names the platform that was actually found, because "unsupported" alone
-// sends people looking for a bug that is not there.
+// is a suggestion, and a binding called directly walks straight past it. The error
+// names the platform that was actually found, because "unsupported" alone sends
+// people looking for a bug that is not there.
 //
-// Files and terminals are deliberately not gated — Windows OpenSSH ships
-// sftp-server, and a PTY running cmd.exe is a perfectly good terminal, so those
-// two keep working on a host nothing else can drive.
-func (a *App) requireLinux(hostID string) (ServerInfoView, error) {
+// Files and terminals are deliberately never gated — SFTP and a PTY come from SSH
+// itself, so they work even on a host nothing else can drive.
+func (a *App) requireAdapter(hostID string) (ServerInfoView, error) {
 	info, err := a.DetectHost(hostID)
 	if err != nil {
 		return info, err
 	}
 	if !info.Platform.Supported() {
-		name := info.Kernel
+		name := info.PrettyName
+		if name == "" {
+			name = info.Kernel
+		}
 		if name == "" {
 			name = string(info.Platform)
 		}
 		return info, fmt.Errorf(
-			"LiteDeck은 아직 이 서버를 지원하지 않습니다 (%s). systemd 기반 Linux만 다룰 수 있습니다 — "+
+			"LiteDeck은 아직 이 서버를 지원하지 않습니다 (%s). "+
 				"파일 탐색과 터미널은 그대로 쓸 수 있습니다", name)
 	}
 	return info, nil
@@ -112,10 +115,24 @@ func (a *App) ListServices(hostID string) ([]linuxsystemd.ServiceUnit, error) {
 	if err != nil {
 		return nil, err
 	}
-	info, err := a.DetectHost(hostID)
+	info, err := a.requireAdapter(hostID)
 	if err != nil {
 		return nil, err
 	}
+
+	if info.Platform == adapter.PlatformWindows {
+		ctx, cancel := context.WithTimeout(context.Background(), pollTimeout)
+		defer cancel()
+		// One command rather than the two systemd needs: Win32_Service carries the
+		// runtime state and the start mode together, where systemd splits them
+		// across list-units and list-unit-files.
+		out, err := a.runPowerShell(ctx, conn, sshcore.CommandPoll, adapter.WindowsServiceListScript())
+		if err != nil {
+			return nil, err
+		}
+		return adapter.ParseWindowsServices(out)
+	}
+
 	if !info.HasSystemd {
 		return nil, fmt.Errorf("app: %s has no systemd", hostID)
 	}
@@ -200,6 +217,10 @@ func (a *App) ServiceAction(hostID, unit, action string, elevate bool) ActionRes
 	if !serviceActions[action] {
 		return failResult(fmt.Errorf("app: unsupported service action %q", action))
 	}
+	info, err := a.requireAdapter(hostID)
+	if err != nil {
+		return failResult(err)
+	}
 	conn, err := a.mgr.Conn(hostID)
 	if err != nil {
 		return failResult(err)
@@ -207,6 +228,22 @@ func (a *App) ServiceAction(hostID, unit, action string, elevate bool) ActionRes
 
 	ctx, cancel := context.WithTimeout(context.Background(), PromptTimeout+pollTimeout)
 	defer cancel()
+
+	if info.Platform == adapter.PlatformWindows {
+		var script string
+		switch action {
+		case "enable", "disable":
+			script, err = adapter.WindowsServiceStartTypeScript(unit, action == "enable")
+		default:
+			script, err = adapter.WindowsServiceActionScript(action, unit)
+		}
+		if err != nil {
+			return failResult(err)
+		}
+		res, err := conn.ExecOpts(ctx, sshcore.ExecOptions{},
+			windowspowershell.Executable, windowspowershell.Args(script)...)
+		return windowsActionResult(res, err)
+	}
 
 	// `--` stops systemctl reading a unit name as an option (§3.4).
 	res, err := a.execMaybeElevated(ctx, conn, hostID, elevate, "systemctl", action, "--", unit)

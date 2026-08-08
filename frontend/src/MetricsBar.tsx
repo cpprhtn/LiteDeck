@@ -175,11 +175,16 @@ export function MetricsBar({ hostID }: { hostID: string }) {
           title={`${fmtBytes(disk.used)} / ${fmtBytes(disk.size)} · 여유 ${fmtBytes(disk.available)}`}
         />
       )}
-      <Stat
-        label="로드"
-        value={`${m.load1.toFixed(2)}`}
-        title={`1분 ${m.load1} · 5분 ${m.load5} · 15분 ${m.load15}`}
-      />
+      {/* Hidden where the concept does not exist rather than shown as 0.00.
+          Windows has no load average, and a zero here reads as an idle machine
+          instead of as a figure that was never available. */}
+      {m.hasLoad && (
+        <Stat
+          label="로드"
+          value={`${m.load1.toFixed(2)}`}
+          title={`1분 ${m.load1} · 5분 ${m.load5} · 15분 ${m.load15}`}
+        />
+      )}
       {m.swapTotal > 0 && (
         <Stat
           label="스왑"
