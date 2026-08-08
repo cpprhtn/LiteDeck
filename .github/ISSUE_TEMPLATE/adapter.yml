@@ -1,0 +1,28 @@
+name: 새 서버 OS 지원 요청
+description: LiteDeck이 아직 다루지 못하는 서버
+labels: [adapter]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        새 서버 OS 지원은 **어댑터 하나 구현**입니다. 직접 만들어보실 생각이라면
+        [CONTRIBUTING.md](../CONTRIBUTING.md)의 어댑터 절을 보세요 —
+        `internal/adapter/linuxsystemd/`가 본보기입니다.
+
+  - type: input
+    id: os
+    attributes:
+      label: 서버 OS
+      placeholder: Alpine 3.20 (OpenRC) / FreeBSD 14 / Windows Server 2022
+    validations: { required: true }
+
+  - type: textarea
+    id: output
+    attributes:
+      label: 서비스 목록 명령 출력
+      description: |
+        그 OS에서 서비스를 나열하는 명령과 **실제 출력**을 그대로 붙여주세요.
+        (`rc-status -a`, `launchctl list`, `service -e`, `Get-Service` 등)
+        골든 파일의 원본이 되므로 편집하지 말고 그대로 주세요.
+      render: text
+    validations: { required: true }

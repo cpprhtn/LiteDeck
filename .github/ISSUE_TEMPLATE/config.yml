@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 질문 · 아이디어
+    url: https://github.com/cpprhtn/LiteDeck/discussions
+    about: 텔레메트리가 없으므로 피드백은 Discussions로 모읍니다

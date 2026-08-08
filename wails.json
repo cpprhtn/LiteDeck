@@ -1,0 +1,20 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "litedeck",
+  "outputfilename": "litedeck",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "info": {
+    "productName": "LiteDeck",
+    "productVersion": "0.1.0-beta",
+    "companyName": "LiteDeck",
+    "copyright": "Copyright © 2026 Junwon Lee. Apache-2.0.",
+    "comments": "SSH 하나로 원격 서버를 로컬 GUI에 사상합니다."
+  },
+  "author": {
+    "name": "Junwon Lee",
+    "email": "cpprhtn@naver.com"
+  }
+}

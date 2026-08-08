@@ -1,0 +1,322 @@
+package adapter
+
+// The monitoring summary bar (§4.7): CPU, memory, disk and load.
+//
+// Positioned as a supporting feature, not a monitoring product. It answers "is
+// this box healthy right now" at a glance; anything more belongs to a real
+// monitoring stack, and §1.5 keeps LiteDeck out of that.
+
+import (
+	"bufio"
+	"bytes"
+	"fmt"
+	"sort"
+	"strconv"
+	"strings"
+)
+
+// MetricsScript collects everything the summary bar needs in one round trip.
+//
+// A shell script rather than argv, which is the one exception to the
+// argv-only rule (§3.2b) — and it is safe for the reason the rule exists: this
+// is a compile-time constant with nothing interpolated into it. Splitting it
+// into five separate commands would cost five round trips every two seconds,
+// and CPU has to be sampled twice anyway.
+const MetricsScript = `echo '#stat'; cat /proc/stat 2>/dev/null | head -1
+echo '#mem'; cat /proc/meminfo 2>/dev/null
+echo '#load'; cat /proc/loadavg 2>/dev/null
+echo '#up'; cat /proc/uptime 2>/dev/null
+echo '#df'; df -P -B1 2>/dev/null`
+
+// CPUTimes is one sample of the aggregate CPU counters.
+//
+// The counters are monotonic totals since boot, so a single reading says
+// nothing about current load — usage is the ratio of deltas between two
+// samples. That is why Metrics carries the raw sample forward.
+type CPUTimes struct {
+	Total uint64 `json:"total"`
+	Idle  uint64 `json:"idle"`
+}
+
+// Usage returns busy percentage between two samples, or -1 when it cannot be
+// computed — the first reading after connecting, or a counter that went
+// backwards because the server rebooted.
+func (c CPUTimes) Usage(prev CPUTimes) float64 {
+	if prev.Total == 0 || c.Total <= prev.Total {
+		return -1
+	}
+	totalDelta := float64(c.Total - prev.Total)
+	idleDelta := float64(c.Idle - prev.Idle)
+	if c.Idle < prev.Idle {
+		return -1
+	}
+	usage := (1 - idleDelta/totalDelta) * 100
+	return clampPercent(usage)
+}
+
+// Filesystem is one mounted filesystem.
+type Filesystem struct {
+	Device     string  `json:"device"`
+	MountPoint string  `json:"mountPoint"`
+	Size       int64   `json:"size"`
+	Used       int64   `json:"used"`
+	Available  int64   `json:"available"`
+	Percent    float64 `json:"percent"`
+}
+
+// Metrics is one snapshot of a server's health.
+type Metrics struct {
+	// CPU is -1 until a second sample exists; the UI shows a dash rather than
+	// a misleading zero.
+	CPU      float64  `json:"cpu"`
+	CPUTimes CPUTimes `json:"cpuTimes"`
+
+	MemTotal     int64   `json:"memTotal"` // bytes
+	MemAvailable int64   `json:"memAvailable"`
+	MemUsed      int64   `json:"memUsed"`
+	MemPercent   float64 `json:"memPercent"`
+
+	SwapTotal int64 `json:"swapTotal"`
+	SwapUsed  int64 `json:"swapUsed"`
+
+	Load1  float64 `json:"load1"`
+	Load5  float64 `json:"load5"`
+	Load15 float64 `json:"load15"`
+
+	UptimeSeconds int64 `json:"uptimeSeconds"`
+
+	Filesystems []Filesystem `json:"filesystems"`
+}
+
+// ParseMetrics reads the output of MetricsScript.
+//
+// prev is the previous CPU sample; pass a zero value on the first call.
+func ParseMetrics(data []byte, prev CPUTimes) (Metrics, error) {
+	m := Metrics{CPU: -1, Filesystems: []Filesystem{}}
+
+	sections := splitSections(data)
+
+	if line := firstNonEmpty(sections["stat"]); line != "" {
+		m.CPUTimes = parseCPULine(line)
+		m.CPU = m.CPUTimes.Usage(prev)
+	}
+
+	mem := parseMeminfo(sections["mem"])
+	m.MemTotal = mem["MemTotal"]
+	m.MemAvailable = mem["MemAvailable"]
+	if m.MemTotal > 0 {
+		// MemAvailable, not MemFree: free memory excludes cache the kernel
+		// would hand back on demand, so it reads as "almost out of RAM" on
+		// every healthy server.
+		m.MemUsed = m.MemTotal - m.MemAvailable
+		m.MemPercent = clampPercent(float64(m.MemUsed) / float64(m.MemTotal) * 100)
+	}
+	m.SwapTotal = mem["SwapTotal"]
+	if free, ok := mem["SwapFree"]; ok && m.SwapTotal > 0 {
+		m.SwapUsed = m.SwapTotal - free
+	}
+
+	if line := firstNonEmpty(sections["load"]); line != "" {
+		f := strings.Fields(line)
+		if len(f) >= 3 {
+			m.Load1, _ = strconv.ParseFloat(f[0], 64)
+			m.Load5, _ = strconv.ParseFloat(f[1], 64)
+			m.Load15, _ = strconv.ParseFloat(f[2], 64)
+		}
+	}
+
+	if line := firstNonEmpty(sections["up"]); line != "" {
+		if f := strings.Fields(line); len(f) >= 1 {
+			if secs, err := strconv.ParseFloat(f[0], 64); err == nil {
+				m.UptimeSeconds = int64(secs)
+			}
+		}
+	}
+
+	m.Filesystems = parseDF(sections["df"])
+
+	if m.MemTotal == 0 && len(m.Filesystems) == 0 {
+		return m, fmt.Errorf("adapter: metrics output had nothing usable")
+	}
+	return m, nil
+}
+
+// splitSections cuts the combined output on the #markers.
+func splitSections(data []byte) map[string][]string {
+	out := make(map[string][]string)
+	current := ""
+
+	sc := bufio.NewScanner(bytes.NewReader(data))
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		line := sc.Text()
+		if strings.HasPrefix(line, "#") {
+			current = strings.TrimSpace(strings.TrimPrefix(line, "#"))
+			continue
+		}
+		if current != "" {
+			out[current] = append(out[current], line)
+		}
+	}
+	return out
+}
+
+// parseCPULine reads the aggregate "cpu" row of /proc/stat.
+//
+//	cpu  user nice system idle iowait irq softirq steal guest guest_nice
+//
+// iowait counts as idle: the CPU is not doing work, and counting it as busy
+// makes a box waiting on a slow disk look pegged.
+func parseCPULine(line string) CPUTimes {
+	f := strings.Fields(line)
+	if len(f) < 5 || f[0] != "cpu" {
+		return CPUTimes{}
+	}
+	var t CPUTimes
+	for i, v := range f[1:] {
+		n, err := strconv.ParseUint(v, 10, 64)
+		if err != nil {
+			continue
+		}
+		// Fields beyond guest are already included in user/nice on modern
+		// kernels; summing everything present is still the conventional total.
+		t.Total += n
+		if i == 3 || i == 4 { // idle, iowait
+			t.Idle += n
+		}
+	}
+	return t
+}
+
+// parseMeminfo reads /proc/meminfo into bytes, keyed by field name.
+func parseMeminfo(lines []string) map[string]int64 {
+	out := make(map[string]int64, 8)
+	for _, line := range lines {
+		key, rest, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		f := strings.Fields(rest)
+		if len(f) == 0 {
+			continue
+		}
+		n, err := strconv.ParseInt(f[0], 10, 64)
+		if err != nil {
+			continue
+		}
+		// /proc/meminfo is in kB; everything above this layer works in bytes.
+		if len(f) > 1 && strings.EqualFold(f[1], "kB") {
+			n *= 1024
+		}
+		out[key] = n
+	}
+	return out
+}
+
+// parseDF reads `df -P -B1` output.
+//
+// -P forces the POSIX single-line format: without it, a long device name wraps
+// onto its own line and every subsequent column shifts. -B1 gives bytes, so
+// there is no human-readable suffix to parse back.
+func parseDF(lines []string) []Filesystem {
+	out := []Filesystem{}
+	for i, line := range lines {
+		f := strings.Fields(line)
+		if len(f) < 6 {
+			continue
+		}
+		if i == 0 && strings.EqualFold(f[0], "Filesystem") {
+			continue // header
+		}
+		size, err1 := strconv.ParseInt(f[1], 10, 64)
+		used, err2 := strconv.ParseInt(f[2], 10, 64)
+		avail, err3 := strconv.ParseInt(f[3], 10, 64)
+		if err1 != nil || err2 != nil || err3 != nil {
+			continue
+		}
+		mount := strings.Join(f[5:], " ") // mount points can contain spaces
+
+		fs := Filesystem{
+			Device: f[0], MountPoint: mount,
+			Size: size, Used: used, Available: avail,
+		}
+		if size > 0 {
+			fs.Percent = clampPercent(float64(used) / float64(size) * 100)
+		}
+		out = append(out, fs)
+	}
+	return out
+}
+
+// InterestingFilesystems drops the ones nobody wants in a summary bar.
+//
+// A container or a modern desktop mounts dozens of tmpfs, overlay and cgroup
+// filesystems. Showing them all buries the one line that matters — the disk
+// that can actually fill up.
+func InterestingFilesystems(all []Filesystem) []Filesystem {
+	skipDevices := []string{"tmpfs", "devtmpfs", "shm", "overlay", "udev", "none"}
+	skipMounts := []string{"/dev", "/sys", "/proc", "/run", "/snap"}
+
+	out := []Filesystem{}
+	seen := make(map[string]bool)
+	for _, fs := range all {
+		if fs.Size == 0 || seen[fs.MountPoint] {
+			continue
+		}
+		if slicesContainsFold(skipDevices, fs.Device) {
+			continue
+		}
+		if hasAnyPrefix(fs.MountPoint, skipMounts) {
+			continue
+		}
+		// The same device mounted twice (bind mounts, /etc/hosts in a
+		// container) would otherwise appear as separate disks.
+		if seen[fs.Device+"|"+strconv.FormatInt(fs.Size, 10)] {
+			continue
+		}
+		seen[fs.MountPoint] = true
+		seen[fs.Device+"|"+strconv.FormatInt(fs.Size, 10)] = true
+		out = append(out, fs)
+	}
+
+	// Fullest first: the one about to cause an incident goes at the top.
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Percent > out[j].Percent })
+	return out
+}
+
+func slicesContainsFold(list []string, s string) bool {
+	for _, v := range list {
+		if strings.EqualFold(v, s) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAnyPrefix(s string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if s == p || strings.HasPrefix(s, p+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func firstNonEmpty(lines []string) string {
+	for _, l := range lines {
+		if strings.TrimSpace(l) != "" {
+			return l
+		}
+	}
+	return ""
+}
+
+func clampPercent(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 100 {
+		return 100
+	}
+	return v
+}

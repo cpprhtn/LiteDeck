@@ -1,0 +1,178 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (dry run — no release is published)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: "1.25"
+  NODE_VERSION: "22"
+  WAILS_VERSION: "v2.13.0"
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macOS (universal)
+            # A universal binary rather than two downloads: the split between
+            # Intel and Apple Silicon is invisible to most users, and picking
+            # the wrong one produces an app that simply refuses to open.
+            wails_args: -platform darwin/universal
+            artifact: litedeck-macos
+          - os: windows-latest
+            name: Windows (amd64)
+            wails_args: -platform windows/amd64 -nsis
+            artifact: litedeck-windows
+          - os: ubuntu-latest
+            name: Linux (amd64)
+            wails_args: -platform linux/amd64
+            artifact: litedeck-linux
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Linux webview dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev pkg-config
+          if apt-cache show libwebkit2gtk-4.0-dev >/dev/null 2>&1; then
+            sudo apt-get install -y libwebkit2gtk-4.0-dev
+          else
+            sudo apt-get install -y libwebkit2gtk-4.1-dev
+            echo "EXTRA_TAGS=-tags webkit2_41" >> "$GITHUB_ENV"
+          fi
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
+
+      - name: Build
+        shell: bash
+        run: wails build ${{ matrix.wails_args }} ${EXTRA_TAGS:-} -clean
+
+      # Packaging, per platform. The .app bundle has to be archived rather than
+      # uploaded directly — GitHub artifacts flatten directories and would
+      # destroy the bundle's executable bit.
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          cd build/bin
+          # The bundle name comes from wails.json's outputfilename (litedeck.app),
+          # not from info.productName, so it is globbed rather than spelled out.
+          #
+          # Spelling it wrong is not a build failure on a case-insensitive APFS
+          # runner: zip matches anyway and silently stores the name as typed,
+          # producing an archive that extracts under a different name than a
+          # local build. On a case-sensitive volume it fails outright, the
+          # following rm becomes a no-op, and the raw .app directory is uploaded
+          # as an artifact — where the directory is flattened and the executable
+          # bit is lost. Both failures ship; neither announces itself.
+          shopt -s nullglob
+          apps=(*.app)
+          if [ ${#apps[@]} -ne 1 ]; then
+            echo "::error::expected exactly one .app bundle in build/bin, found ${#apps[@]}: ${apps[*]:-none}"
+            ls -la
+            exit 1
+          fi
+          zip -ry litedeck-macos.zip "${apps[0]}"
+          rm -rf "${apps[0]}"
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cd build/bin
+          tar czf litedeck-linux-amd64.tar.gz litedeck
+          rm -f litedeck
+
+      - name: Checksums
+        shell: bash
+        run: |
+          cd build/bin
+          # Published alongside the binaries because releases are unsigned for
+          # now (notarisation and Authenticode both cost money). A checksum is
+          # not a substitute for a signature, and the README says so.
+          if command -v sha256sum >/dev/null; then
+            sha256sum * > SHA256SUMS.txt
+          else
+            shasum -a 256 * > SHA256SUMS.txt
+          fi
+          cat SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: build/bin/
+          retention-days: 14
+
+  release:
+    name: Draft release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Collect and re-checksum
+        run: |
+          mkdir -p release
+          find dist -type f ! -name 'SHA256SUMS.txt' -exec cp {} release/ \;
+          cd release
+          # One combined manifest: the per-platform files were generated on
+          # different runners and cannot be verified against each other.
+          sha256sum * > SHA256SUMS.txt
+          ls -la
+
+      - name: Draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: release/*
+          body: |
+            ## 설치
+
+            체크섬을 먼저 확인하세요:
+
+            ```
+            sha256sum -c SHA256SUMS.txt
+            ```
+
+            **이 빌드는 서명되어 있지 않습니다.** macOS는 Gatekeeper가, Windows는
+            SmartScreen이 경고를 띄웁니다. 서명·공증에는 비용이 들어 초기 릴리스는
+            미서명으로 배포하며, 체크섬은 서명의 대체물이 아닙니다.
+
+            - **macOS**: `litedeck-macos.zip` 압축 해제 후 `litedeck.app`
+              첫 실행은 우클릭 → 열기 (Gatekeeper 우회)
+              Intel·Apple Silicon 공용 바이너리입니다
+            - **Windows**: `litedeck-amd64-installer.exe` (설치형) 또는 `litedeck.exe` (포터블)
+              WebView2가 없으면 설치 프롬프트가 뜹니다
+            - **Linux**: `litedeck-linux-amd64.tar.gz` 해제 후 `./litedeck`
+              `libwebkit2gtk`와 `libgtk-3`가 필요합니다

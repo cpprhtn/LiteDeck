@@ -1,0 +1,20 @@
+# Build output. Only bin/ — the rest of build/ is the platform asset source
+# (app icon, Info.plist templates, NSIS installer scripts) and has to be
+# committed: Wails silently regenerates whatever is missing from its own
+# defaults, so an uncommitted appicon.png means CI ships the Wails logo.
+/build/bin/
+/frontend/dist/
+/frontend/node_modules/
+
+# Wails generates these from the Go bindings on every build; they are derived,
+# not authored.
+/frontend/wailsjs/
+
+# Go
+*.test
+*.out
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/

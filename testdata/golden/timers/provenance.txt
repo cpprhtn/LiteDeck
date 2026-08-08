@@ -1,0 +1,4 @@
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+NAME="Ubuntu"
+VERSION_ID="22.04"
+systemd 249 (249.11-0ubuntu3.21)

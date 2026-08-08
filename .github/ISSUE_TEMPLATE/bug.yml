@@ -1,0 +1,51 @@
+name: 버그 리포트
+description: 동작하지 않는 것을 신고합니다
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `cmd/litedeck-probe` 출력을 붙여주시면 가장 빠릅니다. 배포판·systemd 버전·
+        컨테이너 런타임 유무가 한 번에 나오고, **비밀번호는 출력되지 않습니다.**
+
+        ```bash
+        go run ./cmd/litedeck-probe -addr your-server -user you
+        ```
+
+  - type: textarea
+    id: what
+    attributes:
+      label: 무슨 일이 일어났나요
+      description: 무엇을 눌렀고 무엇을 기대했는지
+    validations: { required: true }
+
+  - type: textarea
+    id: probe
+    attributes:
+      label: 서버 정보
+      description: litedeck-probe 출력, 또는 배포판과 systemd 버전
+      render: text
+    validations: { required: true }
+
+  - type: textarea
+    id: commandlog
+    attributes:
+      label: Command Log
+      description: |
+        하단 패널의 관련 줄. **배경 조회 보기**를 펼치면 폴링 명령도 나옵니다.
+        비밀번호는 stdin으로 가므로 로그에 남지 않습니다.
+      render: shell
+
+  - type: textarea
+    id: crash
+    attributes:
+      label: 오류 화면 내용 (있다면)
+      description: 뷰가 터진 경우 화면의 "복사" 버튼으로 스택을 가져올 수 있습니다
+      render: text
+
+  - type: input
+    id: client
+    attributes:
+      label: 클라이언트
+      placeholder: macOS 15.1 (Apple Silicon) / LiteDeck v0.1.0
+    validations: { required: true }

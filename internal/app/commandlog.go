@@ -1,0 +1,140 @@
+package app
+
+import (
+	"sync"
+	"time"
+
+	"github.com/cpprhtn/LiteDeck/internal/sshcore"
+)
+
+// The Command Log (§4.6) — the panel that shows every command the GUI runs on
+// the user's behalf, as it runs.
+//
+// It is the differentiator, and the reason is not convenience. A GUI that talks
+// to your production server is asking for trust; showing exactly what it just
+// executed is how it earns that, and it teaches the CLI along the way. Being
+// able to copy a line out is the point, not a bonus.
+//
+// The log is local only. Nothing here is ever transmitted (§7.4).
+
+// CommandEntry is one executed command.
+type CommandEntry struct {
+	Seq      int    `json:"seq"`
+	HostID   string `json:"hostId"`
+	Line     string `json:"line"`
+	At       string `json:"at"`     // RFC3339, for display
+	Status   string `json:"status"` // running, ok, probe, failed, error
+	ExitCode int    `json:"exitCode"`
+	Duration int64  `json:"durationMs"`
+	// Kind is "", "poll" or "probe" — see sshcore.CommandKind.
+	Kind   string `json:"kind,omitempty"`
+	Stderr string `json:"stderr,omitempty"`
+}
+
+// commandLogLimit bounds the in-memory history. The panel is a live view, not
+// an audit trail; a long session should not grow without limit.
+const commandLogLimit = 500
+
+type commandLog struct {
+	app *App
+
+	mu      sync.Mutex
+	seq     int
+	entries []CommandEntry
+	running map[string]int // line+host → index, to match a finish to its start
+}
+
+func newCommandLog(a *App) *commandLog {
+	return &commandLog{app: a, running: make(map[string]int)}
+}
+
+func (l *commandLog) CommandStarted(info sshcore.CommandInfo) {
+	l.mu.Lock()
+	l.seq++
+	e := CommandEntry{
+		Seq:    l.seq,
+		HostID: info.HostID,
+		Line:   info.Line,
+		At:     time.Now().Format(time.RFC3339),
+		Status: "running",
+		Kind:   string(info.Kind),
+	}
+	l.entries = append(l.entries, e)
+	if len(l.entries) > commandLogLimit {
+		l.entries = l.entries[len(l.entries)-commandLogLimit:]
+	}
+	l.running[info.HostID+"\x00"+info.Line] = e.Seq
+	l.mu.Unlock()
+
+	l.emit("cmd:started", e)
+}
+
+func (l *commandLog) CommandFinished(info sshcore.CommandInfo, res *sshcore.Result, err error) {
+	l.mu.Lock()
+	key := info.HostID + "\x00" + info.Line
+	seq, ok := l.running[key]
+	delete(l.running, key)
+
+	var updated CommandEntry
+	for i := range l.entries {
+		if !ok || l.entries[i].Seq != seq {
+			continue
+		}
+		e := &l.entries[i]
+		switch {
+		case err != nil:
+			e.Status = "error"
+			e.Stderr = err.Error()
+		case res != nil && !res.OK() && info.Probe():
+			// A probe answering "no" is information, not a fault. Counting it
+			// as a failure would put two red rows in the log on every single
+			// connection, and a failure count that is always wrong is one the
+			// user stops reading.
+			e.Status = "probe"
+			e.ExitCode = res.ExitCode
+		case res != nil && !res.OK():
+			e.Status = "failed"
+			e.ExitCode = res.ExitCode
+			e.Stderr = truncate(string(res.Stderr), 4000)
+		default:
+			e.Status = "ok"
+		}
+		if res != nil {
+			e.Duration = res.Duration.Milliseconds()
+		}
+		updated = *e
+		break
+	}
+	l.mu.Unlock()
+
+	if updated.Seq != 0 {
+		l.emit("cmd:finished", updated)
+	}
+}
+
+func (l *commandLog) emit(event string, e CommandEntry) {
+	l.app.emit(event, e)
+}
+
+// CommandLog returns the recent history, oldest first.
+func (a *App) CommandLog() []CommandEntry {
+	a.log.mu.Lock()
+	defer a.log.mu.Unlock()
+	out := make([]CommandEntry, len(a.log.entries))
+	copy(out, a.log.entries)
+	return out
+}
+
+// ClearCommandLog empties the panel.
+func (a *App) ClearCommandLog() {
+	a.log.mu.Lock()
+	a.log.entries = nil
+	a.log.mu.Unlock()
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
+}
