@@ -19,6 +19,14 @@
 *.test
 *.out
 
+# Developer credentials for the manual integration hosts. In .gitignore rather
+# than .git/info/exclude on purpose: this one should be visible to anyone who
+# clones, because the failure mode of not knowing about it is committing a
+# password. testdata/windows/env_guard_test.go fails if it is ever tracked.
+.env.local
+*.env.local
+/testdata/windows/id_*
+
 # Editor / OS
 .DS_Store
 .idea/

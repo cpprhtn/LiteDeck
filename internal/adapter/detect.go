@@ -7,10 +7,12 @@ package adapter
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter/linuxsystemd"
+	"github.com/cpprhtn/LiteDeck/internal/adapter/windowspowershell"
 	"github.com/cpprhtn/LiteDeck/internal/sshcore"
 )
 
@@ -38,8 +40,8 @@ const (
 	PlatformWindows Platform = "windows"
 	PlatformDarwin  Platform = "darwin"
 	PlatformBSD     Platform = "bsd"
-	// PlatformUnknown is a host that answered the SSH handshake but neither
-	// `uname -s` nor `cmd /c ver`. Reported as-is rather than guessed at.
+	// PlatformUnknown is a host that answered the SSH handshake but identified
+	// itself to none of the probes. Reported as-is rather than guessed at.
 	PlatformUnknown Platform = "unknown"
 )
 
@@ -139,8 +141,25 @@ func Detect(ctx context.Context, r Runner) (ServerInfo, error) {
 	// Platform first. Everything below assumes a POSIX shell, and running those
 	// probes against cmd.exe produces a dozen console-codepage error strings
 	// that say nothing a user can act on.
-	info.Platform, info.Kernel = detectPlatform(ctx, r)
+	var notes []string
+	info.Platform, info.Kernel, notes = detectPlatform(ctx, r)
 	if !info.Platform.Supported() {
+		// Identification already produced the friendly name, so put it where the
+		// Linux path puts its own: PrettyName is what the header renders, and
+		// Kernel is for the raw self-description. Asking WMI a second time just
+		// to fill a different field would be a round trip for nothing.
+		if info.Platform == PlatformWindows && info.Kernel != "" {
+			info.PrettyName = info.Kernel
+			info.ID = "windows"
+			info.Kernel = ""
+		}
+		// Keep the transcript for every unsupported host, not just the ones
+		// detection gave up on. Restricting it to PlatformUnknown threw away the
+		// evidence in exactly the case that most needs it: a host identified only
+		// by a fallback heuristic, where something upstream clearly did not answer
+		// the way it should have. It is behind a disclosure triangle, so the cost
+		// of keeping it is nothing.
+		info.Warnings = append(info.Warnings, notes...)
 		// Return successfully with an unsupported platform rather than an error:
 		// the connection is fine and the host list should show it as connected.
 		// It is the feature surface that is empty, and the UI says so.
@@ -204,34 +223,155 @@ func Detect(ctx context.Context, r Runner) (ServerInfo, error) {
 //
 // Both are probes, not actions: "uname is missing" is a normal answer here, not
 // a failure worth showing the user as a red error.
-func detectPlatform(ctx context.Context, r Runner) (Platform, string) {
-	if res, err := r.Probe(ctx, "uname", "-s"); err == nil && res.OK() {
-		kernel := strings.TrimSpace(string(res.Stdout))
+func detectPlatform(ctx context.Context, r Runner) (Platform, string, []string) {
+	// Diagnostics, not decoration. "unknown OS" with nothing behind it leaves
+	// nobody — user or maintainer — able to say which probe misbehaved, and the
+	// only way to find out is to guess and rebuild. Each attempt records what it
+	// actually saw so the answer is on screen.
+	var notes []string
+	record := func(what string, res *sshcore.Result, err error) {
 		switch {
-		case strings.EqualFold(kernel, "linux"):
-			return PlatformLinux, kernel
-		case strings.EqualFold(kernel, "darwin"):
-			return PlatformDarwin, kernel
-		case strings.Contains(strings.ToUpper(kernel), "BSD"):
-			return PlatformBSD, kernel
-		case kernel != "":
-			return PlatformUnknown, kernel
+		case err != nil:
+			notes = append(notes, what+": "+err.Error())
+		case res == nil:
+			notes = append(notes, what+": no result")
+		default:
+			notes = append(notes, fmt.Sprintf("%s: exit=%d out=%q err=%q",
+				what, res.ExitCode, firstLine(res.Stdout), firstLine(res.Stderr)))
 		}
 	}
 
-	if res, err := r.Probe(ctx, "cmd", "/c", "ver"); err == nil && res.OK() {
-		line := strings.TrimSpace(string(res.Stdout))
-		if strings.Contains(line, "Windows") {
-			return PlatformWindows, line
-		}
-		// Windows console output arrives in the machine's OEM codepage (949 on a
-		// Korean install), so a non-UTF-8 answer here is itself evidence of
-		// Windows rather than a reason to give up.
-		if !utf8.ValidString(line) {
-			return PlatformWindows, "Windows (출력 인코딩이 UTF-8이 아님)"
+	res, err := r.Probe(ctx, "uname", "-s")
+	record("uname -s", res, err)
+	if err == nil && res.OK() {
+		kernel := strings.TrimSpace(string(res.Stdout))
+		upper := strings.ToUpper(kernel)
+		switch {
+		case strings.EqualFold(kernel, "linux"):
+			return PlatformLinux, kernel, notes
+		case strings.EqualFold(kernel, "darwin"):
+			return PlatformDarwin, kernel, notes
+		case strings.Contains(upper, "BSD"):
+			return PlatformBSD, kernel, notes
+		// A POSIX emulation layer on Windows — Git for Windows, MSYS2, Cygwin.
+		// uname answers there, so the Windows branch below is never reached and
+		// the host was reported as an unknown OS despite plainly saying NT.
+		case strings.HasPrefix(upper, "MINGW"), strings.HasPrefix(upper, "MSYS"),
+			strings.HasPrefix(upper, "CYGWIN"), strings.Contains(upper, "WINDOWS"),
+			strings.Contains(upper, "_NT-"):
+			return PlatformWindows, kernel, notes
+		case kernel != "":
+			return PlatformUnknown, kernel, notes
 		}
 	}
-	return PlatformUnknown, ""
+
+	// PowerShell, not `cmd /c ver`.
+	//
+	// The cmd route was tried first and does not work through Windows OpenSSH:
+	// sshd already wraps the remote command as `cmd.exe /c "<command>"`, and a
+	// nested `cmd /c ver` inside that has its quotes redistributed, so the inner
+	// cmd receives the command name as `ver"` — trailing quote included — and
+	// reports it missing. The failure is invisible unless you read the error text
+	// closely, which is what the probe transcript is for.
+	//
+	// -EncodedCommand has no such problem, and for the reason this adapter uses it
+	// everywhere: the payload is one flat base64 token with no quotes in it, so
+	// there is nothing for the outer shell to redistribute. It works identically
+	// whether DefaultShell is cmd.exe or PowerShell, and it answers with the
+	// edition name rather than a build number, so identification and description
+	// are the same round trip instead of two.
+	if caption, version, arch, ok := windowsIdentity(ctx, r, &notes); ok {
+		if caption != "" {
+			info := strings.TrimPrefix(caption, "Microsoft ")
+			if arch != "" {
+				info += " (" + arch + ")"
+			}
+			return PlatformWindows, info, append(notes, "version: "+version)
+		}
+		return PlatformWindows, "", notes
+	}
+
+	// Last resort, and only reachable if PowerShell itself is unavailable. Bare
+	// `ver` rather than `cmd /c ver`: the outer shell is already cmd.exe when
+	// DefaultShell is left at its default, so the builtin runs directly and the
+	// nesting that broke the other form never happens.
+	res, err = r.Probe(ctx, "ver")
+	record("ver", res, err)
+	if err == nil && res != nil {
+		line := strings.TrimSpace(string(res.Stdout))
+		if strings.Contains(line, "Windows") || strings.Contains(line, "Microsoft") {
+			return PlatformWindows, line, notes
+		}
+		// Console output arrives in the machine's OEM codepage — 949 on a Korean
+		// install — so a reply that is not valid UTF-8 is itself evidence of
+		// Windows rather than a reason to give up.
+		//
+		// Kernel stays empty here. It holds what the server called itself, and
+		// filling it with the reason we guessed instead put "Windows (stderr가
+		// UTF-8이 아님)" on screen where an OS name belongs.
+		if (line != "" && !utf8.ValidString(line)) || (len(res.Stderr) > 0 && !utf8.Valid(res.Stderr)) {
+			notes = append(notes, "판정 근거: ver 의 출력이 UTF-8 이 아님 (OEM 코드페이지)")
+			return PlatformWindows, "", notes
+		}
+	}
+	return PlatformUnknown, "", notes
+}
+
+// windowsIdentity asks WMI who this machine is, and doubles as the Windows test.
+//
+// A successful answer is proof of Windows on its own: nothing else responds to
+// Get-CimInstance Win32_OperatingSystem. Caption is the name people actually use
+// for the machine — "Windows 10 Pro" — where `ver` gives only 10.0.19045.
+func windowsIdentity(ctx context.Context, r Runner, notes *[]string) (caption, version, arch string, ok bool) {
+	const script = `(Get-CimInstance Win32_OperatingSystem | ` +
+		"ForEach-Object { \"$($_.Caption)`t$($_.Version)`t$($_.OSArchitecture)\" })"
+
+	res, err := r.Probe(ctx, windowspowershell.Executable, windowspowershell.Args(script)...)
+	switch {
+	case err != nil:
+		*notes = append(*notes, "powershell Win32_OperatingSystem: "+err.Error())
+		return "", "", "", false
+	case res == nil:
+		return "", "", "", false
+	case !res.OK():
+		*notes = append(*notes, fmt.Sprintf("powershell Win32_OperatingSystem: exit=%d err=%q",
+			res.ExitCode, firstLine(res.Stderr)))
+		// A missing interpreter says nothing about the platform; a cmdlet that
+		// ran and failed says this is Windows with WMI locked down.
+		if !windowspowershell.IsMissingCmdlet(res.Stderr) && len(res.Stderr) > 0 {
+			return "", "", "", false
+		}
+		return "", "", "", false
+	}
+
+	fields := strings.Split(strings.TrimSpace(string(res.Stdout)), "\t")
+	*notes = append(*notes, fmt.Sprintf("powershell Win32_OperatingSystem: %q", firstLine(res.Stdout)))
+	for i := range fields {
+		fields[i] = strings.TrimSpace(fields[i])
+	}
+	switch len(fields) {
+	case 0:
+		return "", "", "", false
+	case 1:
+		return fields[0], "", "", fields[0] != ""
+	case 2:
+		return fields[0], fields[1], "", true
+	default:
+		return fields[0], fields[1], fields[2], true
+	}
+}
+
+// firstLine trims output to something that fits in a warning line. Detection
+// notes are read on screen, and a 200-service dump helps nobody.
+func firstLine(b []byte) string {
+	s := strings.TrimSpace(string(b))
+	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
+		s = s[:i]
+	}
+	if len(s) > 120 {
+		s = s[:120] + "…"
+	}
+	return s
 }
 
 func commandExists(ctx context.Context, r Runner, name string) bool {

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useState, type ReactNode } from 'react'
 import Bench from './Bench'
 import { CommandLogPanel } from './CommandLogPanel'
 import { ErrorBoundary } from './ErrorBoundary'
@@ -220,7 +220,16 @@ export default function App() {
                 <div className="muted small">
                   {active.user}@{active.hostname}
                   {activeInfo && ` · ${activeInfo.prettyName}`}
-                  {unsupported && ` · ${activeInfo?.kernel || PLATFORM_LABEL[activeInfo!.platform]}`}
+                  {/* Only when the server named itself and WMI did not give a
+                      friendlier name. Printing both put "Windows 10 Pro ·
+                      Windows (stderr가 UTF-8이 아님)" in the subtitle — the same
+                      fact twice, the second time as an implementation note. */}
+                  {unsupported &&
+                    !activeInfo?.prettyName &&
+                    ` · ${activeInfo?.kernel || PLATFORM_LABEL[activeInfo!.platform]}`}
+                  {unsupported && activeInfo?.prettyName && activeInfo.kernel && (
+                    <span title={activeInfo.kernel}> · {activeInfo.kernel}</span>
+                  )}
                   {activeInfo?.hasSystemd && ` · systemd ${activeInfo.systemdVersion}`}
                   {activeInfo && !activeInfo.systemdJson && activeInfo.hasSystemd && (
                     <span title="systemd 246 미만 — 표 파싱으로 폴백"> (표 폴백)</span>
@@ -337,16 +346,19 @@ function Unavailable({
   title,
   detail,
   hint,
+  children,
 }: {
   title: string
   detail: string
   hint?: string
+  children?: ReactNode
 }) {
   return (
     <div className="unavailable">
       <h3>{title}</h3>
       <p className="muted">{detail}</p>
       {hint && <p className="muted small">{hint}</p>}
+      {children}
     </div>
   )
 }
@@ -379,7 +391,17 @@ function renderTab(
             : '서버가 uname에도, ver에도 응답하지 않아 어떤 OS인지 확인할 수 없었습니다.'
         }
         hint="파일 탭과 터미널 탭은 그대로 쓸 수 있습니다 — SFTP와 PTY는 SSH가 직접 제공하기 때문입니다. 어댑터 기여는 환영합니다 (CONTRIBUTING.md)."
-      />
+      >
+        {/* The probe transcript, shown only when detection gave up. Without it
+            "알 수 없는 OS" is a dead end: nobody can tell which probe misbehaved
+            without rebuilding the app with print statements in it. */}
+        {!!info.warnings?.length && (
+          <details className="diag">
+            <summary className="muted small">감지 과정 보기</summary>
+            <pre className="mono small">{info.warnings.join('\n')}</pre>
+          </details>
+        )}
+      </Unavailable>
     )
   }
 

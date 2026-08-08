@@ -1069,6 +1069,29 @@ button.danger {
   padding: var(--sp-5);
   min-height: 0;
 }
+/* Probe transcript on the unsupported-OS panel. Collapsed by default: it is
+   diagnostic detail, needed exactly when the friendly explanation is not enough. */
+.diag {
+  max-width: 46rem;
+  text-align: left;
+  margin-top: var(--sp-3);
+}
+
+.diag pre {
+  margin: var(--sp-2) 0 0;
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-sunken);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.diag summary {
+  cursor: pointer;
+}
+
 .unavailable h3 {
   margin: 0;
   font-size: var(--text-lg);
