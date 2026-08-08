@@ -4,9 +4,9 @@
 
 [![CI](https://github.com/cpprhtn/LiteDeck/actions/workflows/ci.yml/badge.svg)](https://github.com/cpprhtn/LiteDeck/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.0--beta-orange)](https://github.com/cpprhtn/LiteDeck/releases)
+[![Version](https://img.shields.io/badge/version-0.1.1--beta-orange)](https://github.com/cpprhtn/LiteDeck/releases)
 
-> **v0.1.0-beta** — macOS·Windows 클라이언트와, Linux 컨테이너 픽스처 및 Windows 실기 서버에서 검증했습니다. **Linux는 아직 실제 하드웨어 서버에서 돌려보지 않았습니다.** 무엇이 확인됐고 무엇이 안 됐는지는 [지원 범위](#지원-범위)에 그대로 적어두었습니다. 프로덕션 서버에 쓰실 거라면 파괴적 액션(삭제·프로세스 종료)은 먼저 시험용 서버에서 확인해보세요.
+> **v0.1.1-beta** — macOS·Windows 클라이언트와, Linux 컨테이너 픽스처 및 Windows 실기 서버에서 검증했습니다. **Linux는 아직 실제 하드웨어 서버에서 돌려보지 않았습니다.** 무엇이 확인됐고 무엇이 안 됐는지는 [지원 범위](#지원-범위)에 그대로 적어두었습니다. 프로덕션 서버에 쓰실 거라면 파괴적 액션(삭제·프로세스 종료)은 먼저 시험용 서버에서 확인해보세요.
 
 ---
 
@@ -45,10 +45,10 @@ RDP·VNC·TeamViewer는 서버의 **화면 픽셀을 영상으로 스트리밍**
 | **서비스** | systemd 유닛 / Windows 서비스 목록·필터(failed만)·시작/중지/재시작/자동시작·**실시간 저널 팔로우**(Linux) |
 | **프로세스** | 작업관리자식 테이블·정렬·검색·트리 보기·종료(TERM→KILL 2단계)·우선순위 변경 |
 | **컨테이너** | Docker/Podman 카드·시작/중지/재시작/삭제·**실시간 로그 팔로우**·이미지/볼륨(크기순·미사용 정리) |
-| **네트워크** | 인터페이스·열린 포트(**외부 노출 여부 구분**) |
+| **네트워크** | 인터페이스·열린 포트(**외부 노출 여부 구분**) — Linux는 `ip`/`ss`, Windows는 `Get-Net*` |
 | **스케줄** | systemd 타이머 조회 — 다음/마지막 실행 |
 | **터미널** | xterm.js PTY 다중 탭 |
-| **모니터링** | CPU·메모리·디스크·로드 요약 바 + 스파크라인 |
+| **모니터링** | CPU·메모리·디스크·로드 요약 바 + 스파크라인 (로드는 Linux 전용 — Windows에 없는 개념) |
 | **Command Log** | GUI가 실행한 **모든 명령을 실시간 표시**. 클릭하면 복사됩니다 |
 
 ### Command Log — GUI로 CLI를 배웁니다
@@ -134,7 +134,7 @@ sudo apt install libwebkit2gtk-4.0-dev   # 22.04     — 태그 불필요
 
 ## 지원 범위
 
-v0.1.0-beta는 **검증된 것과 검증되지 않은 것을 구분해서** 적습니다. 아래 "미검증"은 코드가 없다는 뜻이 아니라, 저자가 실제로 돌려보지 않았다는 뜻입니다.
+v0.1.1-beta는 **검증된 것과 검증되지 않은 것을 구분해서** 적습니다. 아래 "미검증"은 코드가 없다는 뜻이 아니라, 저자가 실제로 돌려보지 않았다는 뜻입니다.
 
 ### 검증됨
 
@@ -144,7 +144,7 @@ v0.1.0-beta는 **검증된 것과 검증되지 않은 것을 구분해서** 적�
 | **서버** | Ubuntu 22.04.5 / systemd 249 | 전체 플로우 — 서비스(JSON 경로)·파일·프로세스·타이머·저널 팔로우·권한 상승 |
 | **서버** | Ubuntu 20.04.6 / systemd 245 | 서비스 **표 폴백 경로** (JSON 미지원 버전) |
 | **서버** | Alpine 3.20 + OpenSSH | 전송 계층 — SFTP·재연결·인젝션 방어·동시 세션 |
-| **서버** | Windows 10 Pro / PowerShell 5.1 (실기) | 서비스·프로세스·모니터링 — 유일하게 컨테이너가 아닌 실제 하드웨어 |
+| **서버** | Windows 10 Pro / PowerShell 5.1 (실기) | 서비스·프로세스·네트워크·모니터링 — 유일하게 컨테이너가 아닌 실제 하드웨어 |
 | **컨테이너** | docker 28 (dind) | 컨테이너·이미지·볼륨 |
 
 **Linux 서버 검증은 전부 컨테이너 픽스처입니다** (`testdata/`) — 실제 하드웨어·클라우드 Linux 서버에서는 아직 돌려보지 않았습니다. Windows 서버만 실기입니다.
@@ -161,7 +161,6 @@ Linux 클라이언트는 **빌드·링크만** 확인했습니다 — Ubuntu 22.
 | **Podman** | `docker` 호환 CLI라 파서를 공유하지만 실행 안 해봄 |
 | **ProxyJump / 다단 SSH** | 미구현 |
 | **macOS·BSD 서버** | 어댑터 없음. 연결하면 **파일과 터미널만** 동작하고, 나머지 탭은 이유를 화면에 적습니다 |
-| **Windows 네트워크 탭** | 서비스·프로세스·모니터링은 되지만 네트워크는 미구현 |
 | **원격 → 로컬 드래그** | Wails v2에 드래그-아웃 API가 없어 구현 불가. 다운로드 버튼으로 대체 |
 
 여기 없는 조합에서 돌려보셨다면 [이슈](https://github.com/cpprhtn/LiteDeck/issues)로 알려주세요. `go run ./cmd/litedeck-probe -addr <서버> -user <계정>` 출력이 있으면 가장 빠릅니다.
@@ -188,7 +187,7 @@ go test ./... -race           # 통합 테스트 포함 (Docker 필요)
 
 통합 테스트는 실제 서버를 띄웁니다 — `testdata/`에 sshd·systemd·Docker-in-Docker 픽스처가 있습니다. Docker가 없으면 실패가 아니라 skip하므로, **`-race`가 몇 초 만에 끝났다면 통합 테스트가 안 돌았다는 뜻입니다** (Docker가 켜져 있으면 1분 남짓 걸립니다).
 
-v0.1.0-beta를 만든 환경: Go 1.26.5 · Node 22.13.1 · Wails 2.13.0 · Docker 29.4.0 (macOS 26.5.2 arm64).
+v0.1.1-beta를 만든 환경: Go 1.26.5 · Node 22.13.1 · Wails 2.13.0 · Docker 29.4.0 (macOS 26.5.2 arm64).
 
 기여는 [CONTRIBUTING.md](CONTRIBUTING.md)를 참고하세요. **새 서버 OS 지원 = 어댑터 하나 구현**이 되도록 설계돼 있습니다.
 

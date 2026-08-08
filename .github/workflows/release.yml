@@ -157,10 +157,18 @@ jobs:
           sha256sum * > SHA256SUMS.txt
           ls -la
 
-      - name: Draft release
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          draft: true
+          # Published rather than drafted. The three platform builds and the whole
+          # test suite have already passed by the time this step runs, so a draft
+          # only means the release sits invisible until someone remembers to press
+          # a button — and a release nobody can download is not a release.
+          draft: false
+          # Marked pre-release while the version says beta. It is downloadable
+          # either way; the flag is what keeps GitHub from calling it "Latest" and
+          # is the honest signal about how much of this has been run in anger.
+          prerelease: true
           generate_release_notes: true
           files: release/*
           body: |

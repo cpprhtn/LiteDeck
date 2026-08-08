@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
+	"github.com/cpprhtn/LiteDeck/internal/sshcore"
 )
 
 // The network view (v1.x): interfaces and listening sockets.
@@ -27,7 +28,8 @@ func (a *App) HostNetwork(hostID string) (NetworkView, error) {
 	// Gated on the capability: the network view was the one that had no check at
 	// all, so opening the tab on Windows ran `ip -j addr` and `ss -tulnp` against
 	// cmd.exe on a timer and filled the log with console-codepage errors.
-	if _, err := a.requireCapability(hostID, adapter.CapNetwork, "네트워크 정보"); err != nil {
+	info, err := a.requireCapability(hostID, adapter.CapNetwork, "네트워크 정보")
+	if err != nil {
 		return NetworkView{}, err
 	}
 	conn, err := a.mgr.Conn(hostID)
@@ -42,6 +44,24 @@ func (a *App) HostNetwork(hostID string) (NetworkView, error) {
 		Interfaces: []adapter.Interface{},
 		Listeners:  []adapter.Listener{},
 		Warnings:   []string{},
+	}
+
+	if info.Platform == adapter.PlatformWindows {
+		// One round trip for all five tables. The Linux path issues two commands
+		// because ip and ss are separate binaries; here everything is one
+		// PowerShell session, and the tab refreshes on a timer.
+		raw, err := a.runPowerShell(ctx, conn, sshcore.CommandPoll, adapter.WindowsNetworkScript())
+		if err != nil {
+			return NetworkView{}, err
+		}
+		ifaces, listeners, warnings, err := adapter.ParseWindowsNetwork(raw)
+		if err != nil {
+			return NetworkView{}, err
+		}
+		out.Interfaces = ifaces
+		out.Listeners = listeners
+		out.Warnings = append(out.Warnings, warnings...)
+		return out, nil
 	}
 
 	if res, err := conn.Poll(ctx, "ip", adapter.IPAddrArgs()...); err != nil {

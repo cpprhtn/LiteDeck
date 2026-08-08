@@ -114,6 +114,14 @@ capture logicaldisk "${PRELUDE}Get-CimInstance Win32_LogicalDisk -Filter 'DriveT
 # --- network --------------------------------------------------------------
 capture netip "${PRELUDE}Get-NetIPAddress | Select-Object InterfaceAlias,IPAddress,PrefixLength,AddressFamily,InterfaceIndex | ConvertTo-Json -Compress"
 capture nettcp "${PRELUDE}Get-NetTCPConnection -State Listen | Select-Object LocalAddress,LocalPort,OwningProcess | ConvertTo-Json -Compress"
+# The adapter table carries MAC, link state and MTU, none of which Get-NetIPAddress
+# has. It also does not list the loopback pseudo-interface, which is why the
+# interface list is built from the addresses and enriched from here rather than
+# the other way round.
+capture netadapter "${PRELUDE}Get-NetAdapter | Select-Object Name,InterfaceAlias,InterfaceIndex,MacAddress,Status,MtuSize,InterfaceType | ConvertTo-Json -Compress"
+# UDP as well as TCP: `ss -tulnp` on the Linux side lists both, and a UDP service
+# bound to 0.0.0.0 is exposed in exactly the same sense.
+capture netudp "${PRELUDE}Get-NetUDPEndpoint | Select-Object LocalAddress,LocalPort,OwningProcess | ConvertTo-Json -Compress"
 
 # --- containers -----------------------------------------------------------
 # Docker Desktop on Windows speaks the same CLI, so the existing container
@@ -204,6 +212,14 @@ def redact_ipv4(text):
 def redact_ipv6_iid(text):
     return re.sub(r"fe80::[0-9a-f:]+", "fe80::1111:2222:3333:4444", text, flags=re.I)
 
+# A MAC address names the physical hardware and, through the OUI, its vendor.
+# The parser only formats it, so a documentation-range value serves equally well.
+# Windows writes them with dashes; the colon form is covered in case a future
+# capture uses a cmdlet that does.
+def redact_mac(text):
+    dashed = re.sub(r"\b(?:[0-9A-F]{2}-){5}[0-9A-F]{2}\b", "00-1A-2B-3C-4D-5E", text)
+    return re.sub(r"\b(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\b", "00:1a:2b:3c:4d:5e", dashed)
+
 count = 0
 for p in sorted(out.iterdir()):
     if p.suffix not in (".out", ".err", ".txt"):
@@ -222,7 +238,7 @@ for p in sorted(out.iterdir()):
     # and it does carry version strings that look like one.
     if p.suffix == ".out":
         s = redact_ipv4(s)
-    s = redact_ipv6_iid(s)
+    s = redact_mac(redact_ipv6_iid(s))
     if s != original:
         p.write_text(s, encoding="utf-8")
         count += 1

@@ -1,0 +1,1 @@
+[{"Name":"이더넷","InterfaceAlias":"이더넷","InterfaceIndex":10,"MacAddress":"00-1A-2B-3C-4D-5E","Status":"Up","MtuSize":1500,"InterfaceType":6},{"Name":"Bluetooth 네트워크 연결","InterfaceAlias":"Bluetooth 네트워크 연결","InterfaceIndex":9,"MacAddress":"00-1A-2B-3C-4D-5E","Status":"Disconnected","MtuSize":1500,"InterfaceType":6}]

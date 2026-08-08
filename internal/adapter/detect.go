@@ -131,10 +131,7 @@ func (i ServerInfo) Capabilities() map[Capability]bool {
 			// Docker Desktop speaks the same CLI, so the existing container
 			// parser applies unchanged when the binary is present.
 			CapContainers: i.HasDocker,
-			// Get-NetIPAddress and Get-NetTCPConnection would cover this, but
-			// nothing reads them yet and claiming the tab works would be worse
-			// than the tab saying it does not.
-			CapNetwork: false,
+			CapNetwork:    true, // Get-NetIPAddress, Get-NetAdapter, Get-Net{TCP,UDP}
 		}
 	}
 	return map[Capability]bool{

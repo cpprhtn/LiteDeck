@@ -53,7 +53,8 @@ func TestSupportedPlatformsHaveCapabilities(t *testing.T) {
 			name: "windows",
 			info: adapter.ServerInfo{Platform: adapter.PlatformWindows},
 			want: []adapter.Capability{
-				adapter.CapServices, adapter.CapProcesses, adapter.CapMetrics,
+				adapter.CapServices, adapter.CapProcesses,
+				adapter.CapMetrics, adapter.CapNetwork,
 			},
 		},
 	}

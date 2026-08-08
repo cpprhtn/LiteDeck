@@ -122,10 +122,8 @@ func TestDetectWindowsServer(t *testing.T) {
 			t.Errorf("capability %q off; the Windows adapter implements it", c)
 		}
 	}
-	// Not implemented. Claiming it would put the view back to polling a host that
-	// cannot answer — the failure this whole gate exists to prevent.
-	if caps[CapNetwork] {
-		t.Error("network capability claimed; nothing reads Get-NetTCPConnection yet")
+	if !caps[CapNetwork] {
+		t.Error("network capability off; the Windows adapter reads Get-NetIPAddress and Get-NetTCPConnection")
 	}
 	// docker was not found by the capability probe in this fixture.
 	if caps[CapContainers] {
