@@ -113,19 +113,8 @@ function TerminalPane({
     // shadowed, and there is no version of this that opens an editor on the
     // server by accident.
     const typed = new LineWatcher()
-    // xterm answers the shell's own questions down this same channel — ask it
-    // where the cursor is and it replies `\x1b[1;1R` here, indistinguishable
-    // from a keystroke unless you ask. bash asks at every prompt, and taking
-    // that reply for a keypress is what stopped `code .` from ever working.
-    let fromKeyboard = false
-    term.attachCustomKeyEventHandler((ev) => {
-      if (ev.type === 'keydown' || ev.type === 'keypress') fromKeyboard = true
-      return true
-    })
     const disposeInput = term.onData((data) => {
-      const keyed = fromKeyboard
-      fromKeyboard = false
-      const caught = typed.feed(data, term.buffer.active.type === 'normal', keyed)
+      const caught = typed.feed(data, term.buffer.active.type === 'normal')
       if (caught) {
         // Ctrl-U instead of Enter: the shell's input line is cleared, so the
         // command neither runs nor reaches history. The user sees their prompt

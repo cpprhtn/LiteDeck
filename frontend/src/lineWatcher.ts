@@ -1,38 +1,49 @@
 // Watching what is being typed into a terminal, so `code .` can be answered by
 // the app before it is sent anywhere (§4.6a).
 //
-// In its own module because the wiring around it is where the bug was, not the
-// matching: the first version fed it everything xterm produced, and xterm
-// produces more than keystrokes.
+// In its own module because the wiring around it is where the bugs were, not
+// the matching.
 
 /** The commands the app answers itself. `vim` is deliberately not among them. */
 const CAUGHT = /^\s*(code|vi)(?:\s+(.*))?$/
+
+/**
+ * Sequences the terminal sends *back* to the shell, answering questions the
+ * shell asked it. These arrive on the same channel as keystrokes and are not
+ * typing.
+ *
+ * The one that matters is the cursor position report: bash asks where the
+ * cursor is at every prompt, and xterm replies `\x1b[1;1R`. Reading that as a
+ * keypress is what stopped this from ever working.
+ *
+ * Recognised by shape rather than by asking xterm whether a key event was
+ * involved. That question has a different answer in a browser than in the
+ * webview the app actually ships in, and depending on it made the feature work
+ * everywhere it was tested and nowhere it was used. A reply always ends in one
+ * of these final bytes; no key on a keyboard produces them — arrows end in
+ * A–D, navigation keys in `~`, function keys in P–S.
+ */
+const TERMINAL_REPLY =
+  /^\x1b(?:\[[?>]?[0-9;]*[Rcnt]|P[^\x1b]*\x1b\\|\][^\x07]*\x07)$/
 
 export type CaughtCommand = { command: string; arg: string }
 
 /**
  * Reconstructs the line being typed, and claims it only when it is certain.
  *
- * Two things it must never do. It must not swallow a line the user meant to
- * run — so anything the shell interprets for itself (an arrow key recalling
- * history, a Tab completing a name) makes it give up on that line. And it must
- * not mistake the terminal's own traffic for typing: when a shell asks where
- * the cursor is, xterm answers `\x1b[1;1R` down the very same channel as
- * keystrokes, and reading that as "the user pressed something odd" made it
- * abandon every line. bash asks at every prompt, so `code .` never once worked.
+ * It must never swallow a line the user meant to run, so anything the shell
+ * interprets for itself — an arrow key recalling history, a Tab completing a
+ * name — makes it give up on that line and pass everything through. Missing an
+ * interception costs nothing; taking one wrongly costs the user their command.
  */
 export class LineWatcher {
   private buf = ''
   private blind = false
 
-  /**
-   * @param fromKeyboard false for anything xterm generated on its own — a
-   *   cursor-position report, a device-attributes reply. Those never reach the
-   *   shell's input line, so they say nothing about what is on it.
-   * @returns the command to handle, or null to send the input on as usual.
-   */
-  feed(data: string, atPrompt: boolean, fromKeyboard: boolean): CaughtCommand | null {
-    if (!fromKeyboard) return null
+  /** Returns the command to handle, or null to send the input on as usual. */
+  feed(data: string, atPrompt: boolean): CaughtCommand | null {
+    // Not typing: the terminal talking to the shell on its own account.
+    if (TERMINAL_REPLY.test(data)) return null
 
     if (data === '\r' || data === '\n') {
       const line = this.buf
@@ -48,8 +59,9 @@ export class LineWatcher {
       this.buf = this.buf.slice(0, -1)
       return null
     }
-    // Anything the shell will act on rather than insert. Escape sequences carry
-    // history and completion; C0 controls carry Ctrl-C, Ctrl-R and the rest.
+    // Anything else the shell will act on rather than insert. Escape sequences
+    // carry history and completion; C0 controls carry Ctrl-C, Ctrl-R and the
+    // rest. Any of them and this line is no longer ours to reconstruct.
     if (/[\x00-\x1f]/.test(data)) {
       this.blind = true
       return null
