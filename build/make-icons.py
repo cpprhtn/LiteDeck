@@ -209,22 +209,75 @@ def write_ico(path, master, src_size):
         f.write(header + entries + b"".join(d for _, d in images))
 
 
+def round_corners(rgba, size, radius_pct):
+    """Cut the canvas down to a rounded square, making everything outside it
+    transparent.
+
+    Icon generators — the AI ones especially — hand back an opaque square with the
+    rounded shape *painted on* in white. macOS does not mask an app icon for you:
+    it draws exactly the bitmap it is given, so a painted corner ships as a white
+    square sitting among the system's rounded ones.
+
+    The edge is antialiased from a signed distance rather than a hard test, or the
+    curve comes out as visible steps at 32px and below.
+    """
+    r = size * radius_pct / 100.0
+    half = size / 2.0
+    inner = half - r
+    out = bytearray(rgba)
+
+    for y in range(size):
+        dy = abs(y + 0.5 - half) - inner
+        for x in range(size):
+            dx = abs(x + 0.5 - half) - inner
+            if dx <= 0 and dy <= 0:
+                continue  # well inside; the common case, and the cheap one
+            qx, qy = max(dx, 0.0), max(dy, 0.0)
+            dist = (qx * qx + qy * qy) ** 0.5 - r
+            if dist <= -0.5:
+                continue
+            coverage = 0.0 if dist >= 0.5 else 0.5 - dist
+            i = (y * size + x) * 4 + 3
+            out[i] = int(out[i] * coverage)
+    return out
+
+
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
-    src = os.path.join(here, "appicon.png")
-    if not os.path.exists(src):
-        raise SystemExit(f"{src} not found")
+    appicon = os.path.join(here, "appicon.png")
 
-    size, rgba = read_png(src)
+    args = [a for a in sys.argv[1:]]
+    radius_pct = None
+    if "--round" in args:
+        i = args.index("--round")
+        args.pop(i)
+        radius_pct = float(args.pop(i)) if i < len(args) else 24.0
+
+    source = args[0] if args else appicon
+    if not os.path.exists(source):
+        raise SystemExit(f"{source} not found")
+
+    size, rgba = read_png(source)
     if size < 256:
         print(
-            f"warning: appicon.png is {size}x{size}; 1024x1024 is what Wails expects",
+            f"warning: {source} is {size}x{size}; 1024x1024 is what Wails expects",
             file=sys.stderr,
         )
+    print(f"source: {source} ({size}x{size})")
+
+    if radius_pct is not None:
+        rgba = round_corners(rgba, size, radius_pct)
+        print(f"        corners cut to a {radius_pct:g}% rounded square")
+
+    # Writing appicon.png is skipped when it *is* the source and nothing changed,
+    # so the plain form of this command stays a read-only conversion.
+    if source != appicon or radius_pct is not None:
+        with open(appicon, "wb") as f:
+            f.write(png_bytes(rgba, size))
+        print(f"wrote {appicon} ({os.path.getsize(appicon)} bytes)")
 
     out = os.path.join(here, "windows", "icon.ico")
     write_ico(out, rgba, size)
-    print(f"{src}: {size}x{size}")
     print(f"wrote {out} ({os.path.getsize(out)} bytes, sizes {', '.join(map(str, ICO_SIZES))})")
 
 

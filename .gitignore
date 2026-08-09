@@ -32,6 +32,9 @@ profile.out
 *.env.local
 /testdata/windows/id_*
 
+# Python (build/make-icons.py)
+__pycache__/
+
 # Editor / OS
 .DS_Store
 .idea/
