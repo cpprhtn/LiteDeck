@@ -150,16 +150,11 @@ export default function App() {
       setActiveID(id)
       const detected = await DetectHost(id)
       setInfo((prev) => ({ ...prev, [id]: detected }))
-      // Land on a tab the server can actually serve. On a host with no adapter
-      // every capability is false, and 'processes' would be a dead landing —
-      // files is the one that always works.
-      setTab(
-        detected.capabilities?.services
-          ? 'services'
-          : detected.capabilities?.processes
-            ? 'processes'
-            : 'files',
-      )
+      // Always the file tab. Landing on services was a guess at what somebody
+      // wants first; files is what they actually reach for, it works on every
+      // host including one no adapter can drive, and it is the one tab that
+      // never lands dead because SFTP comes from SSH itself.
+      setTab('files')
     } catch (e) {
       setError(String(e))
     } finally {
