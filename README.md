@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="docs/icon.png" width="128" alt="LiteDeck">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.png">
+    <img src="docs/logo.png" width="360" alt="LiteDeck">
+  </picture>
 </p>
 
 <h1 align="center">LiteDeck</h1>

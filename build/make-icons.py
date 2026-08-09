@@ -29,7 +29,11 @@ ICO_SIZES = (16, 24, 32, 48, 64, 128, 256)
 
 
 def read_png(path):
-    """Decode a PNG to (size, RGBA bytes). Square images only."""
+    """Decode a PNG to (width, height, RGBA bytes).
+
+    Non-square is allowed — the README logo is a wide banner. Callers that need a
+    square, such as the icon path, check for themselves.
+    """
     data = open(path, "rb").read()
     if data[:8] != b"\x89PNG\r\n\x1a\n":
         raise SystemExit(f"{path}: not a PNG")
@@ -56,8 +60,6 @@ def read_png(path):
             break
         i += 12 + length
 
-    if width != height:
-        raise SystemExit(f"{path}: {width}x{height} — the icon must be square")
     if depth != 8:
         raise SystemExit(
             f"{path}: {depth}-bit — re-export as 8 bits per channel"
@@ -102,7 +104,7 @@ def read_png(path):
         rows.append(bytes(line))
         prev = line
 
-    rgba = bytearray(width * width * 4)
+    rgba = bytearray(width * height * 4)
     for y, line in enumerate(rows):
         for x in range(width):
             o = (y * width + x) * 4
@@ -126,7 +128,7 @@ def read_png(path):
                 i4 = x * 4
                 rgba[o : o + 4] = line[i4 : i4 + 4]
 
-    return width, rgba
+    return width, height, rgba
 
 
 def resize(rgba, src, dst):
@@ -159,8 +161,10 @@ def resize(rgba, src, dst):
     return out
 
 
-def png_bytes(rgba, size):
+def png_bytes(rgba, width, height=None):
     """A complete PNG file: signature, IHDR, IDAT, IEND."""
+    if height is None:
+        height = width
 
     def chunk(tag, data):
         return (
@@ -171,14 +175,14 @@ def png_bytes(rgba, size):
         )
 
     raw = bytearray()
-    stride = size * 4
-    for y in range(size):
+    stride = width * 4
+    for y in range(height):
         raw.append(0)  # filter type 0 (None)
         raw += rgba[y * stride : (y + 1) * stride]
 
     return (
         b"\x89PNG\r\n\x1a\n"
-        + chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0))
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
         + chunk(b"IDAT", zlib.compress(bytes(raw), 9))
         + chunk(b"IEND", b"")
     )
@@ -257,7 +261,10 @@ def main():
     if not os.path.exists(source):
         raise SystemExit(f"{source} not found")
 
-    size, rgba = read_png(source)
+    width, height, rgba = read_png(source)
+    if width != height:
+        raise SystemExit(f"{source}: {width}x{height} — an app icon must be square")
+    size = width
     if size < 256:
         print(
             f"warning: {source} is {size}x{size}; 1024x1024 is what Wails expects",
