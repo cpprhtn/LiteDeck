@@ -277,7 +277,9 @@ func (a *App) RevealFromTerminal(termID, arg string) RevealRequest {
 		}
 		target = joinRemote(cwd, target)
 	}
-	return a.reveal(t.info.HostID, target)
+	// An absolute path skipped the join above and may still be spelled the way
+	// the shell writes it rather than the way SFTP reads it.
+	return a.reveal(t.info.HostID, toRemotePath(target))
 }
 
 // isAbsoluteRemote answers for the server's world, not this machine's.
@@ -295,14 +297,31 @@ func isAbsoluteRemote(p string, windows bool) bool {
 	return len(p) >= 3 && p[1] == ':' && (p[2] == '\\' || p[2] == '/')
 }
 
+// toRemotePath rewrites what a shell reports into the form SFTP uses.
+//
+// The two disagree on Windows. cmd.exe says `C:\Users\KTJ\Desktop`; the SFTP
+// server the same machine runs presents that directory as `/C:/Users/KTJ/
+// Desktop`. Same place, two spellings, and only the second one is a path the
+// rest of the app can open — everything downstream requires a leading slash.
+//
+// Idempotent: a path already in SFTP form has no drive letter in second
+// position and comes back unchanged.
+func toRemotePath(p string) string {
+	p = strings.ReplaceAll(p, `\`, "/")
+	if len(p) >= 2 && p[1] == ':' {
+		return "/" + p
+	}
+	return p
+}
+
 // joinRemote resolves a relative path against the shell's directory, leaving
 // the cleanup to CleanRemotePath so `..` is handled in exactly one place.
 func joinRemote(cwd, rel string) string {
-	if rel == "." {
+	cwd = toRemotePath(cwd)
+	if rel == "." || rel == "" {
 		return cwd
 	}
 	rel = strings.ReplaceAll(rel, `\`, "/")
-	cwd = strings.ReplaceAll(cwd, `\`, "/")
 	return strings.TrimSuffix(cwd, "/") + "/" + rel
 }
 

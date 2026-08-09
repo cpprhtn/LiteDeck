@@ -111,6 +111,48 @@ func TestAbsolutePathsAreJudgedByTheServersRules(t *testing.T) {
 	}
 }
 
+// cmd.exe and the SFTP server on the same Windows machine spell the same
+// directory differently. Verified against a real one: `sftp> pwd` there reports
+// /C:/Users/KTJ while cmd.exe reports C:\Users\KTJ.
+func TestWindowsPathsAreRewrittenForSFTP(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{`C:\Users\KTJ\Desktop`, "/C:/Users/KTJ/Desktop"},
+		{`C:/Users/KTJ`, "/C:/Users/KTJ"},
+		{`D:\`, "/D:/"},
+		// Already in SFTP form, and rewriting it twice must not double the slash.
+		{"/C:/Users/KTJ", "/C:/Users/KTJ"},
+		// POSIX paths are left exactly as they are.
+		{"/etc/nginx", "/etc/nginx"},
+		{"/home/litedeck", "/home/litedeck"},
+	} {
+		if got := toRemotePath(tc.in); got != tc.want {
+			t.Errorf("toRemotePath(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+		if again := toRemotePath(toRemotePath(tc.in)); again != tc.want {
+			t.Errorf("toRemotePath is not idempotent for %q: %q", tc.in, again)
+		}
+	}
+}
+
+func TestJoinRemoteAcrossPlatforms(t *testing.T) {
+	for _, tc := range []struct{ cwd, rel, want string }{
+		// `code .` on Windows: the whole answer is the working directory.
+		{`C:\Users\KTJ\Desktop`, ".", "/C:/Users/KTJ/Desktop"},
+		{`C:\Users\KTJ\Desktop`, "", "/C:/Users/KTJ/Desktop"},
+		// `vi test.md` there.
+		{`C:\Users\KTJ`, "test.md", "/C:/Users/KTJ/test.md"},
+		{`C:\Users\KTJ`, `docs\a.md`, "/C:/Users/KTJ/docs/a.md"},
+		// The POSIX side is unchanged.
+		{"/var/log", ".", "/var/log"},
+		{"/var/log", "syslog", "/var/log/syslog"},
+		{"/", "etc", "/etc"},
+	} {
+		if got := joinRemote(tc.cwd, tc.rel); got != tc.want {
+			t.Errorf("joinRemote(%q, %q) = %q, want %q", tc.cwd, tc.rel, got, tc.want)
+		}
+	}
+}
+
 func TestWindowsShellIsRecognised(t *testing.T) {
 	a := New()
 	a.detected.put("w", adapter.ServerInfo{Platform: adapter.PlatformWindows})
