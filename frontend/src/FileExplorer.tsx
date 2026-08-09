@@ -467,7 +467,7 @@ export function FileExplorer({
           삭제
         </button>
         {listing?.protected && (
-          <span className="badge warn" title="루트 직계 디렉터리 — 재귀 삭제 시 경로 입력이 필요합니다">
+          <span className="badge warn" title="루트 바로 아래 디렉터리 — 하위까지 지우려면 경로를 직접 입력해야 합니다">
             보호된 경로
           </span>
         )}

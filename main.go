@@ -65,7 +65,7 @@ func main() {
 				// The version is in the title rather than only in the bundle
 				// metadata so it is one ⌘-click away when someone is writing a
 				// bug report, instead of requiring Finder → Get Info.
-				Message: "SSH 하나로 원격 서버를 로컬 GUI에 사상합니다.",
+				Message: "SSH 하나로 원격 서버를 내 컴퓨터의 GUI에서 다룹니다.",
 			},
 		},
 	})

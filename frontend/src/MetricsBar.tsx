@@ -156,7 +156,7 @@ export function MetricsBar({ hostID }: { hostID: string }) {
         unit={m.cpu < 0 ? undefined : '%'}
         history={cpuHist}
         warn={m.cpu >= 85}
-        title={m.cpu < 0 ? '두 번째 표본을 기다리는 중 (누적 카운터라 한 번으로는 알 수 없음)' : undefined}
+        title={m.cpu < 0 ? '두 번째 샘플을 기다리는 중 — 누적 카운터라 한 번만으로는 알 수 없습니다' : undefined}
       />
       <Stat
         label="메모리"

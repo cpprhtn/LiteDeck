@@ -1,5 +1,7 @@
 # 기여 가이드
 
+한국어로 관리합니다. 영어 문서는 [README.en.md](README.en.md)에 있습니다.
+
 ## 시작하기
 
 ```bash
@@ -23,18 +25,24 @@ go test ./... -race     # 통합 포함 (Docker 필요, 1분 남짓)
 
 ## 가장 환영하는 기여: 새 어댑터
 
-**새 서버 OS 지원 = 어댑터 하나 구현**이 되도록 설계했습니다. 현재는 systemd 기반 Linux만 있고, 다음이 비어 있습니다:
+**새 서버 OS 지원 = 어댑터 하나 구현**이 되도록 설계했습니다. Windows 지원도 그렇게 붙었습니다.
+
+지금 있는 것:
+
+- **systemd 기반 Linux** — `internal/adapter/linuxsystemd/`
+- **Windows** — `internal/adapter/windowspowershell/` (전송 계층) + `internal/adapter/windows_*.go` (파서)
+
+비어 있는 것:
 
 - **Alpine / OpenRC** — `rc-service`, `rc-status`
 - **macOS 서버** — `launchctl`
 - **FreeBSD** — `service`
-- **Windows Server** — PowerShell (`Get-Service`)
 
-`internal/adapter/linuxsystemd/`를 본뜨면 됩니다. 필요한 것은 명령어 매핑 테이블과 출력 파서, 그리고 **그 배포판에서 실제로 캡처한 골든 파일**입니다.
+기존 어댑터 둘 중 가까운 쪽을 본뜨면 됩니다. 필요한 것은 명령어 매핑, 출력 파서, 그리고 **그 OS에서 실제로 캡처한 골든 파일**입니다. Windows 쪽은 `testdata/windows/capture.sh` 가 캡처와 익명화를 함께 해주니 참고하세요.
 
 ## 규칙 — 협상 불가
 
-이것들은 취향이 아니라 앞서 물린 자국입니다. 어긴 PR은 리뷰에서 반드시 걸립니다.
+취향 문제가 아니라 전부 한 번씩 실제로 겪은 것들입니다. 어긴 PR은 리뷰에서 반드시 걸립니다.
 
 ### 1. 명령은 argv로만
 

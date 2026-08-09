@@ -79,7 +79,7 @@ export function CommandLogPanel({
               setShowBackground((v) => !v)
             }}
           >
-            {showBackground ? '배경 조회 접기' : `배경 조회 ${background.length}건 보기`}
+            {showBackground ? '백그라운드 조회 접기' : `백그라운드 조회 ${background.length}건 보기`}
           </span>
         )}
         {open && (
@@ -102,7 +102,7 @@ export function CommandLogPanel({
             <div className="placeholder small">
               {entries.length === 0
                 ? 'GUI가 실행하는 모든 명령이 여기에 실시간으로 표시됩니다. 클릭하면 복사됩니다.'
-                : '아직 직접 실행한 명령이 없습니다 — 위에서 배경 조회를 펼쳐볼 수 있습니다.'}
+                : '아직 직접 실행한 명령이 없습니다 — 위에서 백그라운드 조회를 펼쳐볼 수 있습니다.'}
             </div>
           )}
           {shown.map((e) => (
