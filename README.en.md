@@ -32,7 +32,7 @@
 ---
 
 > [!NOTE]
-> **v0.1.4-beta** — verified on macOS and Windows clients, against a real Windows machine and Linux containers.
+> **v0.1.5-beta** — verified on macOS and Windows clients, against a real Windows machine and Linux containers.
 > It has not yet been run against real Linux hardware. Exactly what has and has not been checked is written down in
 > [What is and is not verified](#what-is-and-is-not-verified).
 > If you point this at a production server, try the irreversible actions — deleting files, killing processes — on a
@@ -245,7 +245,7 @@ go test ./... -race           # includes integration tests (needs Docker)
 
 Integration tests bring up real servers — `testdata/` holds sshd, systemd and Docker-in-Docker fixtures. Without Docker they skip rather than fail, so **if `-race` finishes in a few seconds the integration tests did not run** (with Docker up it takes about a minute).
 
-v0.1.4-beta was built with Go 1.26.5, Node 22.13.1, Wails 2.13.0, Docker 29.4.0 on macOS 26.5.2 arm64.
+v0.1.5-beta was built with Go 1.26.5, Node 22.13.1, Wails 2.13.0, Docker 29.4.0 on macOS 26.5.2 arm64.
 
 ## Contributing
 
