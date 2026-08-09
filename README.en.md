@@ -114,7 +114,7 @@ Grab a build from the [releases page](https://github.com/cpprhtn/LiteDeck/releas
 | File | For |
 |---|---|
 | `litedeck-macos.zip` | macOS — universal, Intel and Apple Silicon |
-| `litedeck.exe` | Windows 10/11 (amd64) — portable, no installer |
+| `litedeck-windows-amd64.zip` | Windows 10/11 (amd64) — unzip to a single `litedeck.exe`, no installer |
 | `litedeck-linux-amd64.tar.gz` | Linux (amd64) |
 
 > [!WARNING]
@@ -135,6 +135,10 @@ xattr -d com.apple.quarantine /Applications/litedeck.app
 > The commonly cited **right-click → Open** trick was removed by Apple in macOS 15. It still works on 14 and earlier.
 
 **Windows** — SmartScreen shows *Windows protected your PC*. Click **More info → Run anyway**. If WebView2 is missing you will be prompted to install it.
+
+**Defender may delete the file.** An unsigned new executable has no reputation, so it is sometimes quarantined on download with no prompt. That is the absence of a signature, not a detection — signing and notarisation cost money and early releases go out unsigned.
+
+If it disappears, **Windows Security → Virus & threat protection → Protection history** has the entry; **Actions → Allow** restores it. To pre-empt it, add the unzipped folder under **Manage settings → Add or remove exclusions**.
 
 **Linux** — nothing special; unpack and make it executable.
 

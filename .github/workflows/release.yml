@@ -108,6 +108,28 @@ jobs:
           zip -ry litedeck-macos.zip "${apps[0]}"
           rm -rf "${apps[0]}"
 
+      # Windows is the only platform that was uploading a bare executable, and a
+      # freshly built unsigned .exe with no reputation is exactly what Defender
+      # deletes the moment it lands in Downloads — before the user can even see
+      # a SmartScreen prompt. That happened on the first release someone tried.
+      #
+      # A zip does not make the binary trusted; it stops the *download* from
+      # being a bare PE, which is what triggers the automatic removal. Defender
+      # can still object when the extracted file runs, and the release notes say
+      # so rather than pretending this solves it.
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cd build/bin
+          if [ ! -f litedeck.exe ]; then
+            echo "::error::litedeck.exe not found in build/bin"
+            ls -la
+            exit 1
+          fi
+          7z a -tzip litedeck-windows-amd64.zip litedeck.exe
+          rm -f litedeck.exe
+
       - name: Package (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -201,9 +223,19 @@ jobs:
 
             ### Windows
 
-            `litedeck.exe` 를 그대로 실행합니다. 설치 관리자는 없습니다 — 받은
-            파일을 원하는 곳에 두고 쓰시고, 지울 때는 파일만 지우면 됩니다.
-            WebView2가 없으면 설치 프롬프트가 뜹니다.
+            `litedeck-windows-amd64.zip` 압축을 풀면 `litedeck.exe` 하나입니다.
+            설치 관리자는 없습니다 — 원하는 곳에 두고 쓰시고, 지울 때는 파일만
+            지우면 됩니다. WebView2가 없으면 설치 프롬프트가 뜹니다.
+
+            **Windows Defender가 파일을 삭제할 수 있습니다.** 서명되지 않은
+            새 실행 파일에는 평판 정보가 없어서, 다운로드 직후 경고 없이
+            격리되는 경우가 있습니다. 바이러스가 아니라 **서명이 없기
+            때문**이며, 서명·공증에는 비용이 들어 초기 릴리스는 미서명입니다.
+
+            지워졌다면 **Windows 보안 → 바이러스 및 위협 방지 → 보호 기록**
+            에서 해당 항목을 찾아 **작업 → 허용** 을 누르면 복원됩니다.
+            받기 전에 미리 막으려면 같은 화면의 **설정 관리 → 제외 항목 추가**
+            에 압축 푼 폴더를 등록하세요.
 
             SmartScreen 경고는 **추가 정보 → 실행** 으로 넘깁니다.
 

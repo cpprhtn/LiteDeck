@@ -110,7 +110,7 @@ $ powershell -EncodedCommand ⟨utf8 prelude⟩ Restart-Service -Name 'Spooler' 
 | 파일 | 대상 |
 |---|---|
 | `litedeck-macos.zip` | macOS — Intel·Apple Silicon 공용 |
-| `litedeck.exe` | Windows 10/11 (amd64) — 설치 없이 바로 실행 |
+| `litedeck-windows-amd64.zip` | Windows 10/11 (amd64) — 압축을 풀면 `litedeck.exe` 하나, 설치 없이 바로 실행 |
 | `litedeck-linux-amd64.tar.gz` | Linux (amd64) |
 
 > [!WARNING]
@@ -130,6 +130,10 @@ xattr -d com.apple.quarantine /Applications/litedeck.app
 > 흔히 안내되는 **우클릭 → 열기** 는 macOS 15부터 Apple이 없앴습니다. 14 이하에서만 통합니다.
 
 **Windows** — SmartScreen이 `Windows에서 PC를 보호했습니다` 를 띄웁니다. **추가 정보 → 실행** 을 누르면 됩니다. WebView2가 없으면 설치 안내가 나옵니다.
+
+**Defender가 파일을 지울 수 있습니다.** 서명되지 않은 새 실행 파일에는 평판 정보가 없어서, 다운로드 직후 경고 없이 격리되기도 합니다. 바이러스가 아니라 **서명이 없기 때문**이며, 서명·공증에는 비용이 들어 초기 릴리스는 미서명으로 배포합니다.
+
+지워졌다면 **Windows 보안 → 바이러스 및 위협 방지 → 보호 기록** 에서 해당 항목의 **작업 → 허용** 으로 복원할 수 있습니다. 미리 막으려면 같은 화면의 **설정 관리 → 제외 항목 추가** 에 압축 푼 폴더를 등록하세요.
 
 **Linux** — 별도 절차 없이 압축을 풀고 실행 권한만 주면 됩니다.
 
