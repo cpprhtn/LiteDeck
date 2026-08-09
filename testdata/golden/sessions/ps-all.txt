@@ -1,0 +1,16 @@
+      1       0 root                                 273 /lib/systemd/systemd
+     21       1 root                                 273 /lib/systemd/systemd-journald
+     35       1 root                                 273 /bin/sh -c while true; do sleep 30; done
+     39       1 root                                 273 sshd: /usr/sbin/sshd -D [listener] 0 of 10-100 startups
+     83       1 messagebus                           213 @dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+     85       1 root                                 213 /lib/systemd/systemd-logind
+    378      39 root                                   4 sshd: deploy [priv]
+    379      39 root                                   4 sshd: litedeck [priv]
+    400     379 litedeck                               4 sshd: litedeck@pts/0
+    401     378 deploy                                 4 sshd: deploy@pts/1
+    402     401 deploy                                 4 sleep 90
+    403     400 litedeck                               4 sleep 90
+    404      35 root                                   3 sleep 30
+    405      39 root                                   0 sshd: litedeck [priv]
+    416     405 litedeck                               0 sshd: litedeck@notty
+    417     416 litedeck                               0 ps -eo pid,ppid,user:32,etimes,args --no-headers

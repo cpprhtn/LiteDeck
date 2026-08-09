@@ -29,6 +29,7 @@ type App struct {
 	prompts   *promptBridge
 	log       *commandLog
 	detected  *detectCache
+	selves    *selfCache
 	transfers *transferQueue
 	terminals *terminalRegistry
 	cpu       *cpuHistory
@@ -54,6 +55,7 @@ func New() *App {
 	a.prompts = newPromptBridge(a)
 	a.log = newCommandLog(a)
 	a.detected = newDetectCache()
+	a.selves = newSelfCache()
 	a.transfers = newTransferQueue(a)
 	a.terminals = newTerminalRegistry(a)
 	a.cpu = newCPUHistory()

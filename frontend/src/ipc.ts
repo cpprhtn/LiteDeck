@@ -69,6 +69,20 @@ export interface ServerInfo {
   capabilities: Record<string, boolean>
 }
 
+export interface SSHSession {
+  pid: number
+  ppid: number
+  user: string
+  tty?: string
+  from?: string
+  elapsed: number
+  idle?: string
+  what?: string
+  /** True for the connection LiteDeck itself is using. The binding refuses to end
+   *  these regardless of what the UI does. */
+  self: boolean
+}
+
 export interface ServiceUnit {
   name: string
   description?: string
@@ -333,6 +347,8 @@ export interface ImportResult {
 /* --------------------------------------------------------------- bindings */
 
 interface Bindings {
+  ListSSHSessions(hostID: string): Promise<SSHSession[]>
+  EndSSHSession(hostID: string, pid: number): Promise<ActionResult>
   Bootstrap(): Promise<BootstrapData>
   Platform(): Promise<Platform>
   ColdStartMs(): Promise<number>
@@ -521,6 +537,8 @@ function api(): Bindings {
   return bound
 }
 
+export const ListSSHSessions = (h: string) => api().ListSSHSessions(h)
+export const EndSSHSession = (h: string, pid: number) => api().EndSSHSession(h, pid)
 export const Bootstrap = () => api().Bootstrap()
 export const GetPlatform = () => api().Platform()
 export const ColdStartMs = () => api().ColdStartMs()

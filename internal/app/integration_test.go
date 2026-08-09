@@ -37,6 +37,10 @@ const (
 var (
 	sysAddr string
 	sysSkip string
+	// sysContainer is the fixture's container id. Exposed so a test can create a
+	// login from outside LiteDeck — the session tests need one that is genuinely
+	// somebody else's, which cannot be made through the app's own connection.
+	sysContainer string
 )
 
 func TestMain(m *testing.M) {
@@ -106,6 +110,7 @@ func startSystemd() (func(), error) {
 		return nil, fmt.Errorf("docker run: %s", firstLine(out))
 	}
 	id := strings.TrimSpace(string(out))
+	sysContainer = id
 	stop := func() { _ = exec.Command("docker", "rm", "-f", id).Run() }
 
 	portOut, err := exec.Command("docker", "port", id, "22/tcp").Output()

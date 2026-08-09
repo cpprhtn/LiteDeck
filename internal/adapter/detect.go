@@ -105,6 +105,11 @@ const (
 	// the network tab was the one view with no gate at all and kept polling a
 	// host that could not answer.
 	CapNetwork Capability = "network"
+	// CapSessions needs ps, which every POSIX host has. Windows has SSH logins
+	// too, but sshd there does not produce the "sshd: user@pts/N" process the
+	// parser reads, so it stays off until something reads Get-CimInstance
+	// Win32_LogonSession instead.
+	CapSessions Capability = "sessions"
 )
 
 // Capabilities reports which tabs this server supports (§3.3).
@@ -121,6 +126,7 @@ func (i ServerInfo) Capabilities() map[Capability]bool {
 			CapContainers: false,
 			CapMetrics:    false,
 			CapNetwork:    false,
+			CapSessions:   false,
 		}
 	}
 	if i.Platform == PlatformWindows {
@@ -132,6 +138,7 @@ func (i ServerInfo) Capabilities() map[Capability]bool {
 			// parser applies unchanged when the binary is present.
 			CapContainers: i.HasDocker,
 			CapNetwork:    true, // Get-NetIPAddress, Get-NetAdapter, Get-Net{TCP,UDP}
+			CapSessions:   false,
 		}
 	}
 	return map[Capability]bool{
@@ -140,6 +147,7 @@ func (i ServerInfo) Capabilities() map[Capability]bool {
 		CapContainers: i.HasDocker || i.HasPodman,
 		CapMetrics:    true, // /proc, df
 		CapNetwork:    true, // iproute2; the tab degrades per-command if partial
+		CapSessions:   true, // ps; w/ss/loginctl only enrich
 	}
 }
 
