@@ -12,6 +12,7 @@ import {
   on,
   type TerminalInfo,
 } from './ipc'
+import { LineWatcher } from './lineWatcher'
 import { requestReveal } from './openFiles'
 
 // The built-in terminal (§4.6).
@@ -52,50 +53,6 @@ function themeFromTokens() {
     foreground: v('--fg', '#f5f5f7'),
     cursor: v('--accent', '#0a84ff'),
     selectionBackground: v('--bg-selected', '#0a84ff40'),
-  }
-}
-
-/** The commands the app answers itself. `vim` is deliberately not among them. */
-const CAUGHT = /^\s*(code|vi)(?:\s+(.*))?$/
-
-/**
- * Watches what is being typed, so a `code .` can be answered before it is sent.
- *
- * Only a line typed straight through counts. The moment anything arrives that
- * the shell interprets for itself — an arrow key recalling history, a Tab
- * completing a name, any control sequence — this stops claiming to know what
- * is on that line and passes everything through until the next Enter. That is
- * the difference between missing an interception, which costs nothing, and
- * swallowing a line the user meant to run, which is unforgivable.
- */
-class LineWatcher {
-  private buf = ''
-  private blind = false
-
-  /** Returns the command to handle, or null to send the input on as usual. */
-  feed(data: string, atPrompt: boolean): { command: string; arg: string } | null {
-    if (data === '\r' || data === '\n') {
-      const line = this.buf
-      const blind = this.blind
-      this.buf = ''
-      this.blind = false
-      if (blind || !atPrompt) return null
-      const m = CAUGHT.exec(line)
-      return m ? { command: m[1], arg: m[2] ?? '' } : null
-    }
-    // Backspace, the one edit that can be tracked exactly.
-    if (data === '\x7f' || data === '\b') {
-      this.buf = this.buf.slice(0, -1)
-      return null
-    }
-    // Anything the shell will act on rather than insert. Escape sequences carry
-    // history and completion; C0 controls carry Ctrl-C, Ctrl-R and the rest.
-    if (/[\x00-\x1f]/.test(data)) {
-      this.blind = true
-      return null
-    }
-    this.buf += data
-    return null
   }
 }
 
@@ -156,8 +113,19 @@ function TerminalPane({
     // shadowed, and there is no version of this that opens an editor on the
     // server by accident.
     const typed = new LineWatcher()
+    // xterm answers the shell's own questions down this same channel — ask it
+    // where the cursor is and it replies `\x1b[1;1R` here, indistinguishable
+    // from a keystroke unless you ask. bash asks at every prompt, and taking
+    // that reply for a keypress is what stopped `code .` from ever working.
+    let fromKeyboard = false
+    term.attachCustomKeyEventHandler((ev) => {
+      if (ev.type === 'keydown' || ev.type === 'keypress') fromKeyboard = true
+      return true
+    })
     const disposeInput = term.onData((data) => {
-      const caught = typed.feed(data, term.buffer.active.type === 'normal')
+      const keyed = fromKeyboard
+      fromKeyboard = false
+      const caught = typed.feed(data, term.buffer.active.type === 'normal', keyed)
       if (caught) {
         // Ctrl-U instead of Enter: the shell's input line is cleared, so the
         // command neither runs nor reaches history. The user sees their prompt
