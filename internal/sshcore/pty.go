@@ -244,7 +244,11 @@ func (p *PTYSession) CurrentDir(ctx context.Context) (string, error) {
 		p.mu.Unlock()
 	}
 
-	if _, err := p.stdin.Write([]byte(spec.command + "\n")); err != nil {
+	// Carriage return, not newline. A terminal sends \r when Enter is pressed, and
+	// cmd.exe submits on nothing else — given \n it appends the next thing sent to
+	// the same line and runs them together. A POSIX pty maps \r to \n on input, so
+	// this is what both shells accept.
+	if _, err := p.stdin.Write([]byte(spec.command + "\r")); err != nil {
 		stop()
 		return "", fmt.Errorf("sshcore: ask terminal for its directory: %w", err)
 	}
