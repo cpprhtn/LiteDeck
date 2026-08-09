@@ -26,7 +26,13 @@ const CAUGHT = /^\s*(code|vi)(?:\s+(.*))?$/
 const TERMINAL_REPLY =
   /^\x1b(?:\[[?>]?[0-9;]*[Rcnt]|P[^\x1b]*\x1b\\|\][^\x07]*\x07)$/
 
-export type CaughtCommand = { command: string; arg: string }
+export type CaughtCommand = {
+  command: string
+  arg: string
+  /** Exactly what was on the input line, so it can be erased character by
+   *  character. Cancelling it needs the count, not the text. */
+  line: string
+}
 
 /**
  * Reconstructs the line being typed, and claims it only when it is certain.
@@ -52,7 +58,7 @@ export class LineWatcher {
       this.blind = false
       if (blind || !atPrompt) return null
       const m = CAUGHT.exec(line)
-      return m ? { command: m[1], arg: m[2] ?? '' } : null
+      return m ? { command: m[1], arg: m[2] ?? '', line } : null
     }
     // Backspace, the one edit that can be tracked exactly.
     if (data === '\x7f' || data === '\b') {

@@ -116,10 +116,20 @@ function TerminalPane({
     const disposeInput = term.onData((data) => {
       const caught = typed.feed(data, term.buffer.active.type === 'normal')
       if (caught) {
-        // Ctrl-U instead of Enter: the shell's input line is cleared, so the
+        // Erase the line a character at a time instead of sending Enter, so the
         // command neither runs nor reaches history. The user sees their prompt
         // come back, which is what "the app handled it" should look like.
-        void WriteTerminal(info.id, b64encode('\x15')).catch(() => {})
+        //
+        // Backspace rather than Ctrl-U: readline understands both, but cmd.exe
+        // takes Ctrl-U as a literal ^U, leaves the line intact, and runs it —
+        // which turned `code .` on a Windows server into `code .^U` plus
+        // whatever was sent next. Verified against a real cmd.exe and a real
+        // POSIX shell; backspace is the only thing both agree on.
+        //
+        // Counted in code points: an emoji is two UTF-16 units and one
+        // backspace.
+        const erase = '\b'.repeat([...caught.line].length)
+        void WriteTerminal(info.id, b64encode(erase)).catch(() => {})
         command.current(caught.command, caught.arg)
         return
       }
