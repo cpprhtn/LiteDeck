@@ -14,6 +14,7 @@ import {
 } from './ipc'
 import { LineWatcher } from './lineWatcher'
 import { requestReveal } from './openFiles'
+import { t } from './i18n'
 
 // The built-in terminal (§4.6).
 //
@@ -101,7 +102,7 @@ function TerminalPane({
       term.write(b64decode(chunk)),
     )
     const offExit = on<string>(`term:exit:${info.id}`, (msg) => {
-      term.write(`\r\n\x1b[2m— 세션 종료${msg ? `: ${msg}` : ''} —\x1b[0m\r\n`)
+      term.write(`\r\n\x1b[2m— ${t('세션 종료')}${msg ? `: ${msg}` : ''} —\x1b[0m\r\n`)
       onClosed()
     })
 
@@ -292,19 +293,18 @@ export function TerminalView({
               </span>
             </button>
           ))}
-          <button className="ghost" onClick={() => void openTab()} title="새 터미널">
+          <button className="ghost" onClick={() => void openTab()} title={t('새 터미널')}>
             +
           </button>
         </div>
         <span className="spacer" />
         <span className="muted small">
-          GUI가 표현하지 못하는 일을 위한 탭입니다 — 실행한 명령은 아래 Command Log에
-          남습니다
+          {t('GUI가 표현하지 못하는 일을 위한 탭입니다 — 실행한 명령은 아래 Command Log에 남습니다')}
         </span>
       </div>
 
       <div className="term-stack">
-        {tabs.length === 0 && <div className="placeholder">터미널을 여는 중…</div>}
+        {tabs.length === 0 && <div className="placeholder">{t('터미널을 여는 중…')}</div>}
         {tabs.map((t) => (
           <div key={t.id} className="term-slot" data-active={t.id === active || undefined}>
             <TerminalPane

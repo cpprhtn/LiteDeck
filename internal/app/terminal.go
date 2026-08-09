@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
+	"github.com/cpprhtn/LiteDeck/internal/i18n"
 	"github.com/cpprhtn/LiteDeck/internal/sshcore"
 )
 
@@ -261,7 +262,7 @@ func (a *App) RevealFromTerminal(termID, arg string) RevealRequest {
 	t, ok := a.terminals.all[termID]
 	a.terminals.mu.Unlock()
 	if !ok {
-		return RevealRequest{Error: "이 터미널은 더 이상 열려 있지 않습니다"}
+		return RevealRequest{Error: i18n.S("이 터미널은 더 이상 열려 있지 않습니다")}
 	}
 
 	target := strings.TrimSpace(arg)
@@ -371,7 +372,7 @@ func (a *App) reveal(hostID, p string) RevealRequest {
 		out.New = true
 		return out
 	}
-	out.Error = fmt.Sprintf("%s 를 찾을 수 없습니다", cleaned)
+	out.Error = i18n.T("%s 를 찾을 수 없습니다", cleaned)
 	return out
 }
 

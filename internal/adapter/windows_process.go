@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter/windowspowershell"
+	"github.com/cpprhtn/LiteDeck/internal/i18n"
 )
 
 // WindowsProcessScript collects all three tables in one round trip and tags each
@@ -226,7 +227,7 @@ func WindowsKillScript(pid int, force bool) (string, error) {
 	// The System process and the Idle process cannot be stopped, and asking takes
 	// a machine down in the same class of way as signalling PID 1 does on Linux.
 	if pid == 0 || pid == 4 {
-		return "", fmt.Errorf("PID %d은 Windows 커널 프로세스입니다 — 종료할 수 없습니다", pid)
+		return "", i18n.Errorf("PID %d은 Windows 커널 프로세스입니다 — 종료할 수 없습니다", pid)
 	}
 	s := "Stop-Process -Id " + strconv.Itoa(pid)
 	if force {

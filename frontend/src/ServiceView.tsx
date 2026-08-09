@@ -11,6 +11,7 @@ import {
   type LogStream,
   type ServiceUnit,
 } from './ipc'
+import { t, k } from './i18n'
 
 // The service view (§4.3). Rows come from two systemctl commands merged into
 // one table, so a unit that is installed but disabled still appears — enabling
@@ -25,10 +26,10 @@ const POLL_MS = 5000
 type Filter = 'all' | 'failed' | 'active'
 
 const ACTIONS = [
-  { verb: 'start', label: '시작' },
-  { verb: 'stop', label: '중지' },
-  { verb: 'restart', label: '재시작' },
-  { verb: 'reload', label: '리로드' },
+  { verb: 'start', label: k('시작') },
+  { verb: 'stop', label: k('중지') },
+  { verb: 'restart', label: k('재시작') },
+  { verb: 'reload', label: k('리로드') },
   { verb: 'enable', label: 'enable' },
   { verb: 'disable', label: 'disable' },
 ] as const
@@ -93,9 +94,9 @@ export function ServiceView({
       const res = await ServiceAction(hostID, unit, verb, elevate)
       if (!res.ok) {
         if (res.needsElevation) {
-          setNeedsRoot({ unit, verb, message: res.error ?? '권한이 필요합니다' })
+          setNeedsRoot({ unit, verb, message: res.error ?? t('권한이 필요합니다') })
         } else {
-          onError(res.error ?? '실패했습니다')
+          onError(res.error ?? t('실패했습니다'))
         }
         return
       }
@@ -154,8 +155,8 @@ export function ServiceView({
       <div className="view">
         <div className="view-toolbar">
           <div className="segmented">
-            <button onClick={() => setPane('services')}>서비스</button>
-            <button data-on>타이머</button>
+            <button onClick={() => setPane('services')}>{t('서비스')}</button>
+            <button data-on>{t('타이머')}</button>
           </div>
         </div>
         <TimersView hostID={hostID} visible onError={onError} />
@@ -167,15 +168,15 @@ export function ServiceView({
     <div className="view">
       <div className="view-toolbar">
         <div className="segmented">
-          <button data-on>서비스</button>
-          <button onClick={() => setPane('timers')}>타이머</button>
+          <button data-on>{t('서비스')}</button>
+          <button onClick={() => setPane('timers')}>{t('타이머')}</button>
         </div>
         <div className="segmented">
           <button data-on={filter === 'all' || undefined} onClick={() => setFilter('all')}>
-            전체 {units.length}
+            {t('전체 {n}', { n: units.length })}
           </button>
           <button data-on={filter === 'active' || undefined} onClick={() => setFilter('active')}>
-            실행 중
+            {t('실행 중')}
           </button>
           <button
             data-on={filter === 'failed' || undefined}
@@ -187,12 +188,12 @@ export function ServiceView({
         </div>
         <input
           className="search"
-          placeholder="이름 · 설명 검색"
+          placeholder={t('이름 · 설명 검색')}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
         <button className="ghost" onClick={() => void refresh()}>
-          새로고침
+          {t('새로고침')}
         </button>
       </div>
 
@@ -206,9 +207,9 @@ export function ServiceView({
         </div>
 
         <div className="tbody" ref={scrollRef}>
-          {loading && <div className="placeholder">서비스 목록을 읽는 중…</div>}
+          {loading && <div className="placeholder">{t('서비스 목록을 읽는 중…')}</div>}
           {!loading && rows.length === 0 && (
-            <div className="placeholder">조건에 맞는 유닛이 없습니다.</div>
+            <div className="placeholder">{t('조건에 맞는 유닛이 없습니다.')}</div>
           )}
           <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
             {virtualizer.getVirtualItems().map((item) => {
@@ -251,10 +252,10 @@ export function ServiceView({
             className="primary small-btn"
             onClick={() => void openLog(logNeedsRoot.unit, true)}
           >
-            관리자 권한으로 보기
+            {t('관리자 권한으로 보기')}
           </button>
           <button className="ghost small-btn" onClick={() => setLogNeedsRoot(null)}>
-            취소
+            {t('취소')}
           </button>
         </div>
       )}
@@ -266,12 +267,12 @@ export function ServiceView({
           <div className="detail-head">
             <span className="mono">{chosen.name}</span>
             <button className="ghost small-btn" onClick={() => setSelected(null)}>
-              닫기
+              {t('닫기')}
             </button>
           </div>
           <div className="detail-actions">
             <button disabled={chosen.template} onClick={() => void openLog(chosen.name, false)}>
-              로그 보기
+              {t('로그 보기')}
             </button>
             {ACTIONS.map((a) => (
               <button
@@ -279,13 +280,13 @@ export function ServiceView({
                 disabled={pending === chosen.name || chosen.template}
                 onClick={() => void act(chosen.name, a.verb)}
               >
-                {a.label}
+                {t(a.label)}
               </button>
             ))}
           </div>
           {chosen.template && (
             <p className="muted small">
-              템플릿 유닛은 직접 실행할 수 없습니다 — 인스턴스만 가능합니다.
+              {t('템플릿 유닛은 직접 실행할 수 없습니다 — 인스턴스만 가능합니다.')}
             </p>
           )}
 
@@ -297,10 +298,10 @@ export function ServiceView({
                 disabled={pending === chosen.name}
                 onClick={() => void act(needsRoot.unit, needsRoot.verb, true)}
               >
-                관리자 권한으로 재시도
+                {t('관리자 권한으로 재시도')}
               </button>
               <button className="ghost small-btn" onClick={() => setNeedsRoot(null)}>
-                취소
+                {t('취소')}
               </button>
             </div>
           )}

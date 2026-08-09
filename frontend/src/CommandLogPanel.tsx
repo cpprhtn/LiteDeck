@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ClearCommandLog, GetCommandLog, on, type CommandEntry } from './ipc'
+import { t } from './i18n'
 
 // The Command Log (§4.6) — every command the GUI ran, as it ran, copyable.
 //
@@ -68,8 +69,8 @@ export function CommandLogPanel({
       <button className="cmdlog-head" onClick={onToggle}>
         <span className="chevron">{open ? '▾' : '▸'}</span>
         <strong>Command Log</strong>
-        <span className="muted small">{shown.length}건</span>
-        {failures > 0 && <span className="badge danger">{failures} 실패</span>}
+        <span className="muted small">{t('{n}건', { n: shown.length })}</span>
+        {failures > 0 && <span className="badge danger">{t('{n} 실패', { n: failures })}</span>}
         <span className="spacer" />
         {open && background.length > 0 && (
           <span
@@ -79,7 +80,9 @@ export function CommandLogPanel({
               setShowBackground((v) => !v)
             }}
           >
-            {showBackground ? '백그라운드 조회 접기' : `백그라운드 조회 ${background.length}건 보기`}
+            {showBackground
+              ? t('백그라운드 조회 접기')
+              : t('백그라운드 조회 {n}건 보기', { n: background.length })}
           </span>
         )}
         {open && (
@@ -91,7 +94,7 @@ export function CommandLogPanel({
               setEntries([])
             }}
           >
-            지우기
+            {t('지우기')}
           </span>
         )}
       </button>
@@ -101,8 +104,8 @@ export function CommandLogPanel({
           {shown.length === 0 && (
             <div className="placeholder small">
               {entries.length === 0
-                ? 'GUI가 실행하는 모든 명령이 여기에 실시간으로 표시됩니다. 클릭하면 복사됩니다.'
-                : '아직 직접 실행한 명령이 없습니다 — 위에서 백그라운드 조회를 펼쳐볼 수 있습니다.'}
+                ? t('GUI가 실행하는 모든 명령이 여기에 실시간으로 표시됩니다. 클릭하면 복사됩니다.')
+                : t('아직 직접 실행한 명령이 없습니다 — 위에서 백그라운드 조회를 펼쳐볼 수 있습니다.')}
             </div>
           )}
           {shown.map((e) => (
@@ -112,7 +115,7 @@ export function CommandLogPanel({
               data-status={e.status}
               data-kind={e.kind || undefined}
               onClick={() => void copy(e)}
-              title="클릭해서 복사"
+              title={t('클릭해서 복사')}
             >
               <span className="cmdlog-marker">$</span>
               {/* Newlines shown as ⏎ rather than collapsed to whitespace by the
@@ -124,19 +127,19 @@ export function CommandLogPanel({
               <span className="mono cmdlog-line">
                 {e.line.split('\n').map((part, i) => (
                   <span key={i}>
-                    {i > 0 && <span className="cmdlog-nl" title="줄바꿈">⏎ </span>}
+                    {i > 0 && <span className="cmdlog-nl" title={t('줄바꿈')}>⏎ </span>}
                     {part}
                   </span>
                 ))}
               </span>
               <span className="cmdlog-meta muted">
-                {e.status === 'running' && '실행 중'}
+                {e.status === 'running' && t('실행 중')}
                 {e.status === 'ok' && `${e.durationMs}ms`}
-                {e.status === 'probe' && `없음 (exit ${e.exitCode})`}
+                {e.status === 'probe' && t('없음 (exit {code})', { code: e.exitCode })}
                 {e.status === 'failed' && `exit ${e.exitCode}`}
-                {e.status === 'error' && '오류'}
+                {e.status === 'error' && t('오류')}
               </span>
-              {copied === e.seq && <span className="badge">복사됨</span>}
+              {copied === e.seq && <span className="badge">{t('복사됨')}</span>}
               {e.stderr && e.status !== 'probe' && (
                 <div className="cmdlog-stderr mono">{e.stderr}</div>
               )}

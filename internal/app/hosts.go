@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/cpprhtn/LiteDeck/internal/config"
+	"github.com/cpprhtn/LiteDeck/internal/i18n"
 	"github.com/cpprhtn/LiteDeck/internal/secret"
 	"github.com/cpprhtn/LiteDeck/internal/sshcore"
 	"golang.org/x/crypto/ssh"
@@ -181,7 +182,7 @@ func (a *App) authMethods(h config.Host) ([]ssh.AuthMethod, error) {
 			am, err := sshcore.PublicKeyFile(
 				h.IdentityFile,
 				a.prompts.secretFunc(h.ID, secret.KindPassphrase,
-					fmt.Sprintf("%s 의 패스프레이즈", h.IdentityFile)),
+					i18n.T("%s 의 패스프레이즈", h.IdentityFile)),
 			)
 			if err != nil {
 				return nil, err
@@ -191,7 +192,7 @@ func (a *App) authMethods(h config.Host) ([]ssh.AuthMethod, error) {
 		case config.AuthPassword:
 			methods = append(methods, sshcore.Password(
 				a.prompts.secretFunc(h.ID, secret.KindPassword,
-					fmt.Sprintf("%s@%s 비밀번호", h.User, h.Hostname)),
+					i18n.T("%s@%s 비밀번호", h.User, h.Hostname)),
 			))
 		}
 	}
@@ -215,9 +216,9 @@ func (a *App) explainConnectError(h config.Host, err error) error {
 	case errors.As(err, &mismatch):
 		return err // already the full-screen warning case
 	case errors.Is(err, sshcore.ErrHostKeyRejected):
-		return fmt.Errorf("%s: 호스트 키를 신뢰하지 않아 연결을 중단했습니다", h.Label())
+		return i18n.Errorf("%s: 호스트 키를 신뢰하지 않아 연결을 중단했습니다", h.Label())
 	case errors.Is(err, ErrPromptCancelled):
-		return fmt.Errorf("%s: 사용자가 연결을 취소했습니다", h.Label())
+		return i18n.Errorf("%s: 사용자가 연결을 취소했습니다", h.Label())
 	default:
 		return fmt.Errorf("%s (%s): %w", h.Label(), h.Addr(), err)
 	}
@@ -237,4 +238,34 @@ func (a *App) ForgetSecrets(hostID string) error {
 		}
 	}
 	return firstErr
+}
+
+// SetLanguage records the user's UI language and applies it to the messages Go
+// produces from here on (§8).
+//
+// An empty tag means "follow the OS", which is how somebody undoes a choice.
+// The frontend resolves that, because the webview is the thing that knows the
+// UI language the user actually sees.
+// ApplyLanguage sets the language Go answers in, without recording a choice.
+//
+// The stored preference can be empty, meaning "follow the OS", and only the
+// webview knows what that resolves to — `navigator.language` is the UI language
+// the user actually sees, where the process environment on macOS is routinely
+// unset. So the frontend resolves it and tells Go the answer at boot. That is a
+// resolution rather than a preference: writing it to settings.json would freeze
+// it, and somebody who never picked a language would carry English with them to
+// a Korean machine.
+func (a *App) ApplyLanguage(tag string) {
+	i18n.SetLanguage(i18n.Parse(tag))
+}
+
+func (a *App) SetLanguage(tag string) ActionResult {
+	i18n.SetLanguage(i18n.Parse(tag))
+	if a.settings == nil {
+		return okResult()
+	}
+	if err := a.settings.SetLanguage(tag); err != nil {
+		return failResult(err)
+	}
+	return okResult()
 }

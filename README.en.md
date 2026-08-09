@@ -81,6 +81,7 @@ All the server does is **run commands it already had and hand back text**. Which
 | **Terminal** | xterm.js PTY, multiple tabs. `code .` and `vi foo.conf` are **caught by the app** and open in the file tab — never sent to the server, so neither VS Code nor vi needs to exist there |
 | **Monitoring** | CPU, memory, disk summary bar with sparklines |
 | **Command Log** | **Every command the GUI runs, live.** Click to copy |
+| **Language** | English and Korean. Follows your OS on first run; switch with `KO`/`EN` at the bottom of the sidebar |
 
 ### Command Log — learn the CLI from the GUI
 

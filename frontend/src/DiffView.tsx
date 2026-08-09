@@ -4,6 +4,7 @@ import { Compartment, EditorState, type Extension } from '@codemirror/state'
 import { EditorView, lineNumbers } from '@codemirror/view'
 import { detectLanguage } from './editorLanguage'
 import { editorTheme } from './editorTheme'
+import { t } from './i18n'
 
 // What this save is about to change (§4.7-3).
 //
@@ -74,10 +75,10 @@ export function DiffView({
     <>
       <div className="diff-head muted small">
         {changes === 0
-          ? '바뀐 내용이 없습니다.'
+          ? t('바뀐 내용이 없습니다.')
           : changes === null
             ? ''
-            : `${changes}곳이 바뀝니다 — 왼쪽이 서버, 오른쪽이 저장할 내용입니다.`}
+            : t('{n}곳이 바뀝니다 — 왼쪽이 서버, 오른쪽이 저장할 내용입니다.', { n: changes })}
       </div>
       <div className="diff-host" ref={host} />
     </>

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
+	"github.com/cpprhtn/LiteDeck/internal/i18n"
 	"github.com/cpprhtn/LiteDeck/internal/sshcore"
 )
 
@@ -28,7 +29,7 @@ func (a *App) HostNetwork(hostID string) (NetworkView, error) {
 	// Gated on the capability: the network view was the one that had no check at
 	// all, so opening the tab on Windows ran `ip -j addr` and `ss -tulnp` against
 	// cmd.exe on a timer and filled the log with console-codepage errors.
-	info, err := a.requireCapability(hostID, adapter.CapNetwork, "네트워크 정보")
+	info, err := a.requireCapability(hostID, adapter.CapNetwork, i18n.S("네트워크 정보"))
 	if err != nil {
 		return NetworkView{}, err
 	}
@@ -68,7 +69,7 @@ func (a *App) HostNetwork(hostID string) (NetworkView, error) {
 		out.Warnings = append(out.Warnings, "ip addr: "+err.Error())
 	} else if !res.OK() {
 		out.Warnings = append(out.Warnings,
-			"`ip` 명령을 실행하지 못했습니다 — iproute2가 설치되어 있지 않을 수 있습니다")
+			i18n.S("`ip` 명령을 실행하지 못했습니다 — iproute2가 설치되어 있지 않을 수 있습니다"))
 	} else if ifaces, perr := adapter.ParseInterfaces(res.Stdout); perr != nil {
 		out.Warnings = append(out.Warnings, perr.Error())
 	} else {
@@ -79,7 +80,7 @@ func (a *App) HostNetwork(hostID string) (NetworkView, error) {
 		out.Warnings = append(out.Warnings, "ss: "+err.Error())
 	} else if !res.OK() && len(res.Stdout) == 0 {
 		out.Warnings = append(out.Warnings,
-			"`ss` 명령을 실행하지 못했습니다 — iproute2가 설치되어 있지 않을 수 있습니다")
+			i18n.S("`ss` 명령을 실행하지 못했습니다 — iproute2가 설치되어 있지 않을 수 있습니다"))
 	} else if ls, perr := adapter.ParseListeners(res.Stdout); perr != nil {
 		out.Warnings = append(out.Warnings, perr.Error())
 	} else {
@@ -94,7 +95,7 @@ func (a *App) HostNetwork(hostID string) (NetworkView, error) {
 		}
 		if len(ls) > 0 && named == 0 {
 			out.Warnings = append(out.Warnings,
-				"프로세스 이름을 볼 수 없습니다 — 다른 사용자의 소켓은 관리자 권한이 필요합니다")
+				i18n.S("프로세스 이름을 볼 수 없습니다 — 다른 사용자의 소켓은 관리자 권한이 필요합니다"))
 		}
 	}
 

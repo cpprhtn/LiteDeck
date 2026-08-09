@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/cpprhtn/LiteDeck/internal/i18n"
 	"github.com/pkg/sftp"
 )
 
@@ -217,7 +218,7 @@ func (a *App) RenamePath(hostID, from, to string) ActionResult {
 		return okResult()
 	}
 	if IsProtectedPath(src) {
-		return failResult(fmt.Errorf("%s 는 보호된 경로입니다 — 이름을 바꿀 수 없습니다", src))
+		return failResult(i18n.Errorf("%s 는 보호된 경로입니다 — 이름을 바꿀 수 없습니다", src))
 	}
 	client, err := a.mgr.SFTP(hostID)
 	if err != nil {
@@ -226,7 +227,7 @@ func (a *App) RenamePath(hostID, from, to string) ActionResult {
 
 	// Overwriting silently is how a rename becomes data loss.
 	if _, err := client.Lstat(dst); err == nil {
-		return failResult(fmt.Errorf("%s 가 이미 있습니다", dst))
+		return failResult(i18n.Errorf("%s 가 이미 있습니다", dst))
 	}
 
 	// PosixRename is the atomic form, but it is an OpenSSH extension that older
@@ -465,7 +466,7 @@ func (a *App) SaveTextFile(hostID string, req SaveRequest) SaveResult {
 		if req.BaseModTime != 0 && !req.Force {
 			return SaveResult{
 				Conflict:     true,
-				ActionResult: ActionResult{Error: fmt.Sprintf("%s 가 서버에서 사라졌습니다", cleaned)},
+				ActionResult: ActionResult{Error: i18n.T("%s 가 서버에서 사라졌습니다", cleaned)},
 			}
 		}
 	default:
@@ -512,14 +513,14 @@ func checkBase(req SaveRequest, fi os.FileInfo) (SaveResult, bool) {
 		ModTime:  fi.ModTime().Unix(),
 		Size:     fi.Size(),
 		ActionResult: ActionResult{
-			Error: "이 파일은 연 뒤에 서버에서 바뀌었습니다 — 지금 저장하면 그 변경이 사라집니다",
+			Error: i18n.S("이 파일은 연 뒤에 서버에서 바뀌었습니다 — 지금 저장하면 그 변경이 사라집니다"),
 		},
 	}, true
 }
 
 // errCannotStage means the atomic path is unavailable for this file, which is
 // a reason to fall back rather than to fail.
-var errCannotStage = errors.New("app: 임시 파일을 만들 수 없습니다")
+var errCannotStage = errors.New(i18n.S("app: 임시 파일을 만들 수 없습니다"))
 
 // stageSeq names staged files. Seeded from the clock so a temp file orphaned by
 // an earlier run of the app does not collide with this one's first save.
@@ -559,7 +560,7 @@ func stageAndRename(
 				(mine.UID != owner.UID || mine.GID != owner.GID) {
 				if err := client.Chown(tmp, int(owner.UID), int(owner.GID)); err != nil {
 					discard()
-					return fmt.Errorf("%w: 소유자를 유지할 수 없습니다 (%v)", errCannotStage, err)
+					return i18n.Errorf("%w: 소유자를 유지할 수 없습니다 (%v)", errCannotStage, err)
 				}
 			}
 		}
@@ -567,7 +568,7 @@ func stageAndRename(
 
 	if err := client.Chmod(tmp, perm); err != nil {
 		discard()
-		return fmt.Errorf("%w: 권한을 옮길 수 없습니다 (%v)", errCannotStage, err)
+		return i18n.Errorf("%w: 권한을 옮길 수 없습니다 (%v)", errCannotStage, err)
 	}
 
 	// PosixRename replaces the target in one step. It is an OpenSSH extension,
@@ -589,7 +590,7 @@ func stageAndRename(
 	if err := client.Rename(tmp, target); err != nil {
 		// tmp is deliberately left behind: it holds the complete new content,
 		// and it is now the only copy.
-		return fmt.Errorf("%v — 새 내용은 %s 에 남아 있습니다", err, tmp)
+		return i18n.Errorf("%v — 새 내용은 %s 에 남아 있습니다", err, tmp)
 	}
 	return nil
 }
@@ -647,7 +648,7 @@ func (a *App) fileFailure(hostID, p string, err error) ActionResult {
 	out := ActionResult{Error: fmt.Sprintf("%s: %v", p, err)}
 	if errors.Is(err, os.ErrPermission) || strings.Contains(strings.ToLower(err.Error()), "permission denied") {
 		out.NeedsElevation = true
-		out.Error = fmt.Sprintf("%s: 권한이 없습니다 — 관리자 권한으로 다시 시도할 수 있습니다", p)
+		out.Error = i18n.T("%s: 권한이 없습니다 — 관리자 권한으로 다시 시도할 수 있습니다", p)
 	}
 	return out
 }

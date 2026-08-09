@@ -8,6 +8,7 @@ import {
   Renice,
   type ProcessInfo,
 } from './ipc'
+import { t } from './i18n'
 
 // The process view (§4.4): a task-manager table over a remote host.
 //
@@ -82,9 +83,9 @@ export function ProcessView({
       const res = await fn()
       if (!res.ok) {
         if (res.needsElevation) {
-          setNeedsRoot({ retry, message: res.error ?? '권한이 필요합니다' })
+          setNeedsRoot({ retry, message: res.error ?? t('권한이 필요합니다') })
         } else {
-          onError(res.error ?? '실패했습니다')
+          onError(res.error ?? t('실패했습니다'))
         }
         return false
       }
@@ -186,21 +187,21 @@ export function ProcessView({
       <div className="view-toolbar">
         <div className="segmented">
           <button data-on={!asTree || undefined} onClick={() => setAsTree(false)}>
-            목록 {procs.length}
+            {t('목록 {n}', { n: procs.length })}
           </button>
           <button data-on={asTree || undefined} onClick={() => setAsTree(true)}>
-            트리
+            {t('트리')}
           </button>
         </div>
         <input
           className="search"
-          placeholder="명령 · 사용자 · PID 검색"
+          placeholder={t('명령 · 사용자 · PID 검색')}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        {zombies > 0 && <span className="badge warn">좀비 {zombies}</span>}
+        {zombies > 0 && <span className="badge warn">{t('좀비 {n}', { n: zombies })}</span>}
         <button className="ghost" onClick={() => void refresh()}>
-          새로고침
+          {t('새로고침')}
         </button>
       </div>
 
@@ -217,9 +218,9 @@ export function ProcessView({
         </div>
 
         <div className="tbody" ref={scrollRef}>
-          {loading && <div className="placeholder">프로세스를 읽는 중…</div>}
+          {loading && <div className="placeholder">{t('프로세스를 읽는 중…')}</div>}
           {!loading && rows.length === 0 && (
-            <div className="placeholder">조건에 맞는 프로세스가 없습니다.</div>
+            <div className="placeholder">{t('조건에 맞는 프로세스가 없습니다.')}</div>
           )}
           <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
             {virtualizer.getVirtualItems().map((item) => {
@@ -266,7 +267,7 @@ export function ProcessView({
               {chosen.pid} · {chosen.command}
             </span>
             <button className="ghost small-btn" onClick={() => setSelected(null)}>
-              닫기
+              {t('닫기')}
             </button>
           </div>
           <div className="mono muted small ellipsis" style={{ marginBottom: 'var(--sp-2)' }}>
@@ -274,22 +275,21 @@ export function ProcessView({
           </div>
           <div className="detail-actions">
             <button disabled={pending} onClick={() => void terminate(chosen)}>
-              종료 (TERM)
+              {t('종료 (TERM)')}
             </button>
             <button disabled={pending} onClick={() => setConfirmKill(chosen)}>
-              강제 종료 (KILL)
+              {t('강제 종료 (KILL)')}
             </button>
             <button disabled={pending} onClick={() => void renice(chosen, 10)}>
-              우선순위 낮추기
+              {t('우선순위 낮추기')}
             </button>
             <button disabled={pending} onClick={() => void renice(chosen, -5)}>
-              우선순위 높이기
+              {t('우선순위 높이기')}
             </button>
           </div>
           {chosen.state.startsWith('Z') && (
             <p className="muted small">
-              좀비 프로세스입니다 — 이미 종료됐고 부모({chosen.ppid})가 수거하지
-              않은 상태라, 시그널을 보내도 사라지지 않습니다.
+              {t('좀비 프로세스입니다 — 이미 종료됐고 부모({ppid})가 수거하지 않은 상태라, 시그널을 보내도 사라지지 않습니다.', { ppid: chosen.ppid })}
             </p>
           )}
 
@@ -304,10 +304,10 @@ export function ProcessView({
                   setNeedsRoot(null)
                 }}
               >
-                관리자 권한으로 재시도
+                {t('관리자 권한으로 재시도')}
               </button>
               <button className="ghost small-btn" onClick={() => setNeedsRoot(null)}>
-                취소
+                {t('취소')}
               </button>
             </div>
           )}
@@ -317,23 +317,22 @@ export function ProcessView({
       {confirmKill && (
         <div className="scrim">
           <div className="dialog" role="dialog" aria-modal="true">
-            <h2>강제 종료하시겠습니까?</h2>
+            <h2>{t('강제 종료하시겠습니까?')}</h2>
             <p className="muted">
-              SIGKILL은 프로세스에 정리할 기회를 주지 않습니다. 쓰던 데이터가
-              유실될 수 있습니다.
+              {t('SIGKILL은 프로세스에 정리할 기회를 주지 않습니다. 쓰던 데이터가 유실될 수 있습니다.')}
             </p>
             <dl className="keyinfo">
               <dt>PID</dt>
               <dd className="mono">{confirmKill.pid}</dd>
-              <dt>사용자</dt>
+              <dt>{t('사용자')}</dt>
               <dd className="mono">{confirmKill.user}</dd>
-              <dt>명령</dt>
+              <dt>{t('명령')}</dt>
               <dd className="mono selectable">{confirmKill.args || confirmKill.command}</dd>
             </dl>
             <div className="dialog-actions">
-              <button onClick={() => setConfirmKill(null)}>취소</button>
+              <button onClick={() => setConfirmKill(null)}>{t('취소')}</button>
               <button className="danger" onClick={() => void forceKill(confirmKill)}>
-                강제 종료
+                {t('강제 종료')}
               </button>
             </div>
           </div>

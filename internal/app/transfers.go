@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/cpprhtn/LiteDeck/internal/i18n"
 	"github.com/pkg/sftp"
 	wr "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -432,7 +433,7 @@ func (a *App) PickLocalFiles() ([]string, error) {
 		return nil, errors.New("app: no window")
 	}
 	return wr.OpenMultipleFilesDialog(a.ctx, wr.OpenDialogOptions{
-		Title: "업로드할 파일 선택",
+		Title: i18n.S("업로드할 파일 선택"),
 	})
 }
 
@@ -442,7 +443,7 @@ func (a *App) PickLocalDir() (string, error) {
 		return "", errors.New("app: no window")
 	}
 	return wr.OpenDirectoryDialog(a.ctx, wr.OpenDialogOptions{
-		Title: "저장할 위치 선택",
+		Title: i18n.S("저장할 위치 선택"),
 	})
 }
 
@@ -489,7 +490,7 @@ func walkLocalDir(root string) ([]relFile, int64, error) {
 			return err
 		}
 		if len(files) >= maxWalkFiles {
-			return fmt.Errorf("디렉터리에 파일이 %d개를 넘습니다 — 더 좁은 범위를 선택하세요", maxWalkFiles)
+			return i18n.Errorf("디렉터리에 파일이 %d개를 넘습니다 — 더 좁은 범위를 선택하세요", maxWalkFiles)
 		}
 		files = append(files, relFile{Rel: filepath.ToSlash(rel), Size: info.Size()})
 		total += info.Size()
@@ -522,7 +523,7 @@ func walkRemoteDir(client *sftp.Client, root string) ([]relFile, int64, error) {
 			continue
 		}
 		if len(files) >= maxWalkFiles {
-			return nil, 0, fmt.Errorf("디렉터리에 파일이 %d개를 넘습니다 — 더 좁은 범위를 선택하세요", maxWalkFiles)
+			return nil, 0, i18n.Errorf("디렉터리에 파일이 %d개를 넘습니다 — 더 좁은 범위를 선택하세요", maxWalkFiles)
 		}
 		files = append(files, relFile{Rel: rel, Size: info.Size()})
 		total += info.Size()

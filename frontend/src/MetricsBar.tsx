@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { HostMetrics, type MetricsView } from './ipc'
 import { usePoll } from './usePoll'
+import { t } from './i18n'
 
 // The summary bar (§4.7). Shown above every tab for the connected host, so
 // "is this box healthy" is answered without navigating anywhere.
@@ -22,9 +23,9 @@ function fmtUptime(sec: number): string {
   const d = Math.floor(sec / 86400)
   const h = Math.floor((sec % 86400) / 3600)
   const m = Math.floor((sec % 3600) / 60)
-  if (d > 0) return `${d}일 ${h}시간`
-  if (h > 0) return `${h}시간 ${m}분`
-  return `${m}분`
+  if (d > 0) return t('{d}일 {h}시간', { d, h })
+  if (h > 0) return t('{h}시간 {m}분', { h, m })
+  return t('{m}분', { m })
 }
 
 /**
@@ -131,14 +132,14 @@ export function MetricsBar({ hostID }: { hostID: string }) {
   if (failed && !m) {
     return (
       <div className="metrics-bar">
-        <span className="muted small">상태를 읽지 못했습니다 — {failed}</span>
+        <span className="muted small">{t('상태를 읽지 못했습니다 — {err}', { err: failed })}</span>
       </div>
     )
   }
   if (!m) {
     return (
       <div className="metrics-bar">
-        <span className="muted small">상태를 읽는 중…</span>
+        <span className="muted small">{t('상태를 읽는 중…')}</span>
       </div>
     )
   }
@@ -153,10 +154,10 @@ export function MetricsBar({ hostID }: { hostID: string }) {
         unit={m.cpu < 0 ? undefined : '%'}
         history={cpuHist}
         warn={m.cpu >= 85}
-        title={m.cpu < 0 ? '두 번째 샘플을 기다리는 중 — 누적 카운터라 한 번만으로는 알 수 없습니다' : undefined}
+        title={m.cpu < 0 ? t('두 번째 샘플을 기다리는 중 — 누적 카운터라 한 번만으로는 알 수 없습니다') : undefined}
       />
       <Stat
-        label="메모리"
+        label={t('메모리')}
         value={m.memPercent.toFixed(0)}
         unit="%"
         history={memHist}
@@ -165,11 +166,15 @@ export function MetricsBar({ hostID }: { hostID: string }) {
       />
       {disk && (
         <Stat
-          label={`디스크 ${disk.mountPoint}`}
+          label={t('디스크 {mount}', { mount: disk.mountPoint })}
           value={disk.percent.toFixed(0)}
           unit="%"
           warn={disk.percent >= 90}
-          title={`${fmtBytes(disk.used)} / ${fmtBytes(disk.size)} · 여유 ${fmtBytes(disk.available)}`}
+          title={t('{used} / {size} · 여유 {free}', {
+            used: fmtBytes(disk.used),
+            size: fmtBytes(disk.size),
+            free: fmtBytes(disk.available),
+          })}
         />
       )}
       {/* Hidden where the concept does not exist rather than shown as 0.00.
@@ -177,26 +182,26 @@ export function MetricsBar({ hostID }: { hostID: string }) {
           instead of as a figure that was never available. */}
       {m.hasLoad && (
         <Stat
-          label="로드"
+          label={t('로드')}
           value={`${m.load1.toFixed(2)}`}
-          title={`1분 ${m.load1} · 5분 ${m.load5} · 15분 ${m.load15}`}
+          title={t('1분 {a} · 5분 {b} · 15분 {c}', { a: m.load1, b: m.load5, c: m.load15 })}
         />
       )}
       {m.swapTotal > 0 && (
         <Stat
-          label="스왑"
+          label={t('스왑')}
           value={fmtBytes(m.swapUsed)}
           warn={m.swapUsed > m.swapTotal * 0.5}
           title={`${fmtBytes(m.swapUsed)} / ${fmtBytes(m.swapTotal)}`}
         />
       )}
       <span className="spacer" />
-      <span className="muted small" title="서버 가동 시간">
-        가동 {fmtUptime(m.uptimeSeconds)}
+      <span className="muted small" title={t('서버 가동 시간')}>
+        {t('가동 {up}', { up: fmtUptime(m.uptimeSeconds) })}
       </span>
       {failed && (
         <span className="badge warn" title={failed}>
-          갱신 실패
+          {t('갱신 실패')}
         </span>
       )}
     </div>

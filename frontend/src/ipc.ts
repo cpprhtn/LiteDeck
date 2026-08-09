@@ -5,6 +5,7 @@
 // touching those globals keeps the whole binding surface visible in one file.
 
 import type { Platform } from './platform'
+import { t } from './i18n'
 
 /* ------------------------------------------------------------------ types */
 
@@ -37,6 +38,10 @@ export interface BootstrapData {
   keychainOk: boolean
   configDir: string
   hostsPath: string
+  /** Explicit choice, or '' for "follow the OS". */
+  language: string
+  /** What Go read out of the environment, for when the webview cannot say. */
+  systemLanguage: string
   startupError?: string
 }
 
@@ -388,6 +393,8 @@ interface Bindings {
   ColdStartMs(): Promise<number>
 
   ListHosts(): Promise<HostView[]>
+  ApplyLanguage(tag: string): Promise<void>
+  SetLanguage(tag: string): Promise<ActionResult>
   SaveHost(h: Host): Promise<void>
   DeleteHost(id: string): Promise<void>
   ImportSSHConfig(): Promise<ImportResult>
@@ -568,7 +575,7 @@ function api(): Bindings {
   const bound = window.go?.app?.App
   if (!bound) {
     throw new Error(
-      'Go 바인딩을 찾을 수 없습니다 — `wails dev`로 실행해야 합니다 (순수 Vite 서버로는 동작하지 않습니다).',
+      t('Go 바인딩을 찾을 수 없습니다 — `wails dev`로 실행해야 합니다 (순수 Vite 서버로는 동작하지 않습니다).'),
     )
   }
   return bound
@@ -581,6 +588,8 @@ export const GetPlatform = () => api().Platform()
 export const ColdStartMs = () => api().ColdStartMs()
 
 export const ListHosts = () => api().ListHosts()
+export const ApplyLanguage = (tag: string) => api().ApplyLanguage(tag)
+export const SetLanguage = (tag: string) => api().SetLanguage(tag)
 export const SaveHost = (h: Host) => api().SaveHost(h)
 export const DeleteHost = (id: string) => api().DeleteHost(id)
 export const ImportSSHConfig = () => api().ImportSSHConfig()

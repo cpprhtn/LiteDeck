@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePoll } from './usePoll'
 import { HostNetwork, type NetworkView as NetView } from './ipc'
+import { t } from './i18n'
 
 // The network view (v1.x). Answers the two questions people actually open a
 // network tab for — "what address is this box on" and "what is listening on
@@ -38,7 +39,7 @@ export function NetworkView({
   usePoll(refresh, POLL_MS, visible)
 
   if (loading && !net) {
-    return <div className="placeholder">네트워크 상태를 읽는 중…</div>
+    return <div className="placeholder">{t('네트워크 상태를 읽는 중…')}</div>
   }
 
   const interfaces = net?.interfaces ?? []
@@ -50,19 +51,19 @@ export function NetworkView({
       <div className="view-toolbar">
         <div className="segmented">
           <button data-on={!onlyExposed || undefined} onClick={() => setOnlyExposed(false)}>
-            전체 {net?.listeners.length ?? 0}
+            {t('전체 {n}', { n: net?.listeners.length ?? 0 })}
           </button>
           <button
             data-on={onlyExposed || undefined}
             data-danger={exposedCount > 0 || undefined}
             onClick={() => setOnlyExposed(true)}
           >
-            외부 노출 {exposedCount}
+            {t('외부 노출 {n}', { n: exposedCount })}
           </button>
         </div>
         <span className="spacer" />
         <button className="ghost" onClick={() => void refresh()}>
-          새로고침
+          {t('새로고침')}
         </button>
       </div>
 
@@ -78,9 +79,9 @@ export function NetworkView({
 
       <div className="net-body">
         <section>
-          <h3 className="net-heading">인터페이스</h3>
+          <h3 className="net-heading">{t('인터페이스')}</h3>
           {interfaces.length === 0 && (
-            <div className="placeholder small">인터페이스를 읽지 못했습니다.</div>
+            <div className="placeholder small">{t('인터페이스를 읽지 못했습니다.')}</div>
           )}
           <div className="net-cards">
             {interfaces.map((i) => {
@@ -97,7 +98,7 @@ export function NetworkView({
                     </span>
                   </div>
                   <div className="net-addrs mono small">
-                    {i.addresses.length === 0 && <span className="muted">주소 없음</span>}
+                    {i.addresses.length === 0 && <span className="muted">{t('주소 없음')}</span>}
                     {i.addresses.map((a) => (
                       <div key={`${a.family}-${a.address}`}>
                         <span className="muted">{a.family === 'inet6' ? 'v6' : 'v4'}</span>{' '}
@@ -114,16 +115,15 @@ export function NetworkView({
 
         <section>
           <h3 className="net-heading">
-            열린 포트
+            {t('열린 포트')}
             <span className="muted small">
               {' '}
-              — <strong>외부 노출</strong>은 0.0.0.0/[::]에 바인딩되어 다른 기기에서 닿을 수
-              있다는 뜻입니다
+              — <strong>{t('외부 노출')}</strong>{t('은 0.0.0.0/[::]에 바인딩되어 다른 기기에서 닿을 수 있다는 뜻입니다')}
             </span>
           </h3>
           {listeners.length === 0 && (
             <div className="placeholder small">
-              {onlyExposed ? '외부에 노출된 포트가 없습니다.' : '열린 포트가 없습니다.'}
+              {onlyExposed ? t('외부에 노출된 포트가 없습니다.') : t('열린 포트가 없습니다.')}
             </div>
           )}
           {listeners.length > 0 && (
@@ -133,7 +133,7 @@ export function NetworkView({
                 <div className="num">PORT</div>
                 <div>BIND</div>
                 <div>PROCESS</div>
-                <div>노출</div>
+                <div>{t('노출')}</div>
               </div>
               {listeners.map((l, i) => (
                 <div
@@ -159,9 +159,9 @@ export function NetworkView({
                   </div>
                   <div>
                     {l.exposed ? (
-                      <span className="badge warn">외부</span>
+                      <span className="badge warn">{t('외부')}</span>
                     ) : (
-                      <span className="muted small">로컬만</span>
+                      <span className="muted small">{t('로컬만')}</span>
                     )}
                   </div>
                 </div>

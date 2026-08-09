@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePoll } from './usePoll'
 import { ListTimers, type Timer } from './ipc'
+import { t as tr } from './i18n'
 
 // Scheduled jobs (v1.x): systemd timers, read-only.
 //
@@ -19,18 +20,21 @@ function fmtWhen(unix: number): { text: string; overdue: boolean } {
 
   const unit =
     abs < 60
-      ? `${Math.round(abs)}초`
+      ? tr('{n}초', { n: Math.round(abs) })
       : abs < 3600
-        ? `${Math.round(abs / 60)}분`
+        ? tr('{n}분', { n: Math.round(abs / 60) })
         : abs < 86400
-          ? `${Math.round(abs / 3600)}시간`
-          : `${Math.round(abs / 86400)}일`
+          ? tr('{n}시간', { n: Math.round(abs / 3600) })
+          : tr('{n}일', { n: Math.round(abs / 86400) })
 
-  return { text: diff >= 0 ? `${unit} 후` : `${unit} 전`, overdue: false }
+  return {
+    text: diff >= 0 ? tr('{unit} 후', { unit }) : tr('{unit} 전', { unit }),
+    overdue: false,
+  }
 }
 
 function fmtAbs(unix: number): string {
-  if (!unix) return '없음'
+  if (!unix) return tr('없음')
   const d = new Date(unix * 1000)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
@@ -64,9 +68,9 @@ export function TimersView({
 
   usePoll(refresh, POLL_MS, visible)
 
-  if (loading) return <div className="placeholder">타이머를 읽는 중…</div>
+  if (loading) return <div className="placeholder">{tr('타이머를 읽는 중…')}</div>
   if (timers.length === 0) {
-    return <div className="placeholder">등록된 systemd 타이머가 없습니다.</div>
+    return <div className="placeholder">{tr('등록된 systemd 타이머가 없습니다.')}</div>
   }
 
   const neverRun = timers.filter((t) => !t.last).length
@@ -75,20 +79,20 @@ export function TimersView({
     <div className="view">
       <div className="view-toolbar">
         <span className="muted small">
-          타이머 {timers.length}개
-          {neverRun > 0 && ` · 아직 실행된 적 없음 ${neverRun}개`}
+          {tr('타이머 {n}개', { n: timers.length })}
+          {neverRun > 0 && tr(' · 아직 실행된 적 없음 {n}개', { n: neverRun })}
         </span>
         <span className="spacer" />
         <button className="ghost" onClick={() => void refresh()}>
-          새로고침
+          {tr('새로고침')}
         </button>
       </div>
 
       <div className="table">
         <div className="thead" style={{ gridTemplateColumns: '1fr 120px 120px 1.4fr' }}>
           <div>TIMER</div>
-          <div>다음 실행</div>
-          <div>마지막 실행</div>
+          <div>{tr('다음 실행')}</div>
+          <div>{tr('마지막 실행')}</div>
           <div>ACTIVATES</div>
         </div>
         <div className="tbody" style={{ overflowY: 'auto' }}>
@@ -124,7 +128,7 @@ export function TimersView({
                     // Never having run is not a fault — a daily timer installed
                     // an hour ago is simply waiting — but it is the first thing
                     // to check when a job "did not happen".
-                    <span className="muted">한 번도 없음</span>
+                    <span className="muted">{tr('한 번도 없음')}</span>
                   )}
                 </div>
                 <div className="ellipsis muted mono">{t.activates}</div>

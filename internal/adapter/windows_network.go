@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter/windowspowershell"
+	"github.com/cpprhtn/LiteDeck/internal/i18n"
 )
 
 // WindowsNetworkScript collects everything the tab needs in one round trip.
@@ -92,7 +93,7 @@ func ParseWindowsNetwork(data []byte) ([]Interface, []Listener, []string, error)
 	if err != nil {
 		// Get-NetAdapter is the enrichment, not the source. Without it the
 		// addresses still render; only MAC, MTU and link state go missing.
-		warnings = append(warnings, "어댑터 정보를 읽지 못했습니다 — MAC·MTU·링크 상태가 비어 있습니다")
+		warnings = append(warnings, i18n.S("어댑터 정보를 읽지 못했습니다 — MAC·MTU·링크 상태가 비어 있습니다"))
 		adapters = nil
 	}
 
@@ -158,7 +159,7 @@ func ParseWindowsNetwork(data []byte) ([]Interface, []Listener, []string, error)
 		rows, err := decodeJSONArray[winEndpointRow]([]byte(blocks[b.tag]))
 		if err != nil {
 			warnings = append(warnings,
-				strings.ToUpper(b.proto)+" 소켓 목록을 읽지 못했습니다")
+				i18n.T("%s 소켓 목록을 읽지 못했습니다", strings.ToUpper(b.proto)))
 			continue
 		}
 		for _, r := range rows {

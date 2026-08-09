@@ -6,6 +6,7 @@ import {
   type HostKeyPrompt,
   type SecretPrompt,
 } from './ipc'
+import { t } from './i18n'
 
 /**
  * Trust on first use (§7.1).
@@ -32,30 +33,30 @@ export function HostKeyDialog({
   return (
     <div className="scrim">
       <div className="dialog" role="dialog" aria-modal="true">
-        <h2>처음 접속하는 호스트입니다</h2>
+        <h2>{t('처음 접속하는 호스트입니다')}</h2>
         <p className="muted">
-          이 서버의 키를 본 적이 없습니다. 지문이 예상과 같은지 확인하세요.
+          {t('이 서버의 키를 본 적이 없습니다. 지문이 예상과 같은지 확인하세요.')}
         </p>
 
         <dl className="keyinfo">
-          <dt>주소</dt>
+          <dt>{t('주소')}</dt>
           <dd className="mono">{prompt.address}</dd>
-          <dt>키 종류</dt>
+          <dt>{t('키 종류')}</dt>
           <dd className="mono">{prompt.keyType}</dd>
-          <dt>지문</dt>
+          <dt>{t('지문')}</dt>
           <dd className="mono selectable">{prompt.fingerprint}</dd>
         </dl>
 
         <p className="muted small">
-          서버에서 <code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code>{' '}
-          으로 대조할 수 있습니다.
+          {t('서버에서')} <code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code>{' '}
+          {t('으로 대조할 수 있습니다.')}
         </p>
 
         <div className="dialog-actions">
-          <button onClick={() => answer('reject')}>거부</button>
-          <button onClick={() => answer('once')}>이번만 허용</button>
+          <button onClick={() => answer('reject')}>{t('거부')}</button>
+          <button onClick={() => answer('once')}>{t('이번만 허용')}</button>
           <button className="primary" onClick={() => answer('always')}>
-            항상 신뢰
+            {t('항상 신뢰')}
           </button>
         </div>
       </div>
@@ -105,7 +106,7 @@ export function SecretDialog({
   return (
     <div className="scrim">
       <form className="dialog" onSubmit={submit} role="dialog" aria-modal="true">
-        <h2>인증이 필요합니다</h2>
+        <h2>{t('인증이 필요합니다')}</h2>
         <p className="prompt-label">{prompt.label}</p>
 
         <input
@@ -124,21 +125,20 @@ export function SecretDialog({
               checked={remember}
               onChange={(e) => setRemember(e.target.checked)}
             />
-            OS 키체인에 저장
+            {t('OS 키체인에 저장')}
           </label>
         ) : (
           <p className="muted small">
-            이 시스템에는 사용 가능한 키체인이 없어 저장하지 않습니다. 접속할
-            때마다 입력이 필요합니다.
+            {t('이 시스템에는 사용 가능한 키체인이 없어 저장하지 않습니다. 접속할 때마다 입력이 필요합니다.')}
           </p>
         )}
 
         <div className="dialog-actions">
           <button type="button" onClick={cancel} disabled={busy}>
-            취소
+            {t('취소')}
           </button>
           <button type="submit" className="primary" disabled={busy || !value}>
-            확인
+            {t('확인')}
           </button>
         </div>
       </form>

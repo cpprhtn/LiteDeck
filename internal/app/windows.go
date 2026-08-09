@@ -13,6 +13,7 @@ import (
 	"fmt"
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter/windowspowershell"
+	"github.com/cpprhtn/LiteDeck/internal/i18n"
 	"github.com/cpprhtn/LiteDeck/internal/sshcore"
 )
 
@@ -67,9 +68,9 @@ func windowsActionResult(res *sshcore.Result, err error) ActionResult {
 		text = fmt.Sprintf("powershell exited %d", res.ExitCode)
 	}
 	if windowspowershell.IsAccessDenied(res.Stderr) {
-		text = "권한이 없습니다 — 이 계정은 관리자 그룹이 아닙니다. " +
-			"Windows에는 sudo가 없어 같은 세션에서 권한을 올릴 수 없습니다: " +
-			"관리자 계정으로 다시 접속해야 합니다.\n\n" + text
+		text = i18n.S("권한이 없습니다 — 이 계정은 관리자 그룹이 아닙니다. ") +
+			i18n.S("Windows에는 sudo가 없어 같은 세션에서 권한을 올릴 수 없습니다: ") +
+			i18n.S("관리자 계정으로 다시 접속해야 합니다.\n\n") + text
 	}
 	return ActionResult{OK: false, Error: text, Stderr: text}
 }

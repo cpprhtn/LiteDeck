@@ -21,6 +21,7 @@ const TerminalView = lazy(() =>
 )
 import {
   BenchMode,
+  ApplyLanguage,
   Bootstrap,
   ConnectHost,
   DetectHost,
@@ -36,6 +37,7 @@ import {
   type SecretPrompt,
   type ServerInfo,
 } from './ipc'
+import { getLanguage, initLanguage, k, t, useT } from './i18n'
 import { closeHost } from './openFiles'
 import { initPlatform } from './platform'
 
@@ -51,23 +53,26 @@ type Tab = 'services' | 'files' | 'processes' | 'containers' | 'network' | 'sess
 // itself — SFTP and a PTY. That is what keeps them working on a host no adapter
 // can drive, such as a Windows box running OpenSSH.
 const TABS: { id: Tab; label: string; capability?: string }[] = [
-  { id: 'files', label: '파일' },
-  { id: 'services', label: '서비스', capability: 'services' },
-  { id: 'processes', label: '프로세스', capability: 'processes' },
-  { id: 'containers', label: '컨테이너', capability: 'containers' },
-  { id: 'network', label: '네트워크', capability: 'network' },
-  { id: 'sessions', label: '접속', capability: 'sessions' },
-  { id: 'terminal', label: '터미널' },
+  { id: 'files', label: k('파일') },
+  { id: 'services', label: k('서비스'), capability: 'services' },
+  { id: 'processes', label: k('프로세스'), capability: 'processes' },
+  { id: 'containers', label: k('컨테이너'), capability: 'containers' },
+  { id: 'network', label: k('네트워크'), capability: 'network' },
+  { id: 'sessions', label: k('세션'), capability: 'sessions' },
+  { id: 'terminal', label: k('터미널') },
 ]
 
 const PLATFORM_LABEL: Record<string, string> = {
   windows: 'Windows',
   darwin: 'macOS',
   bsd: 'BSD',
-  unknown: '알 수 없는 OS',
+  unknown: k('알 수 없는 OS'),
 }
 
 export default function App() {
+  // Subscribing here re-renders every view on a language change; nothing else
+  // needs to know about it.
+  const t = useT() // shadows the module import; subscribing is the point
   const [benchMode, setBenchMode] = useState<boolean | null>(null)
   const [boot, setBoot] = useState<BootstrapData | null>(null)
   const [hosts, setHosts] = useState<HostView[]>([])
@@ -103,6 +108,11 @@ export default function App() {
         setBenchMode(false)
         await initPlatform()
         const b = await Bootstrap()
+        // An explicit choice wins; otherwise follow the OS. Go is told the
+        // resolved answer either way, so an English UI does not raise Korean
+        // error banners.
+        initLanguage(b.language, b.systemLanguage)
+        void ApplyLanguage(getLanguage()).catch(() => {})
         setBoot(b)
         setHosts(b.hosts)
         if (b.startupError) setError(b.startupError)
@@ -185,7 +195,7 @@ export default function App() {
       await reloadHosts()
       setError(
         res.imported === 0 && res.skipped === 0
-          ? `${res.path} 에서 가져올 호스트를 찾지 못했습니다.`
+          ? t('{path} 에서 가져올 호스트를 찾지 못했습니다.', { path: res.path })
           : null,
       )
     } catch (e) {
@@ -195,7 +205,7 @@ export default function App() {
     }
   }
 
-  if (benchMode === null) return <div className="boot">시작 중…</div>
+  if (benchMode === null) return <div className="boot">{t('시작 중…')}</div>
   if (benchMode) return <Bench />
 
   const active = hosts.find((h) => h.id === activeID) ?? null
@@ -245,26 +255,26 @@ export default function App() {
                   )}
                   {activeInfo?.hasSystemd && ` · systemd ${activeInfo.systemdVersion}`}
                   {activeInfo && !activeInfo.systemdJson && activeInfo.hasSystemd && (
-                    <span title="systemd 246 미만 — 표 파싱으로 폴백"> (표 폴백)</span>
+                    <span title={t('systemd 246 미만 — 표 파싱으로 폴백')}> {t('(표 폴백)')}</span>
                   )}
                 </div>
               </div>
               {unsupported && (
                 <span
                   className="badge warn"
-                  title="LiteDeck은 systemd 기반 Linux만 다룹니다. 파일과 터미널은 그대로 쓸 수 있습니다"
+                  title={t('LiteDeck은 systemd 기반 Linux만 다룹니다. 파일과 터미널은 그대로 쓸 수 있습니다')}
                 >
-                  {PLATFORM_LABEL[activeInfo!.platform] ?? '미지원 OS'} — 일부 기능만
+                  {t(PLATFORM_LABEL[activeInfo!.platform] ?? k('미지원 OS'))} — {t('일부 기능만')}
                 </span>
               )}
               {boot && !boot.keychainOk && (
-                <span className="badge warn" title="OS 키체인을 사용할 수 없어 비밀번호를 저장하지 않습니다">
-                  키체인 없음
+                <span className="badge warn" title={t('OS 키체인을 사용할 수 없어 비밀번호를 저장하지 않습니다')}>
+                  {t('키체인 없음')}
                 </span>
               )}
             </>
           ) : (
-            <div className="muted">좌측에서 호스트를 선택하세요.</div>
+            <div className="muted">{t('좌측에서 호스트를 선택하세요.')}</div>
           )}
         </header>
 
@@ -272,7 +282,7 @@ export default function App() {
           <div className="error">
             <span>{error}</span>
             <button className="ghost small-btn" onClick={() => setError(null)}>
-              닫기
+              {t('닫기')}
             </button>
           </div>
         )}
@@ -284,7 +294,7 @@ export default function App() {
                 adapter: it reads /proc, so leaving it mounted meant a failing
                 command every two seconds for as long as the app was open. */}
             {!unsupported && (
-              <ErrorBoundary key={`metrics:${active.id}`} label="상태 표시줄">
+              <ErrorBoundary key={`metrics:${active.id}`} label={t('상태 표시줄')}>
                 <MetricsBar hostID={active.id} />
               </ErrorBoundary>
             )}
@@ -293,17 +303,17 @@ export default function App() {
                 Greying one out tells the user nothing about why, and a tooltip
                 is not an answer — the view explains itself instead. */}
             <nav className="tabs">
-              {TABS.map((t) => {
+              {TABS.map((entry) => {
                 const unsupported =
-                  t.capability && activeInfo?.capabilities?.[t.capability] === false
+                  entry.capability && activeInfo?.capabilities?.[entry.capability] === false
                 return (
                   <button
-                    key={t.id}
-                    data-on={tab === t.id || undefined}
+                    key={entry.id}
+                    data-on={tab === entry.id || undefined}
                     data-unsupported={unsupported || undefined}
-                    onClick={() => setTab(t.id)}
+                    onClick={() => setTab(entry.id)}
                   >
-                    {t.label}
+                    {t(entry.label)}
                   </button>
                 )
               })}
@@ -311,7 +321,7 @@ export default function App() {
 
             {/* Scoped per tab and keyed by host: a crash in one view leaves the
                 others usable, and switching hosts starts the view clean. */}
-            <ErrorBoundary key={`${active.id}:${tab}`} label={TABS.find((t) => t.id === tab)?.label ?? tab}>
+            <ErrorBoundary key={`${active.id}:${tab}`} label={TABS.find((x) => x.id === tab)?.label ?? tab}>
               {renderTab(tab, active.id, activeInfo, setError, () => setTab('files'))}
             </ErrorBoundary>
           </>
@@ -320,8 +330,8 @@ export default function App() {
         {active && !connected && (
           <div className="placeholder">
             {active.state === 'connecting'
-              ? '연결하는 중…'
-              : '연결되어 있지 않습니다. 좌측에서 접속을 누르세요.'}
+              ? t('연결하는 중…')
+              : t('연결되어 있지 않습니다. 좌측에서 접속을 누르세요.')}
           </div>
         )}
       </main>
@@ -385,7 +395,7 @@ function renderTab(
   onReveal: () => void,
 ) {
   if (!info) {
-    return <div className="placeholder">서버를 확인하는 중…</div>
+    return <div className="placeholder">{t('서버를 확인하는 중…')}</div>
   }
 
   // No adapter for this platform. Checked before the per-tab logic because the
@@ -396,27 +406,27 @@ function renderTab(
   // files and terminal fall through deliberately: SFTP and a PTY are provided by
   // SSH itself, so they work here.
   if (!info.supported && tab !== 'files' && tab !== 'terminal') {
-    const name = info.prettyName || PLATFORM_LABEL[info.platform] || '이 OS'
+    const name = info.prettyName || t(PLATFORM_LABEL[info.platform] ?? '') || t('이 OS')
     // prettyName first: once detection has an answer, saying "the server did not
     // respond" over the top of "Windows 10 Pro" in the header is a contradiction
     // the user has to resolve, and they cannot.
     const detail = info.prettyName
-      ? `서버가 ${info.prettyName} 로 확인됐습니다. 이 OS를 다루는 어댑터가 아직 없습니다.`
+      ? t('서버가 {os} 로 확인됐습니다. 이 OS를 다루는 어댑터가 아직 없습니다.', { os: info.prettyName })
       : info.kernel
-        ? `서버가 ${info.kernel} 로 응답했습니다.`
-        : '서버가 어떤 OS인지 확인할 수 없었습니다 — 아래 감지 과정을 참고하세요.'
+        ? t('서버가 {kernel} 로 응답했습니다.', { kernel: info.kernel })
+        : t('서버가 어떤 OS인지 확인할 수 없었습니다 — 아래 감지 과정을 참고하세요.')
     return (
       <Unavailable
-        title={`${name} 서버는 아직 지원하지 않습니다`}
+        title={t('{os} 서버는 아직 지원하지 않습니다', { os: name })}
         detail={detail}
-        hint="파일 탭과 터미널 탭은 그대로 쓸 수 있습니다 — SFTP와 PTY는 SSH가 직접 제공하기 때문입니다. 어댑터 기여는 환영합니다 (CONTRIBUTING.md)."
+        hint={t('파일 탭과 터미널 탭은 그대로 쓸 수 있습니다 — SFTP와 PTY는 SSH가 직접 제공하기 때문입니다. 어댑터 기여는 환영합니다 (CONTRIBUTING.md).')}
       >
         {/* The probe transcript, shown only when detection gave up. Without it
             "알 수 없는 OS" is a dead end: nobody can tell which probe misbehaved
             without rebuilding the app with print statements in it. */}
         {!!info.warnings?.length && (
           <details className="diag">
-            <summary className="muted small">감지 과정 보기</summary>
+            <summary className="muted small">{t('감지 과정 보기')}</summary>
             <pre className="mono small">{info.warnings.join('\n')}</pre>
           </details>
         )}
@@ -439,9 +449,9 @@ function renderTab(
       if (!info.capabilities?.services) {
         return (
           <Unavailable
-            title="이 서버의 서비스 목록을 읽을 수 없습니다"
-            detail={`${info.prettyName || '알 수 없는 배포판'} — systemctl을 찾지 못했습니다.`}
-            hint="OpenRC(Alpine)·SysVinit 어댑터는 아직 없습니다. 프로세스 탭은 그대로 쓸 수 있습니다."
+            title={t('이 서버의 서비스 목록을 읽을 수 없습니다')}
+            detail={t('{os} — systemctl을 찾지 못했습니다.', { os: info.prettyName || t('알 수 없는 배포판') })}
+            hint={t('OpenRC(Alpine)·SysVinit 어댑터는 아직 없습니다. 프로세스 탭은 그대로 쓸 수 있습니다.')}
           />
         )
       }
@@ -451,9 +461,9 @@ function renderTab(
       if (!info.hasDocker && !info.hasPodman) {
         return (
           <Unavailable
-            title="이 서버에는 컨테이너 런타임이 없습니다"
-            detail="docker와 podman 둘 다 PATH에서 찾지 못했습니다."
-            hint="설치되어 있는데도 이렇게 나온다면, 로그인 셸의 PATH에 없을 수 있습니다 — 터미널 탭에서 `command -v docker` 로 확인해보세요."
+            title={t('이 서버에는 컨테이너 런타임이 없습니다')}
+            detail={t('docker와 podman 둘 다 PATH에서 찾지 못했습니다.')}
+            hint={t('설치되어 있는데도 이렇게 나온다면, 로그인 셸의 PATH에 없을 수 있습니다 — 터미널 탭에서 `command -v docker` 로 확인해보세요.')}
           />
         )
       }
@@ -467,16 +477,16 @@ function renderTab(
       if (!info.capabilities?.network) {
         return (
           <Unavailable
-            title="이 서버의 네트워크 정보를 읽을 수 없습니다"
+            title={t('이 서버의 네트워크 정보를 읽을 수 없습니다')}
             detail={
               info.platform === 'windows'
-                ? 'Windows 어댑터에 네트워크 뷰가 아직 없습니다.'
-                : `${info.prettyName || '이 서버'} — iproute2(ip, ss)를 찾지 못했습니다.`
+                ? t('Windows 어댑터에 네트워크 뷰가 아직 없습니다.')
+                : t('{os} — iproute2(ip, ss)를 찾지 못했습니다.', { os: info.prettyName || t('이 서버') })
             }
             hint={
               info.platform === 'windows'
-                ? 'Get-NetIPAddress와 Get-NetTCPConnection으로 만들 수 있습니다 — 아직 구현하지 않았습니다.'
-                : '배포판에 따라 iproute2 패키지를 설치하면 됩니다. 다른 탭은 그대로 쓸 수 있습니다.'
+                ? t('Get-NetIPAddress와 Get-NetTCPConnection으로 만들 수 있습니다 — 아직 구현하지 않았습니다.')
+                : t('배포판에 따라 iproute2 패키지를 설치하면 됩니다. 다른 탭은 그대로 쓸 수 있습니다.')
             }
           />
         )
@@ -487,13 +497,13 @@ function renderTab(
       if (!info.capabilities?.sessions) {
         return (
           <Unavailable
-            title="이 서버의 SSH 접속 목록을 읽을 수 없습니다"
+            title={t('이 서버의 SSH 접속 목록을 읽을 수 없습니다')}
             detail={
               info.platform === 'windows'
-                ? 'Windows sshd 는 세션을 "sshd: user@pts" 프로세스로 만들지 않아, 지금 파서가 읽을 것이 없습니다.'
-                : `${info.prettyName || '이 서버'} — ps 를 실행하지 못했습니다.`
+                ? t('Windows sshd 는 세션을 "sshd: user@pts" 프로세스로 만들지 않아, 지금 파서가 읽을 것이 없습니다.')
+                : t('{os} — ps 를 실행하지 못했습니다.', { os: info.prettyName || t('이 서버') })
             }
-            hint="다른 탭은 그대로 쓸 수 있습니다."
+            hint={t('다른 탭은 그대로 쓸 수 있습니다.')}
           />
         )
       }
@@ -501,7 +511,7 @@ function renderTab(
 
     case 'terminal':
       return (
-        <Suspense fallback={<div className="placeholder">터미널을 불러오는 중…</div>}>
+        <Suspense fallback={<div className="placeholder">{t('터미널을 불러오는 중…')}</div>}>
           <TerminalView
             hostID={hostID}
             visible

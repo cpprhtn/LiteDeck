@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cpprhtn/LiteDeck/internal/i18n"
 	"github.com/cpprhtn/LiteDeck/internal/shellquote"
 	"golang.org/x/crypto/ssh"
 )
@@ -94,9 +95,9 @@ func (c *Conn) OpenPTY(
 		return nil, fmt.Errorf("sshcore: waiting for a terminal slot: %w", ctx.Err())
 	default:
 		return nil, fmt.Errorf(
-			"sshcore: 이 호스트에 열 수 있는 터미널·로그 창 수를 초과했습니다 (동시 %d개) — "+
-				"쓰지 않는 터미널 탭이나 로그 창을 닫으세요. "+
-				"서버의 sshd MaxSessions 가 기본값(10)보다 낮으면 이보다 먼저 막힐 수 있습니다",
+			i18n.S("sshcore: 이 호스트에 열 수 있는 터미널·로그 창 수를 초과했습니다 (동시 %d개) — ")+
+				i18n.S("쓰지 않는 터미널 탭이나 로그 창을 닫으세요. ")+
+				i18n.S("서버의 sshd MaxSessions 가 기본값(10)보다 낮으면 이보다 먼저 막힐 수 있습니다"),
 			cap(c.longLived))
 	}
 	release := func() { <-c.longLived }
@@ -257,7 +258,7 @@ func (p *PTYSession) CurrentDir(ctx context.Context) (string, error) {
 	case dir := <-pending.done:
 		stop()
 		if dir == "" {
-			return "", errors.New("sshcore: 터미널이 현재 디렉터리를 알려주지 않았습니다")
+			return "", errors.New(i18n.S("sshcore: 터미널이 현재 디렉터리를 알려주지 않았습니다"))
 		}
 		return dir, nil
 	case <-ctx.Done():
@@ -266,7 +267,7 @@ func (p *PTYSession) CurrentDir(ctx context.Context) (string, error) {
 	case <-time.After(probeTimeout):
 		stop()
 		// Most likely a full-screen program is running and never saw the line.
-		return "", errors.New("sshcore: 터미널이 응답하지 않습니다 — 실행 중인 프로그램이 있는지 확인하세요")
+		return "", errors.New(i18n.S("sshcore: 터미널이 응답하지 않습니다 — 실행 중인 프로그램이 있는지 확인하세요"))
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter/linuxsystemd"
 	"github.com/cpprhtn/LiteDeck/internal/adapter/windowspowershell"
+	"github.com/cpprhtn/LiteDeck/internal/i18n"
 )
 
 // winServiceRow mirrors one element of the Win32_Service projection.
@@ -137,7 +138,7 @@ func winEnabledState(r winServiceRow) string {
 		if r.DelayedAutoStart {
 			// Distinguished because it changes what "stopped" means: a delayed
 			// service that is not running has probably just not been asked yet.
-			return "enabled (지연 시작)"
+			return i18n.S("enabled (지연 시작)")
 		}
 		return "enabled"
 	case "manual":

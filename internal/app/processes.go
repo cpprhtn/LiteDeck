@@ -2,10 +2,12 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
+	"github.com/cpprhtn/LiteDeck/internal/i18n"
 	"github.com/cpprhtn/LiteDeck/internal/sshcore"
 )
 
@@ -13,7 +15,7 @@ import (
 
 // ListProcesses returns the process table, optionally ordered as a tree.
 func (a *App) ListProcesses(hostID string, asTree bool) ([]adapter.ProcessInfo, error) {
-	info, err := a.requireCapability(hostID, adapter.CapProcesses, "프로세스 목록")
+	info, err := a.requireCapability(hostID, adapter.CapProcesses, i18n.S("프로세스 목록"))
 	if err != nil {
 		return nil, err
 	}
@@ -79,12 +81,12 @@ func (a *App) KillProcess(hostID string, pid int, signal string, elevate bool) A
 	// amount of confirmation dialog makes that a thing a file manager should
 	// offer (§7.4).
 	if pid == 1 {
-		return failResult(fmt.Errorf("PID 1은 init 프로세스입니다 — 종료하면 서버가 정지합니다"))
+		return failResult(errors.New(i18n.S("PID 1은 init 프로세스입니다 — 종료하면 서버가 정지합니다")))
 	}
 	if pid < 1 {
 		return failResult(fmt.Errorf("app: invalid pid %d", pid))
 	}
-	info, err := a.requireCapability(hostID, adapter.CapProcesses, "프로세스 목록")
+	info, err := a.requireCapability(hostID, adapter.CapProcesses, i18n.S("프로세스 목록"))
 	if err != nil {
 		return failResult(err)
 	}
@@ -106,8 +108,8 @@ func (a *App) KillProcess(hostID string, pid int, signal string, elevate bool) A
 		switch signal {
 		case "TERM", "KILL":
 		default:
-			return failResult(fmt.Errorf(
-				"Windows에는 %s 시그널이 없습니다 — 종료(TERM)나 강제 종료(KILL)만 가능합니다", signal))
+			return failResult(errors.New(
+				i18n.T("Windows에는 %s 시그널이 없습니다 — 종료(TERM)나 강제 종료(KILL)만 가능합니다", signal)))
 		}
 		script, err := adapter.WindowsKillScript(pid, signal == "KILL")
 		if err != nil {
@@ -142,7 +144,7 @@ func (a *App) Renice(hostID string, pid, nice int, elevate bool) ActionResult {
 	if pid < 1 {
 		return failResult(fmt.Errorf("app: invalid pid %d", pid))
 	}
-	info, err := a.requireCapability(hostID, adapter.CapProcesses, "프로세스 목록")
+	info, err := a.requireCapability(hostID, adapter.CapProcesses, i18n.S("프로세스 목록"))
 	if err != nil {
 		return failResult(err)
 	}

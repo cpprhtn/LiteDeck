@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
+	"github.com/cpprhtn/LiteDeck/internal/i18n"
 	"github.com/cpprhtn/LiteDeck/internal/sshcore"
 )
 
@@ -60,7 +61,7 @@ type MetricsView struct {
 
 // HostMetrics takes one health snapshot (§4.7).
 func (a *App) HostMetrics(hostID string) (MetricsView, error) {
-	info, err := a.requireCapability(hostID, adapter.CapMetrics, "상태 정보")
+	info, err := a.requireCapability(hostID, adapter.CapMetrics, i18n.S("상태 정보"))
 	if err != nil {
 		return MetricsView{}, err
 	}

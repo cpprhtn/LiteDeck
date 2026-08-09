@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
 import { DeleteHost, ForgetSecrets, SaveHost, type AuthMethod, type Host } from './ipc'
+import { t, k } from './i18n'
 
 // Add and edit hosts (§4.1). The import path covers people who already keep an
 // ~/.ssh/config; this covers everyone else and every correction afterwards.
 
 const AUTH_LABELS: Record<AuthMethod, string> = {
   agent: 'ssh-agent',
-  key: '개인키 파일',
-  password: '비밀번호',
+  key: k('개인키 파일'),
+  password: k('비밀번호'),
 }
 
 /** Tried in this order. Agent first: the key never enters this process. */
@@ -104,25 +105,25 @@ export function HostEditor({
           if (!invalid) void save()
         }}
       >
-        <h2>{isNew ? '호스트 추가' : '호스트 편집'}</h2>
+        <h2>{isNew ? t('호스트 추가') : t('호스트 편집')}</h2>
 
         <div className="form-grid">
-          <label>표시 이름</label>
+          <label>{t('표시 이름')}</label>
           <input
             value={draft.name}
             placeholder={draft.hostname || 'prod-web-01'}
             onChange={(e) => set('name', e.target.value)}
           />
 
-          <label>주소</label>
+          <label>{t('주소')}</label>
           <input
             value={draft.hostname}
-            placeholder="10.0.0.5 또는 example.com"
+            placeholder={t('10.0.0.5 또는 example.com')}
             spellCheck={false}
             onChange={(e) => set('hostname', e.target.value)}
           />
 
-          <label>포트</label>
+          <label>{t('포트')}</label>
           <input
             type="number"
             min={1}
@@ -131,7 +132,7 @@ export function HostEditor({
             onChange={(e) => set('port', Number(e.target.value))}
           />
 
-          <label>사용자</label>
+          <label>{t('사용자')}</label>
           <input
             value={draft.user}
             placeholder="deploy"
@@ -139,14 +140,14 @@ export function HostEditor({
             onChange={(e) => set('user', e.target.value)}
           />
 
-          <label>그룹</label>
+          <label>{t('그룹')}</label>
           <input
             value={draft.group ?? ''}
-            placeholder="(선택) production"
+            placeholder={t('(선택) production')}
             onChange={(e) => set('group', e.target.value)}
           />
 
-          <label>인증</label>
+          <label>{t('인증')}</label>
           <div className="auth-methods">
             {AUTH_ORDER.map((m) => (
               <label key={m} className="checkbox">
@@ -155,18 +156,17 @@ export function HostEditor({
                   checked={draft.auth.includes(m)}
                   onChange={() => toggleAuth(m)}
                 />
-                {AUTH_LABELS[m]}
+                {t(AUTH_LABELS[m])}
               </label>
             ))}
             <p className="muted small">
-              체크한 순서가 아니라 위 순서대로 시도합니다. ssh-agent가 가장 먼저인
-              이유는 개인키가 이 앱에 들어오지 않기 때문입니다.
+              {t('체크한 순서가 아니라 위 순서대로 시도합니다. ssh-agent가 가장 먼저인 이유는 개인키가 이 앱에 들어오지 않기 때문입니다.')}
             </p>
           </div>
 
           {draft.auth.includes('key') && (
             <>
-              <label>개인키 경로</label>
+              <label>{t('개인키 경로')}</label>
               <input
                 value={draft.identityFile ?? ''}
                 placeholder="~/.ssh/id_ed25519"
@@ -179,7 +179,7 @@ export function HostEditor({
           <label>ProxyJump</label>
           <input
             value={draft.proxyJump ?? ''}
-            placeholder="(선택) bastion — 아직 미구현"
+            placeholder={t('(선택) bastion — 아직 미구현')}
             spellCheck={false}
             disabled
             onChange={(e) => set('proxyJump', e.target.value)}
@@ -187,12 +187,11 @@ export function HostEditor({
         </div>
 
         {needsKeyFile && (
-          <p className="warn-text">개인키 인증을 쓰려면 키 파일 경로가 필요합니다.</p>
+          <p className="warn-text">{t('개인키 인증을 쓰려면 키 파일 경로가 필요합니다.')}</p>
         )}
 
         <p className="muted small">
-          비밀번호는 여기에 저장되지 않습니다 — 접속할 때 묻고, 사용자가 선택하면 OS
-          키체인에 들어갑니다.
+          {t('비밀번호는 여기에 저장되지 않습니다 — 접속할 때 묻고, 사용자가 선택하면 OS 키체인에 들어갑니다.')}
         </p>
 
         <div className="dialog-actions">
@@ -204,39 +203,39 @@ export function HostEditor({
                 disabled={busy}
                 onClick={() => setConfirmDelete(true)}
               >
-                삭제
+                {t('삭제')}
               </button>
               <button
                 type="button"
                 disabled={busy}
-                title="저장된 비밀번호·패스프레이즈를 키체인에서 지웁니다"
+                title={t('저장된 비밀번호·패스프레이즈를 키체인에서 지웁니다')}
                 onClick={() => void ForgetSecrets(draft.id).catch((e) => onError(String(e)))}
               >
-                저장된 비밀 지우기
+                {t('저장된 비밀 지우기')}
               </button>
             </>
           )}
           <span className="spacer" />
           <button type="button" onClick={onClose} disabled={busy}>
-            취소
+            {t('취소')}
           </button>
           <button type="submit" className="primary" disabled={busy || invalid}>
-            저장
+            {t('저장')}
           </button>
         </div>
 
         {confirmDelete && (
           <div className="scrim">
             <div className="dialog">
-              <h2>호스트를 삭제하시겠습니까?</h2>
+              <h2>{t('호스트를 삭제하시겠습니까?')}</h2>
               <p className="muted">
-                <strong>{draft.name || draft.hostname}</strong> 의 접속 정보와 저장된
-                비밀이 함께 삭제됩니다. 서버 자체에는 아무 영향이 없습니다.
+                <strong>{draft.name || draft.hostname}</strong>{' '}
+                {t('의 접속 정보와 저장된 비밀이 함께 삭제됩니다. 서버 자체에는 아무 영향이 없습니다.')}
               </p>
               <div className="dialog-actions">
-                <button onClick={() => setConfirmDelete(false)}>취소</button>
+                <button onClick={() => setConfirmDelete(false)}>{t('취소')}</button>
                 <button className="danger" disabled={busy} onClick={() => void remove()}>
-                  삭제
+                  {t('삭제')}
                 </button>
               </div>
             </div>

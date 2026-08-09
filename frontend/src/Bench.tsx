@@ -11,6 +11,7 @@ import {
   type ProcessRow,
 } from './ipc'
 import { initPlatform, shortcutLabel } from './platform'
+import { t } from './i18n'
 
 // M0 risk ④ (§12): can a few thousand rows cross the Go→IPC→React boundary
 // on every poll without the window ceasing to feel local?
@@ -66,7 +67,7 @@ function percentile(values: number[], p: number): number {
 
 export default function Bench() {
   const [rows, setRows] = useState<ProcessRow[]>([])
-  const [status, setStatus] = useState('시작 중…')
+  const [status, setStatus] = useState(t('시작 중…'))
   const [summaries, setSummaries] = useState<Summary[]>([])
   const [coldStart, setColdStart] = useState(0)
   const [platformLabel, setPlatformLabel] = useState('')
@@ -130,7 +131,7 @@ export default function Bench() {
 
         for (const rowCount of ROW_COUNTS) {
           for (const mode of MODES) {
-            setStatus(`측정 중 — ${rowCount.toLocaleString()}행 · ${mode}`)
+            setStatus(t('측정 중 — {rows}행 · {mode}', { rows: rowCount.toLocaleString(), mode }))
             table.clear()
             await BenchResize(rowCount)
 
@@ -187,11 +188,11 @@ export default function Bench() {
         }
 
         const path = await BenchSweepDone()
-        setStatus(`완료 — ${path}`)
+        setStatus(t('완료 — {path}', { path }))
         setDone(true)
       } catch (e) {
         setError(String(e))
-        setStatus('실패')
+        setStatus(t('실패'))
       }
     })()
   }, [])

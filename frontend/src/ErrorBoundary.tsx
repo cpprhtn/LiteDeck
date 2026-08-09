@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { t } from './i18n'
 
 /**
  * Keeps one broken view from taking down the window.
@@ -33,9 +34,9 @@ export class ErrorBoundary extends Component<
 
     return (
       <div className="crash">
-        <h3>{this.props.label} 뷰에서 오류가 발생했습니다</h3>
+        <h3>{t('{label} 뷰에서 오류가 발생했습니다', { label: t(this.props.label) })}</h3>
         <p className="muted small">
-          다른 탭은 정상 동작합니다. 아래 내용을 그대로 이슈에 붙여주세요.
+          {t('다른 탭은 정상 동작합니다. 아래 내용을 그대로 이슈에 붙여주세요.')}
         </p>
         <pre className="crash-detail mono">
           {error.message}
@@ -47,7 +48,7 @@ export class ErrorBoundary extends Component<
               void navigator.clipboard.writeText(`${error.message}\n${stack}`)
             }}
           >
-            복사
+            {t('복사')}
           </button>
           <button
             className="primary"
@@ -56,7 +57,7 @@ export class ErrorBoundary extends Component<
               this.props.onReset?.()
             }}
           >
-            다시 시도
+            {t('다시 시도')}
           </button>
         </div>
       </div>

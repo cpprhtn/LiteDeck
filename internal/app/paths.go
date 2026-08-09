@@ -1,7 +1,9 @@
 package app
 
 import (
+	"errors"
 	"fmt"
+	"github.com/cpprhtn/LiteDeck/internal/i18n"
 	"path"
 	"strings"
 )
@@ -104,7 +106,7 @@ func CheckDelete(paths []string, recursive bool, typed string) ([]string, error)
 			// Not a confirmation problem. There is no circumstance in which a
 			// file manager should delete the root filesystem, so it is not on
 			// offer at any level of insistence.
-			return nil, fmt.Errorf("루트(/)는 삭제할 수 없습니다")
+			return nil, errors.New(i18n.S("루트(/)는 삭제할 수 없습니다"))
 		}
 		cleaned = append(cleaned, c)
 		if recursive && IsProtectedPath(c) {
@@ -121,12 +123,12 @@ func CheckDelete(paths []string, recursive bool, typed string) ([]string, error)
 	// exactly how an accident happens.
 	if len(cleaned) > 1 {
 		return nil, fmt.Errorf(
-			"보호된 경로(%s)는 다른 항목과 함께 삭제할 수 없습니다 — 하나씩 진행하세요",
+			i18n.S("보호된 경로(%s)는 다른 항목과 함께 삭제할 수 없습니다 — 하나씩 진행하세요"),
 			strings.Join(protected, ", "))
 	}
 	if strings.TrimSpace(typed) != cleaned[0] {
 		return nil, fmt.Errorf(
-			"%s 는 보호된 경로입니다 — 삭제하려면 경로를 정확히 입력해야 합니다",
+			i18n.S("%s 는 보호된 경로입니다 — 삭제하려면 경로를 정확히 입력해야 합니다"),
 			cleaned[0])
 	}
 	return cleaned, nil

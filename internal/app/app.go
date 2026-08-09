@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cpprhtn/LiteDeck/internal/config"
+	"github.com/cpprhtn/LiteDeck/internal/i18n"
 	"github.com/cpprhtn/LiteDeck/internal/secret"
 	"github.com/cpprhtn/LiteDeck/internal/sshcore"
 	wr "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -44,6 +45,7 @@ type App struct {
 	// integration tests can point the whole app at a temporary directory.
 	configDir  string
 	startupErr string
+	settings   *config.SettingsStore
 
 	sim *procSim  // synthetic data for the render benchmark; not shipped
 	rep *reporter // frontend timings, written where a headless run can read them
@@ -89,6 +91,18 @@ func (a *App) Startup(ctx context.Context) {
 		return
 	}
 	a.configDir = dir
+	// Preferences load before the host list: a corrupt hosts.json must not cost
+	// the user their language, and neither file should break the other.
+	a.settings = config.OpenSettings(dir)
+	// The stored choice if there is one, the environment otherwise. The frontend
+	// refines this a moment later with what the webview reports, which is the
+	// better answer where the two disagree — but a message raised before that
+	// round trip should still be in the right language.
+	if lang := a.settings.Get().Language; lang != "" {
+		i18n.SetLanguage(i18n.Parse(lang))
+	} else if lang := systemLanguage(); lang != "" {
+		i18n.SetLanguage(i18n.Parse(lang))
+	}
 
 	store, err := config.Open(dir)
 	if err != nil {
@@ -123,26 +137,36 @@ type Bootstrap struct {
 	// Version is sent to the frontend so the running build can identify itself
 	// on screen. A bug report that says "the latest one" is not actionable, and
 	// nothing else in the window says which binary this is.
-	Version      string       `json:"version"`
-	Platform     PlatformInfo `json:"platform"`
-	Hosts        []HostView   `json:"hosts"`
-	ColdStartMs  float64      `json:"coldStartMs"`
-	KeychainOK   bool         `json:"keychainOk"`
-	ConfigDir    string       `json:"configDir"`
-	HostsPath    string       `json:"hostsPath"`
-	StartupError string       `json:"startupError,omitempty"`
+	Version     string       `json:"version"`
+	Platform    PlatformInfo `json:"platform"`
+	Hosts       []HostView   `json:"hosts"`
+	ColdStartMs float64      `json:"coldStartMs"`
+	KeychainOK  bool         `json:"keychainOk"`
+	ConfigDir   string       `json:"configDir"`
+	HostsPath   string       `json:"hostsPath"`
+	// Language is the explicit choice, or "" for "follow the OS" — the frontend
+	// resolves that against what the webview reports.
+	Language string `json:"language"`
+	// SystemLanguage is what the environment says, for the frontend to fall back
+	// on when the webview has nothing useful to report.
+	SystemLanguage string `json:"systemLanguage"`
+	StartupError   string `json:"startupError,omitempty"`
 }
 
 // Bootstrap reports the initial application state.
 func (a *App) Bootstrap() Bootstrap {
 	b := Bootstrap{
-		Version:      Version,
-		Platform:     a.Platform(),
-		Hosts:        a.ListHosts(),
-		ColdStartMs:  a.ColdStartMs(),
-		KeychainOK:   a.secrets.Available(),
-		ConfigDir:    a.configDir,
-		StartupError: a.startupErr,
+		Version:        Version,
+		Platform:       a.Platform(),
+		Hosts:          a.ListHosts(),
+		ColdStartMs:    a.ColdStartMs(),
+		KeychainOK:     a.secrets.Available(),
+		ConfigDir:      a.configDir,
+		StartupError:   a.startupErr,
+		SystemLanguage: systemLanguage(),
+	}
+	if a.settings != nil {
+		b.Language = a.settings.Get().Language
 	}
 	if a.hosts != nil {
 		b.HostsPath = a.hosts.Path()

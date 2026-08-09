@@ -11,10 +11,12 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
+	"github.com/cpprhtn/LiteDeck/internal/i18n"
 )
 
 // selfCache remembers each connection's own sshd ancestors.
@@ -68,8 +70,8 @@ func (a *App) selfPIDs(ctx context.Context, hostID string) (map[int]bool, error)
 		// Refusing to continue rather than guessing. Without this set every
 		// session looks safe to end, including ours, and the first thing the user
 		// clicks could be the connection they are clicking with.
-		return nil, fmt.Errorf(
-			"이 서버에서 자기 세션을 식별하지 못했습니다 — 안전을 확인할 수 없어 세션 종료를 막습니다")
+		return nil, errors.New(
+			i18n.S("이 서버에서 자기 세션을 식별하지 못했습니다 — 안전을 확인할 수 없어 세션 종료를 막습니다"))
 	}
 	a.selves.put(hostID, pids)
 	return pids, nil
@@ -77,7 +79,7 @@ func (a *App) selfPIDs(ctx context.Context, hostID string) (map[int]bool, error)
 
 // ListSSHSessions returns the logins on this server.
 func (a *App) ListSSHSessions(hostID string) ([]adapter.SSHSession, error) {
-	info, err := a.requireCapability(hostID, adapter.CapSessions, "SSH 세션 목록")
+	info, err := a.requireCapability(hostID, adapter.CapSessions, i18n.S("SSH 세션 목록"))
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +150,7 @@ func (a *App) EndSSHSession(hostID string, pid int) ActionResult {
 	if pid <= 1 {
 		return failResult(fmt.Errorf("app: invalid pid %d", pid))
 	}
-	if _, err := a.requireCapability(hostID, adapter.CapSessions, "SSH 세션 목록"); err != nil {
+	if _, err := a.requireCapability(hostID, adapter.CapSessions, i18n.S("SSH 세션 목록")); err != nil {
 		return failResult(err)
 	}
 	conn, err := a.mgr.Conn(hostID)
@@ -175,8 +177,8 @@ func (a *App) EndSSHSession(hostID string, pid int) ActionResult {
 	}
 
 	if adapter.SessionListenerPIDs(res.Stdout)[pid] {
-		return failResult(fmt.Errorf(
-			"PID %d는 sshd 데몬 또는 연결의 관리 프로세스입니다 — 종료하면 이 서버의 모든 SSH 접속이 끊깁니다", pid))
+		return failResult(errors.New(
+			i18n.T("PID %d는 sshd 데몬 또는 연결의 관리 프로세스입니다 — 종료하면 이 서버의 모든 SSH 접속이 끊깁니다", pid)))
 	}
 
 	sessions, err := adapter.ParseSSHSessions(res.Stdout, self)
@@ -191,12 +193,12 @@ func (a *App) EndSSHSession(hostID string, pid int) ActionResult {
 		}
 	}
 	if target == nil {
-		return failResult(fmt.Errorf(
-			"PID %d는 더 이상 SSH 세션이 아닙니다 — 목록을 새로고침하세요", pid))
+		return failResult(errors.New(
+			i18n.T("PID %d는 더 이상 SSH 세션이 아닙니다 — 목록을 새로고침하세요", pid)))
 	}
 	if target.Self || self[pid] {
-		return failResult(fmt.Errorf(
-			"지금 LiteDeck이 쓰고 있는 접속입니다 — 종료하면 이 서버와의 연결이 끊깁니다"))
+		return failResult(errors.New(
+			i18n.S("지금 LiteDeck이 쓰고 있는 접속입니다 — 종료하면 이 서버와의 연결이 끊깁니다")))
 	}
 
 	out, err := conn.Exec(ctx, "kill", adapter.KillSessionArgs(pid)...)

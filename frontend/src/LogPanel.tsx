@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { StopLogStream, on, type LogLine, type LogStream } from './ipc'
+import { t } from './i18n'
 
 // Live log output (§4.3, §4.5).
 //
@@ -27,7 +28,7 @@ export function LogPanel({
       // the window would slow to a crawl over a long session.
       setLines((prev) => (prev.length >= MAX_LINES ? [...prev.slice(1), line] : [...prev, line])),
     )
-    const offExit = on<string>(`log:exit:${stream.id}`, (msg) => setEnded(msg || '스트림 종료'))
+    const offExit = on<string>(`log:exit:${stream.id}`, (msg) => setEnded(msg || t('스트림 종료')))
     return () => {
       offData()
       offExit()
@@ -59,11 +60,11 @@ export function LogPanel({
     <div className="logpanel">
       <div className="logpanel-head">
         <strong className="mono ellipsis">{stream.title}</strong>
-        <span className="muted small">{lines.length}줄</span>
+        <span className="muted small">{t('{n}줄', { n: lines.length })}</span>
         {ended && <span className="badge warn">{ended}</span>}
         <input
           className="search"
-          placeholder="필터"
+          placeholder={t('필터')}
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         />
@@ -77,7 +78,7 @@ export function LogPanel({
               }
             }}
           >
-            ↓ 최신으로
+            {t('↓ 최신으로')}
           </button>
         )}
         <button
@@ -86,17 +87,17 @@ export function LogPanel({
             void navigator.clipboard.writeText(shown.map((l) => l.text).join('\n'))
           }}
         >
-          복사
+          {t('복사')}
         </button>
         <button className="ghost small-btn" onClick={onClose}>
-          닫기
+          {t('닫기')}
         </button>
       </div>
 
       <div className="logpanel-body mono" ref={bodyRef} onScroll={onScroll}>
         {shown.length === 0 && (
           <div className="placeholder small">
-            {lines.length === 0 ? '로그를 기다리는 중…' : '필터에 맞는 줄이 없습니다.'}
+            {lines.length === 0 ? t('로그를 기다리는 중…') : t('필터에 맞는 줄이 없습니다.')}
           </div>
         )}
         {shown.map((l, i) => (

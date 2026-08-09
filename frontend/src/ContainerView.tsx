@@ -11,6 +11,7 @@ import {
   type Container,
   type LogStream,
 } from './ipc'
+import { t } from './i18n'
 
 // The container view (§4.5). Cards rather than a table: a host runs a handful of
 // containers, not thousands, and the things people want at a glance — image,
@@ -69,11 +70,11 @@ export function ContainerView({
       if (!res.ok) {
         if (res.needsElevation) {
           setNeedsRoot({
-            message: res.error ?? '권한이 필요합니다',
+            message: res.error ?? t('권한이 필요합니다'),
             retry: () => void fn(true).then(() => refresh()),
           })
         } else {
-          onError(res.error ?? '실패했습니다')
+          onError(res.error ?? t('실패했습니다'))
         }
         return
       }
@@ -111,8 +112,8 @@ export function ContainerView({
       <div className="view">
         <div className="view-toolbar">
           <div className="segmented">
-            <button onClick={() => setPane('containers')}>컨테이너</button>
-            <button data-on>이미지 · 볼륨</button>
+            <button onClick={() => setPane('containers')}>{t('컨테이너')}</button>
+            <button data-on>{t('이미지 · 볼륨')}</button>
           </div>
         </div>
         <ImagesVolumes hostID={hostID} visible onError={onError} />
@@ -124,38 +125,38 @@ export function ContainerView({
     <div className="view">
       <div className="view-toolbar">
         <div className="segmented">
-          <button data-on>컨테이너</button>
-          <button onClick={() => setPane('storage')}>이미지 · 볼륨</button>
+          <button data-on>{t('컨테이너')}</button>
+          <button onClick={() => setPane('storage')}>{t('이미지 · 볼륨')}</button>
         </div>
         <div className="segmented">
           <button data-on={filter === 'all' || undefined} onClick={() => setFilter('all')}>
-            전체 {containers.length}
+            {t('전체 {n}', { n: containers.length })}
           </button>
           <button
             data-on={filter === 'running' || undefined}
             onClick={() => setFilter('running')}
           >
-            실행 중 {runningCount}
+            {t('실행 중 {n}', { n: runningCount })}
           </button>
           <button
             data-on={filter === 'stopped' || undefined}
             data-danger={crashed > 0 || undefined}
             onClick={() => setFilter('stopped')}
           >
-            중지됨 {containers.length - runningCount}
+            {t('중지됨 {n}', { n: containers.length - runningCount })}
           </button>
         </div>
         <span className="spacer" />
-        {crashed > 0 && <span className="badge danger">비정상 종료 {crashed}</span>}
+        {crashed > 0 && <span className="badge danger">{t('비정상 종료 {n}', { n: crashed })}</span>}
         <button className="ghost" onClick={() => void refresh()}>
-          새로고침
+          {t('새로고침')}
         </button>
       </div>
 
       <div className="cards">
-        {loading && <div className="placeholder">컨테이너를 읽는 중…</div>}
+        {loading && <div className="placeholder">{t('컨테이너를 읽는 중…')}</div>}
         {!loading && rows.length === 0 && (
-          <div className="placeholder">조건에 맞는 컨테이너가 없습니다.</div>
+          <div className="placeholder">{t('조건에 맞는 컨테이너가 없습니다.')}</div>
         )}
 
         {rows.map((c) => {
@@ -197,7 +198,7 @@ export function ContainerView({
                         void run(c.id, (e) => ContainerAction(hostID, c.id, 'stop', e))
                       }
                     >
-                      중지
+                      {t('중지')}
                     </button>
                     <button
                       disabled={busy}
@@ -205,7 +206,7 @@ export function ContainerView({
                         void run(c.id, (e) => ContainerAction(hostID, c.id, 'restart', e))
                       }
                     >
-                      재시작
+                      {t('재시작')}
                     </button>
                   </>
                 ) : (
@@ -215,15 +216,15 @@ export function ContainerView({
                       void run(c.id, (e) => ContainerAction(hostID, c.id, 'start', e))
                     }
                   >
-                    시작
+                    {t('시작')}
                   </button>
                 )}
                 <button disabled={busy} onClick={() => void showLogs(c)}>
-                  로그
+                  {t('로그')}
                 </button>
                 <span className="spacer" />
                 <button className="danger" disabled={busy} onClick={() => setConfirmRemove(c)}>
-                  삭제
+                  {t('삭제')}
                 </button>
               </div>
             </div>
@@ -241,10 +242,10 @@ export function ContainerView({
               setNeedsRoot(null)
             }}
           >
-            관리자 권한으로 재시도
+            {t('관리자 권한으로 재시도')}
           </button>
           <button className="ghost small-btn" onClick={() => setNeedsRoot(null)}>
-            취소
+            {t('취소')}
           </button>
         </div>
       )}
@@ -254,26 +255,25 @@ export function ContainerView({
       {confirmRemove && (
         <div className="scrim">
           <div className="dialog">
-            <h2>컨테이너를 삭제하시겠습니까?</h2>
+            <h2>{t('컨테이너를 삭제하시겠습니까?')}</h2>
             <p className="muted">
-              컨테이너와 그 안의 쓰기 계층이 삭제됩니다. 이미지와 명명된 볼륨은
-              남습니다.
+              {t('컨테이너와 그 안의 쓰기 계층이 삭제됩니다. 이미지와 명명된 볼륨은 남습니다.')}
             </p>
             <dl className="keyinfo">
-              <dt>이름</dt>
+              <dt>{t('이름')}</dt>
               <dd className="mono">{confirmRemove.name}</dd>
-              <dt>이미지</dt>
+              <dt>{t('이미지')}</dt>
               <dd className="mono">{confirmRemove.image}</dd>
-              <dt>상태</dt>
+              <dt>{t('상태')}</dt>
               <dd className="mono">{confirmRemove.status}</dd>
             </dl>
             {confirmRemove.state === 'running' && (
               <p className="warn-text">
-                실행 중인 컨테이너입니다. 삭제하면 <strong>강제 종료</strong>됩니다.
+                {t('실행 중인 컨테이너입니다. 삭제하면')} <strong>{t('강제 종료')}</strong>{t('됩니다.')}
               </p>
             )}
             <div className="dialog-actions">
-              <button onClick={() => setConfirmRemove(null)}>취소</button>
+              <button onClick={() => setConfirmRemove(null)}>{t('취소')}</button>
               <button
                 className="danger"
                 onClick={() => {
@@ -284,7 +284,7 @@ export function ContainerView({
                   )
                 }}
               >
-                삭제
+                {t('삭제')}
               </button>
             </div>
           </div>

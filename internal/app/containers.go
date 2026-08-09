@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
+	"github.com/cpprhtn/LiteDeck/internal/i18n"
 )
 
 // The container view (§4.5).
@@ -54,7 +55,7 @@ func (a *App) ListContainers(hostID string) ([]adapter.Container, error) {
 		// The daemon being unreachable is the common failure and deserves a
 		// better line than a raw stderr dump.
 		if strings.Contains(strings.ToLower(string(res.Stderr)), "permission denied") {
-			return nil, fmt.Errorf("%s 데몬에 접근할 권한이 없습니다 — 사용자가 docker 그룹에 있는지 확인하세요", runtime)
+			return nil, i18n.Errorf("%s 데몬에 접근할 권한이 없습니다 — 사용자가 docker 그룹에 있는지 확인하세요", runtime)
 		}
 		return nil, res.Err()
 	}

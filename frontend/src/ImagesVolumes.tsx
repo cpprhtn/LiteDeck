@@ -9,6 +9,7 @@ import {
   type Image,
   type Volume,
 } from './ipc'
+import { t } from './i18n'
 
 // Images and volumes (v1.x). People open this to reclaim disk, so the two
 // things it must answer are "what is big" and "what is safe to delete".
@@ -75,11 +76,11 @@ export function ImagesVolumes({
       if (!res.ok) {
         if (res.needsElevation) {
           setNeedsRoot({
-            message: res.error ?? '권한이 필요합니다',
+            message: res.error ?? t('권한이 필요합니다'),
             retry: () => void fn(true).then(() => refresh()),
           })
         } else {
-          onError(res.error ?? '실패했습니다')
+          onError(res.error ?? t('실패했습니다'))
         }
         return
       }
@@ -96,13 +97,17 @@ export function ImagesVolumes({
   const unusedVolumes = volumes.filter((v) => !v.inUse)
   const totalBytes = images.reduce((a, i) => a + i.sizeBytes, 0)
 
-  if (loading) return <div className="placeholder">이미지·볼륨을 읽는 중…</div>
+  if (loading) return <div className="placeholder">{t('이미지·볼륨을 읽는 중…')}</div>
 
   return (
     <div className="view net-view">
       <div className="view-toolbar">
         <span className="muted small">
-          이미지 {images.length}개 · 합계 {fmtBytes(totalBytes)} · 볼륨 {volumes.length}개
+          {t('이미지 {images}개 · 합계 {size} · 볼륨 {volumes}개', {
+            images: images.length,
+            size: fmtBytes(totalBytes),
+            volumes: volumes.length,
+          })}
         </span>
         <span className="spacer" />
         {dangling.length > 0 && (
@@ -113,11 +118,11 @@ export function ImagesVolumes({
               setConfirm({ kind: 'prune', count: dangling.length, bytes: danglingBytes })
             }
           >
-            미사용 레이어 정리 ({fmtBytes(danglingBytes)})
+            {t('미사용 레이어 정리 ({size})', { size: fmtBytes(danglingBytes) })}
           </button>
         )}
         <button className="ghost" onClick={() => void refresh()}>
-          새로고침
+          {t('새로고침')}
         </button>
       </div>
 
@@ -131,10 +136,10 @@ export function ImagesVolumes({
               setNeedsRoot(null)
             }}
           >
-            관리자 권한으로 재시도
+            {t('관리자 권한으로 재시도')}
           </button>
           <button className="ghost small-btn" onClick={() => setNeedsRoot(null)}>
-            취소
+            {t('취소')}
           </button>
         </div>
       )}
@@ -142,17 +147,20 @@ export function ImagesVolumes({
       <div className="net-body">
         <section>
           <h3 className="net-heading">
-            이미지
-            <span className="muted small"> — 큰 순서. 사용 중이면 데몬이 삭제를 거부합니다</span>
+            {t('이미지')}
+            <span className="muted small">
+              {' '}
+              {t('— 큰 순서. 사용 중이면 데몬이 삭제를 거부합니다')}
+            </span>
           </h3>
-          {images.length === 0 && <div className="placeholder small">이미지가 없습니다.</div>}
+          {images.length === 0 && <div className="placeholder small">{t('이미지가 없습니다.')}</div>}
           {images.length > 0 && (
             <div className="table net-table">
               <div className="thead" style={{ gridTemplateColumns: '1fr 120px 100px 90px 80px' }}>
                 <div>REPOSITORY:TAG</div>
                 <div className="num">SIZE</div>
-                <div className="num">사용 중</div>
-                <div>상태</div>
+                <div className="num">{t('사용 중')}</div>
+                <div>{t('상태')}</div>
                 <div />
               </div>
               {images.map((img) => (
@@ -174,11 +182,11 @@ export function ImagesVolumes({
                   </div>
                   <div>
                     {img.dangling ? (
-                      <span className="badge warn">미사용 레이어</span>
+                      <span className="badge warn">{t('미사용 레이어')}</span>
                     ) : img.containers === 0 ? (
-                      <span className="muted small">참조 없음</span>
+                      <span className="muted small">{t('참조 없음')}</span>
                     ) : (
-                      <span className="muted small">사용 중</span>
+                      <span className="muted small">{t('사용 중')}</span>
                     )}
                   </div>
                   <div>
@@ -187,7 +195,7 @@ export function ImagesVolumes({
                       disabled={pending === img.id}
                       onClick={() => setConfirm({ kind: 'image', image: img })}
                     >
-                      삭제
+                      {t('삭제')}
                     </button>
                   </div>
                 </div>
@@ -198,14 +206,15 @@ export function ImagesVolumes({
 
         <section>
           <h3 className="net-heading">
-            볼륨
+            {t('볼륨')}
             <span className="muted small">
               {' '}
-              — 사용 중인 볼륨은 데몬이 삭제를 거부합니다. LiteDeck은 그것을 우회하는
-              방법을 제공하지 않습니다
+              {t(
+                '— 사용 중인 볼륨은 데몬이 삭제를 거부합니다. LiteDeck은 그것을 우회하는 방법을 제공하지 않습니다',
+              )}
             </span>
           </h3>
-          {volumes.length === 0 && <div className="placeholder small">볼륨이 없습니다.</div>}
+          {volumes.length === 0 && <div className="placeholder small">{t('볼륨이 없습니다.')}</div>}
           {volumes.length > 0 && (
             <div className="table net-table">
               <div className="thead" style={{ gridTemplateColumns: '1fr 90px 2fr 80px' }}>
@@ -222,7 +231,7 @@ export function ImagesVolumes({
                 >
                   <div className="ellipsis mono">
                     {v.name}
-                    {!v.inUse && <span className="badge warn">미사용</span>}
+                    {!v.inUse && <span className="badge warn">{t('미사용')}</span>}
                   </div>
                   <div className="muted mono">{v.driver}</div>
                   <div className="ellipsis muted mono" title={v.mountpoint}>
@@ -232,10 +241,10 @@ export function ImagesVolumes({
                     <button
                       className="ghost small-btn"
                       disabled={pending === v.name || v.inUse}
-                      title={v.inUse ? '사용 중인 볼륨은 삭제할 수 없습니다' : undefined}
+                      title={v.inUse ? t('사용 중인 볼륨은 삭제할 수 없습니다') : undefined}
                       onClick={() => setConfirm({ kind: 'volume', volume: v })}
                     >
-                      삭제
+                      {t('삭제')}
                     </button>
                   </div>
                 </div>
@@ -244,8 +253,7 @@ export function ImagesVolumes({
           )}
           {unusedVolumes.length > 0 && (
             <p className="muted small">
-              미사용 볼륨 {unusedVolumes.length}개 — 컨테이너가 지워진 뒤에도 데이터는
-              남습니다. 필요 없는지 확인하고 지우세요.
+              {t('미사용 볼륨 {n}개 — 컨테이너가 지워진 뒤에도 데이터는 남습니다. 필요 없는지 확인하고 지우세요.', { n: unusedVolumes.length })}
             </p>
           )}
         </section>
@@ -256,27 +264,26 @@ export function ImagesVolumes({
           <div className="dialog">
             {confirm.kind === 'image' && (
               <>
-                <h2>이미지를 삭제하시겠습니까?</h2>
+                <h2>{t('이미지를 삭제하시겠습니까?')}</h2>
                 <dl className="keyinfo">
-                  <dt>이미지</dt>
+                  <dt>{t('이미지')}</dt>
                   <dd className="mono">
                     {confirm.image.dangling
                       ? '<none>'
                       : `${confirm.image.repository}:${confirm.image.tag}`}
                   </dd>
-                  <dt>크기</dt>
+                  <dt>{t('크기')}</dt>
                   <dd className="mono">{fmtBytes(confirm.image.sizeBytes)}</dd>
                   <dt>ID</dt>
                   <dd className="mono selectable">{confirm.image.id}</dd>
                 </dl>
                 {confirm.image.containers > 0 && (
                   <p className="warn-text">
-                    컨테이너 {confirm.image.containers}개가 이 이미지를 쓰고 있어 데몬이
-                    거부할 것입니다.
+                    {t('컨테이너 {n}개가 이 이미지를 쓰고 있어 데몬이 거부할 것입니다.', { n: confirm.image.containers })}
                   </p>
                 )}
                 <div className="dialog-actions">
-                  <button onClick={() => setConfirm(null)}>취소</button>
+                  <button onClick={() => setConfirm(null)}>{t('취소')}</button>
                   <button
                     className="danger"
                     onClick={() =>
@@ -285,7 +292,7 @@ export function ImagesVolumes({
                       )
                     }
                   >
-                    삭제
+                    {t('삭제')}
                   </button>
                 </div>
               </>
@@ -293,19 +300,18 @@ export function ImagesVolumes({
 
             {confirm.kind === 'volume' && (
               <>
-                <h2>볼륨을 삭제하시겠습니까?</h2>
+                <h2>{t('볼륨을 삭제하시겠습니까?')}</h2>
                 <p className="muted">
-                  볼륨 안의 데이터가 영구히 사라집니다. 컨테이너와 달리 다시 만들 수
-                  없습니다.
+                  {t('볼륨 안의 데이터가 영구히 사라집니다. 컨테이너와 달리 다시 만들 수 없습니다.')}
                 </p>
                 <dl className="keyinfo">
-                  <dt>이름</dt>
+                  <dt>{t('이름')}</dt>
                   <dd className="mono">{confirm.volume.name}</dd>
-                  <dt>경로</dt>
+                  <dt>{t('경로')}</dt>
                   <dd className="mono selectable">{confirm.volume.mountpoint}</dd>
                 </dl>
                 <div className="dialog-actions">
-                  <button onClick={() => setConfirm(null)}>취소</button>
+                  <button onClick={() => setConfirm(null)}>{t('취소')}</button>
                   <button
                     className="danger"
                     onClick={() =>
@@ -314,7 +320,7 @@ export function ImagesVolumes({
                       )
                     }
                   >
-                    삭제
+                    {t('삭제')}
                   </button>
                 </div>
               </>
@@ -322,18 +328,17 @@ export function ImagesVolumes({
 
             {confirm.kind === 'prune' && (
               <>
-                <h2>미사용 레이어를 정리하시겠습니까?</h2>
+                <h2>{t('미사용 레이어를 정리하시겠습니까?')}</h2>
                 <p className="muted">
-                  태그가 없는 레이어 {confirm.count}개, 약 {fmtBytes(confirm.bytes)}가
-                  삭제됩니다. 태그가 붙은 이미지는 건드리지 않습니다.
+                  {t('태그가 없는 레이어 {n}개, 약 {size}가 삭제됩니다. 태그가 붙은 이미지는 건드리지 않습니다.', { n: confirm.count, size: fmtBytes(confirm.bytes) })}
                 </p>
                 <div className="dialog-actions">
-                  <button onClick={() => setConfirm(null)}>취소</button>
+                  <button onClick={() => setConfirm(null)}>{t('취소')}</button>
                   <button
                     className="danger"
                     onClick={() => void run('prune', (e) => PruneImages(hostID, e))}
                   >
-                    정리
+                    {t('정리')}
                   </button>
                 </div>
               </>

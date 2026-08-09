@@ -30,6 +30,7 @@ import {
   type OpenFile,
 } from './openFiles'
 import { isTyping, matches, shortcutLabel } from './platform'
+import { t } from './i18n'
 
 // CodeMirror and its grammars are the largest thing in the app after the
 // terminal, and a session spent looking at a directory listing never needs
@@ -133,9 +134,9 @@ function PermissionEditor({
   const bit = (i: number) => (perm >> i) & 1
   const toggle = (i: number) => onChange(perm ^ (1 << i))
   const rows = [
-    { label: '소유자', base: 6 },
-    { label: '그룹', base: 3 },
-    { label: '기타', base: 0 },
+    { label: t('소유자'), base: 6 },
+    { label: t('그룹'), base: 3 },
+    { label: t('기타'), base: 0 },
   ]
 
   return (
@@ -450,7 +451,9 @@ export function FileExplorer({
         const file = await ReadTextFile(hostID, reveal.path)
         if (file.tooLarge || file.binary) {
           onError(
-            `${reveal.path}: ${file.binary ? '바이너리 파일이라' : '편집기 한도(2MB)를 넘어'} 열 수 없습니다`,
+            file.binary
+              ? t('{path}: 바이너리 파일이라 열 수 없습니다', { path: reveal.path })
+              : t('{path}: 편집기 한도(2MB)를 넘어 열 수 없습니다', { path: reveal.path }),
           )
           return
         }
@@ -531,11 +534,11 @@ export function FileExplorer({
     try {
       const file = await ReadTextFile(hostID, e.path)
       if (file.tooLarge) {
-        onError(`${e.name}: ${fmtSize(file.size, false)} — 편집기 한도(2MB)를 넘습니다`)
+        onError(t('{name}: {size} — 편집기 한도(2MB)를 넘습니다', { name: e.name, size: fmtSize(file.size, false) }))
         return
       }
       if (file.binary) {
-        onError(`${e.name}: 바이너리 파일이라 편집할 수 없습니다`)
+        onError(t('{name}: 바이너리 파일이라 편집할 수 없습니다', { name: e.name }))
         return
       }
       openFile(hostID, file)
@@ -549,7 +552,7 @@ export function FileExplorer({
     try {
       const res = await fn()
       if (!res.ok) {
-        onError(res.error ?? '실패했습니다')
+        onError(res.error ?? t('실패했습니다'))
         return false
       }
       setDialog(null)
@@ -630,7 +633,7 @@ export function FileExplorer({
 
   const download = async () => {
     if (selectedEntries.length === 0) {
-      onError('다운로드할 항목을 선택하세요')
+      onError(t('다운로드할 항목을 선택하세요'))
       return
     }
     try {
@@ -661,7 +664,7 @@ export function FileExplorer({
     >
       {dropping && (
         <div className="drop-hint">
-          <strong>{cwd}</strong> 에 업로드합니다
+          {t('{dir} 에 업로드합니다', { dir: cwd })}
         </div>
       )}
 
@@ -678,7 +681,7 @@ export function FileExplorer({
               className="ghost"
               disabled={!listing || cwd === '/'}
               onClick={() => listing && navigate(listing.parent)}
-              title={`상위 폴더 (${shortcutLabel('parentDir')})`}
+              title={t('상위 폴더 ({key})', { key: shortcutLabel('parentDir') })}
             >
               ↑
             </button>
@@ -703,10 +706,10 @@ export function FileExplorer({
                 checked={showHidden}
                 onChange={(e) => setShowHidden(e.target.checked)}
               />
-              숨김
+              {t('숨김')}
             </label>
             <button className="ghost" onClick={() => void refresh()} title={shortcutLabel('refresh')}>
-              새로고침
+              {t('새로고침')}
             </button>
           </div>
 
@@ -717,11 +720,11 @@ export function FileExplorer({
                 setDialog({ kind: 'newFolder' })
               }}
             >
-              새 폴더
+              {t('새 폴더')}
             </button>
-            <button onClick={() => void upload()}>업로드…</button>
+            <button onClick={() => void upload()}>{t('업로드…')}</button>
             <button disabled={selectedEntries.length === 0} onClick={() => void download()}>
-              다운로드…
+              {t('다운로드…')}
             </button>
             <button
               disabled={selectedEntries.length !== 1}
@@ -731,7 +734,7 @@ export function FileExplorer({
                 setDialog({ kind: 'rename', entry: e })
               }}
             >
-              이름 변경
+              {t('이름 변경')}
             </button>
             <button
               disabled={selectedEntries.length !== 1}
@@ -741,22 +744,22 @@ export function FileExplorer({
                 setDialog({ kind: 'perms', entry: e })
               }}
             >
-              권한
+              {t('권한')}
             </button>
             <button
               className="danger"
               disabled={selectedEntries.length === 0}
               onClick={() => void askDelete()}
             >
-              삭제
+              {t('삭제')}
             </button>
             {listing?.protected && (
-              <span className="badge warn" title="루트 바로 아래 디렉터리 — 하위까지 지우려면 경로를 직접 입력해야 합니다">
-                보호된 경로
+              <span className="badge warn" title={t('루트 바로 아래 디렉터리 — 하위까지 지우려면 경로를 직접 입력해야 합니다')}>
+                {t('보호된 경로')}
               </span>
             )}
             {listing?.truncated && (
-              <span className="badge warn">{listing.total}개 중 일부만 표시</span>
+              <span className="badge warn">{t('{n}개 중 일부만 표시', { n: listing.total })}</span>
             )}
           </div>
 
@@ -768,9 +771,9 @@ export function FileExplorer({
               {layout.modified && <div>MODIFIED</div>}
             </div>
             <div className="tbody" ref={scrollRef}>
-              {busy && !listing && <div className="placeholder">읽는 중…</div>}
+              {busy && !listing && <div className="placeholder">{t('읽는 중…')}</div>}
               {listing && rows.length === 0 && (
-                <div className="placeholder">비어 있는 디렉터리입니다.</div>
+                <div className="placeholder">{t('비어 있는 디렉터리입니다.')}</div>
               )}
               <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
                 {virtualizer.getVirtualItems().map((item) => {
@@ -827,7 +830,7 @@ export function FileExplorer({
                         {e.isSymlink && e.linkTarget && (
                           <span className="muted"> → {e.linkTarget}</span>
                         )}
-                        {e.broken && <span className="badge danger">끊긴 링크</span>}
+                        {e.broken && <span className="badge danger">{t('끊긴 링크')}</span>}
                       </div>
                       <div className="num mono">{fmtSize(e.size, e.isDir)}</div>
                       {layout.mode && <div className="mono muted">{e.mode}</div>}
@@ -866,7 +869,7 @@ export function FileExplorer({
               }}
               onDoubleClick={() => setTreeWidth(360)}
             />
-            <Suspense fallback={<div className="placeholder">편집기를 불러오는 중…</div>}>
+            <Suspense fallback={<div className="placeholder">{t('편집기를 불러오는 중…')}</div>}>
               {/* Only the directory the file lives in — rereading every open folder
                   on every save would put a burst of readdir on the server for
                   one changed size. */}
@@ -884,7 +887,7 @@ export function FileExplorer({
 
       {dialog?.kind === 'newFolder' && (
         <Prompt
-          title="새 폴더"
+          title={t('새 폴더')}
           value={input}
           onChange={setInput}
           busy={busy}
@@ -895,7 +898,7 @@ export function FileExplorer({
 
       {dialog?.kind === 'rename' && (
         <Prompt
-          title="이름 변경"
+          title={t('이름 변경')}
           value={input}
           onChange={setInput}
           busy={busy}
@@ -917,17 +920,17 @@ export function FileExplorer({
       {dialog?.kind === 'perms' && (
         <div className="scrim">
           <div className="dialog">
-            <h2>권한</h2>
+            <h2>{t('권한')}</h2>
             <p className="mono muted ellipsis">{dialog.entry.path}</p>
             <PermissionEditor perm={perm} onChange={setPerm} />
             <div className="dialog-actions">
-              <button onClick={() => setDialog(null)}>취소</button>
+              <button onClick={() => setDialog(null)}>{t('취소')}</button>
               <button
                 className="primary"
                 disabled={busy}
                 onClick={() => void act(() => Chmod(hostID, dialog.entry.path, perm))}
               >
-                적용
+                {t('적용')}
               </button>
             </div>
           </div>
@@ -937,8 +940,8 @@ export function FileExplorer({
       {dialog?.kind === 'delete' && (
         <div className="scrim">
           <div className="dialog">
-            <h2>삭제하시겠습니까?</h2>
-            <p className="muted">{dialog.entries.length}개 항목이 영구히 삭제됩니다.</p>
+            <h2>{t('삭제하시겠습니까?')}</h2>
+            <p className="muted">{t('{n}개 항목이 영구히 삭제됩니다.', { n: dialog.entries.length })}</p>
             <div className="delete-list mono">
               {dialog.entries.map((e) => (
                 <div key={e.path} className="ellipsis">
@@ -952,15 +955,14 @@ export function FileExplorer({
                 file it belongs to destroys work that was never on the server. */}
             {dialog.unsaved.length > 0 && (
               <p className="warn-text">
-                {dialog.unsaved.length}개 파일에 저장하지 않은 변경이 있습니다 — 삭제하면
-                그 편집본도 함께 사라집니다.
+                {t('{n}개 파일에 저장하지 않은 변경이 있습니다 — 삭제하면 그 편집본도 함께 사라집니다.', { n: dialog.unsaved.length })}
               </p>
             )}
             {dialog.protectedPath && (
               <>
                 <p className="warn-text">
-                  <strong>{dialog.protectedPath}</strong> 는 보호된 경로입니다. 계속하려면
-                  경로를 정확히 입력하세요.
+                  <strong>{dialog.protectedPath}</strong>{' '}
+                  {t('는 보호된 경로입니다. 계속하려면 경로를 정확히 입력하세요.')}
                 </p>
                 <input
                   value={input}
@@ -971,7 +973,7 @@ export function FileExplorer({
               </>
             )}
             <div className="dialog-actions">
-              <button onClick={() => setDialog(null)}>취소</button>
+              <button onClick={() => setDialog(null)}>{t('취소')}</button>
               <button
                 className="danger"
                 disabled={busy}
@@ -984,7 +986,7 @@ export function FileExplorer({
                   })
                 }}
               >
-                삭제
+                {t('삭제')}
               </button>
             </div>
           </div>
@@ -1030,10 +1032,10 @@ function Prompt({
         />
         <div className="dialog-actions">
           <button type="button" onClick={onCancel}>
-            취소
+            {t('취소')}
           </button>
           <button type="submit" className="primary" disabled={busy || !value.trim()}>
-            확인
+            {t('확인')}
           </button>
         </div>
       </form>

@@ -8,6 +8,7 @@ import (
 	"io"
 	"sync"
 
+	"github.com/cpprhtn/LiteDeck/internal/i18n"
 	"github.com/cpprhtn/LiteDeck/internal/shellquote"
 	"golang.org/x/crypto/ssh"
 )
@@ -85,7 +86,7 @@ func (c *Conn) OpenStreamOpts(
 		return nil, fmt.Errorf("sshcore: waiting for a stream slot: %w", ctx.Err())
 	default:
 		return nil, fmt.Errorf(
-			"sshcore: 동시에 열 수 있는 스트림 수를 초과했습니다 (%d개) — 터미널 탭이나 로그 창을 닫아보세요",
+			i18n.S("sshcore: 동시에 열 수 있는 스트림 수를 초과했습니다 (%d개) — 터미널 탭이나 로그 창을 닫아보세요"),
 			cap(c.longLived))
 	}
 	release := func() { <-c.longLived }

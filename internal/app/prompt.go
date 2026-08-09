@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cpprhtn/LiteDeck/internal/i18n"
 	"github.com/cpprhtn/LiteDeck/internal/secret"
 	"github.com/cpprhtn/LiteDeck/internal/sshcore"
 )
@@ -229,7 +230,7 @@ func (b *promptBridge) secretFunc(hostID string, kind secret.Kind, label string)
 			if err := b.app.secrets.Set(hostID, kind, value); err != nil {
 				// Failing to save is not a reason to fail the connection; the
 				// user just gets asked again next time.
-				b.app.emit("log:warning", fmt.Sprintf("%s 저장 실패 (%s): %v", kind, hostID, err))
+				b.app.emit("log:warning", i18n.T("%s 저장 실패 (%s): %v", kind, hostID, err))
 			}
 		}
 		return value, nil

@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/cpprhtn/LiteDeck/internal/i18n"
 	"github.com/cpprhtn/LiteDeck/internal/secret"
 	"github.com/cpprhtn/LiteDeck/internal/sshcore"
 )
@@ -62,7 +63,7 @@ func (a *App) execMaybeElevated(
 		return conn.Exec(ctx, "sudo", append([]string{"-n", "--", cmd}, args...)...)
 	}
 
-	password, err := a.prompts.secretFunc(hostID, secret.KindSudo, "sudo 비밀번호")()
+	password, err := a.prompts.secretFunc(hostID, secret.KindSudo, i18n.S("sudo 비밀번호"))()
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +91,7 @@ func (a *App) classify(hostID string, res *sshcore.Result, elevated bool) Action
 	// Offering elevation after an elevated attempt already failed would loop.
 	if !elevated && isPermissionDenied(res) {
 		out.NeedsElevation = true
-		out.Error = "권한이 없습니다 — 관리자 권한으로 다시 시도할 수 있습니다"
+		out.Error = i18n.S("권한이 없습니다 — 관리자 권한으로 다시 시도할 수 있습니다")
 		return out
 	}
 
@@ -100,7 +101,7 @@ func (a *App) classify(hostID string, res *sshcore.Result, elevated bool) Action
 		// keeps answering before the dialog ever appears. Drop it so the next
 		// try asks.
 		_ = a.secrets.Delete(hostID, secret.KindSudo)
-		out.Error = "sudo 인증에 실패했습니다 — 저장된 비밀번호를 지웠습니다. 다시 시도하세요"
+		out.Error = i18n.S("sudo 인증에 실패했습니다 — 저장된 비밀번호를 지웠습니다. 다시 시도하세요")
 	}
 	return out
 }

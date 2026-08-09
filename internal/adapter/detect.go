@@ -13,6 +13,7 @@ import (
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter/linuxsystemd"
 	"github.com/cpprhtn/LiteDeck/internal/adapter/windowspowershell"
+	"github.com/cpprhtn/LiteDeck/internal/i18n"
 	"github.com/cpprhtn/LiteDeck/internal/sshcore"
 )
 
@@ -338,7 +339,7 @@ func detectPlatform(ctx context.Context, r Runner) (Platform, string, []string) 
 		// filling it with the reason we guessed instead put "Windows (stderr가
 		// UTF-8이 아님)" on screen where an OS name belongs.
 		if (line != "" && !utf8.ValidString(line)) || (len(res.Stderr) > 0 && !utf8.Valid(res.Stderr)) {
-			notes = append(notes, "판정 근거: ver 의 출력이 UTF-8 이 아님 (OEM 코드페이지)")
+			notes = append(notes, i18n.S("판정 근거: ver 의 출력이 UTF-8 이 아님 (OEM 코드페이지)"))
 			return PlatformWindows, "", notes
 		}
 	}

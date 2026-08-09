@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/cpprhtn/LiteDeck/internal/i18n"
 	"github.com/cpprhtn/LiteDeck/internal/secret"
 	"github.com/cpprhtn/LiteDeck/internal/sshcore"
 )
@@ -128,7 +129,7 @@ func (a *App) FollowServiceLog(hostID, unit string, tail int, elevate bool) (Log
 	}
 	if !info.CanReadJournal && !elevate {
 		return LogStream{}, fmt.Errorf(
-			"%w: 이 사용자는 systemd-journal·adm 그룹에 없어 시스템 저널을 볼 수 없습니다 — 관리자 권한으로 열거나, 서버에서 그룹에 추가하세요",
+			i18n.S("%w: 이 사용자는 systemd-journal·adm 그룹에 없어 시스템 저널을 볼 수 없습니다 — 관리자 권한으로 열거나, 서버에서 그룹에 추가하세요"),
 			ErrJournalUnreadable)
 	}
 
@@ -159,7 +160,7 @@ func (a *App) startElevatedStream(hostID, title, cmd string, args ...string) (Lo
 			append([]string{"-n", "--", cmd}, args...)...)
 	}
 
-	password, err := a.prompts.secretFunc(hostID, secret.KindSudo, "sudo 비밀번호")()
+	password, err := a.prompts.secretFunc(hostID, secret.KindSudo, i18n.S("sudo 비밀번호"))()
 	if err != nil {
 		return LogStream{}, err
 	}

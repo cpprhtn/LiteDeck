@@ -66,8 +66,14 @@
    visible without competing with the host list for attention. */
 .sidebar-foot {
   flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
   padding: var(--sp-2) var(--sp-3);
   border-top: 1px solid var(--border);
+}
+.sidebar-foot .spacer {
+  flex: 1;
 }
 
 .group-label {
@@ -1535,4 +1541,21 @@ button.danger {
   box-shadow: 0 8px 24px #00000030;
   pointer-events: none;
   font-size: var(--text-md);
+}
+
+/* Language picker. Sits beside the version in the sidebar footer, so it has to
+   stay out of the way of a string that is already the width of the panel. */
+.lang-select {
+  flex: none;
+  padding: 1px 2px;
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  color: var(--fg-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.lang-select:hover {
+  color: var(--fg);
+  border-color: var(--border-strong);
 }

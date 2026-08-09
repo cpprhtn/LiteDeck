@@ -9,6 +9,7 @@ import (
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
 	"github.com/cpprhtn/LiteDeck/internal/adapter/linuxsystemd"
+	"github.com/cpprhtn/LiteDeck/internal/i18n"
 	"github.com/cpprhtn/LiteDeck/internal/sshcore"
 )
 
@@ -112,8 +113,8 @@ func (a *App) requireAdapter(hostID string) (ServerInfoView, error) {
 			name = string(info.Platform)
 		}
 		return info, fmt.Errorf(
-			"LiteDeck은 아직 이 서버를 지원하지 않습니다 (%s). "+
-				"파일 탐색과 터미널은 그대로 쓸 수 있습니다", name)
+			i18n.S("LiteDeck은 아직 이 서버를 지원하지 않습니다 (%s). ")+
+				i18n.S("파일 탐색과 터미널은 그대로 쓸 수 있습니다"), name)
 	}
 	return info, nil
 }
@@ -134,7 +135,7 @@ func (a *App) requireCapability(hostID string, c adapter.Capability, what string
 		if name == "" {
 			name = string(info.Platform)
 		}
-		return info, fmt.Errorf("%s에서 %s을(를) 읽을 수 없습니다", name, what)
+		return info, i18n.Errorf("%s에서 %s을(를) 읽을 수 없습니다", name, what)
 	}
 	return info, nil
 }
@@ -149,7 +150,7 @@ func (a *App) ListServices(hostID string) ([]linuxsystemd.ServiceUnit, error) {
 	if err != nil {
 		return nil, err
 	}
-	info, err := a.requireCapability(hostID, adapter.CapServices, "서비스 목록")
+	info, err := a.requireCapability(hostID, adapter.CapServices, i18n.S("서비스 목록"))
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +248,7 @@ func (a *App) ServiceAction(hostID, unit, action string, elevate bool) ActionRes
 	if !serviceActions[action] {
 		return failResult(fmt.Errorf("app: unsupported service action %q", action))
 	}
-	info, err := a.requireCapability(hostID, adapter.CapServices, "서비스 목록")
+	info, err := a.requireCapability(hostID, adapter.CapServices, i18n.S("서비스 목록"))
 	if err != nil {
 		return failResult(err)
 	}
