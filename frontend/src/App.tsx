@@ -36,6 +36,7 @@ import {
   type SecretPrompt,
   type ServerInfo,
 } from './ipc'
+import { closeHost } from './openFiles'
 import { initPlatform } from './platform'
 
 // The application shell (§8): host sidebar on the left, the selected host's
@@ -77,7 +78,11 @@ export default function App() {
   const [secretPrompt, setSecretPrompt] = useState<SecretPrompt | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [logOpen, setLogOpen] = useState(true)
+  // Collapsed by default: the work happens in the view above it, and the log is
+  // there to be consulted rather than watched. The collapsed bar still carries
+  // the entry count and the failure badge, so nothing goes unnoticed for being
+  // shut — which is the only reason this is a safe default.
+  const [logOpen, setLogOpen] = useState(false)
   const [editing, setEditing] = useState<Host | null>(null)
 
   const reloadHosts = useCallback(async () => {
@@ -157,6 +162,9 @@ export default function App() {
     setBusy(true)
     try {
       await DisconnectHost(id)
+      // Editor tabs go with the connection: there is no longer anywhere to save
+      // them, and leaving them open invites edits that cannot land.
+      closeHost(id)
       setInfo((prev) => {
         const next = { ...prev }
         delete next[id]
@@ -304,7 +312,7 @@ export default function App() {
             {/* Scoped per tab and keyed by host: a crash in one view leaves the
                 others usable, and switching hosts starts the view clean. */}
             <ErrorBoundary key={`${active.id}:${tab}`} label={TABS.find((t) => t.id === tab)?.label ?? tab}>
-              {renderTab(tab, active.id, activeInfo, setError)}
+              {renderTab(tab, active.id, activeInfo, setError, () => setTab('files'))}
             </ErrorBoundary>
           </>
         )}
@@ -373,6 +381,8 @@ function renderTab(
   hostID: string,
   info: ServerInfo | undefined,
   onError: (msg: string) => void,
+  /** A `code`/`vi` caught in the terminal wants the file tab (§4.6a). */
+  onReveal: () => void,
 ) {
   if (!info) {
     return <div className="placeholder">서버를 확인하는 중…</div>
@@ -492,7 +502,12 @@ function renderTab(
     case 'terminal':
       return (
         <Suspense fallback={<div className="placeholder">터미널을 불러오는 중…</div>}>
-          <TerminalView hostID={hostID} visible onError={onError} />
+          <TerminalView
+            hostID={hostID}
+            visible
+            onError={onError}
+            onReveal={onReveal}
+          />
         </Suspense>
       )
   }

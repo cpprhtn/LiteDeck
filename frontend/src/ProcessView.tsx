@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { usePoll } from './usePoll'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
   KillProcess,
@@ -72,12 +73,7 @@ export function ProcessView({
     }
   }, [hostID, asTree, onError])
 
-  useEffect(() => {
-    if (!visible) return
-    void refresh()
-    const id = window.setInterval(() => void refresh(), POLL_MS)
-    return () => window.clearInterval(id)
-  }, [visible, refresh])
+  usePoll(refresh, POLL_MS, visible)
 
   const run = async (fn: () => Promise<{ ok: boolean; needsElevation: boolean; error?: string }>, retry: () => void) => {
     setPending(true)

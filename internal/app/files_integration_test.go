@@ -278,6 +278,187 @@ func TestTextEditor(t *testing.T) {
 	}
 }
 
+// The save path is the one the app uses most, on the files a server can least
+// afford to lose (§4.7-3). These check the three things that make it safe:
+// the target is replaced rather than emptied and refilled, its mode survives,
+// and an edit that arrived from somewhere else is not silently overwritten.
+
+func TestSaveIsAtomicAndLeavesNoLitter(t *testing.T) {
+	a := connectedApp(t)
+	dir := scratchDir(t, a, "litedeck-atomic")
+	file := path.Join(dir, "nginx.conf")
+
+	res := a.SaveTextFile("fixture", SaveRequest{Path: file, Content: "server {}\n"})
+	if !res.OK || res.InPlace {
+		t.Fatalf("create: %+v", res)
+	}
+	if res.ModTime == 0 {
+		t.Error("no mtime returned — the next save has nothing to compare against")
+	}
+
+	if res := a.Chmod("fixture", file, 0o600); !res.OK {
+		t.Fatalf("Chmod: %+v", res)
+	}
+	saved := a.SaveTextFile("fixture", SaveRequest{Path: file, Content: "server { listen 80; }\n"})
+	if !saved.OK || saved.InPlace {
+		t.Fatalf("rewrite: %+v", saved)
+	}
+
+	got, err := a.ReadTextFile("fixture", file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Content != "server { listen 80; }\n" {
+		t.Errorf("content = %q", got.Content)
+	}
+	// A staged write creates a new inode, so the mode has to be carried across
+	// deliberately — this is the case where "it worked before" stops being true.
+	if got.Perm != 0o600 {
+		t.Errorf("mode after atomic save = %o, want 600", got.Perm)
+	}
+
+	// The staged copy is a hidden sibling, so a listing that ignores dotfiles
+	// would call this clean while the directory filled up with .tmp files.
+	listing, err := a.ListDir("fixture", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range listing.Entries {
+		if strings.HasPrefix(e.Name, ".litedeck-") {
+			t.Errorf("staged file left behind: %s", e.Name)
+		}
+	}
+
+	// The flag above is only the code's own account of itself. This is the
+	// observable difference: replacing a directory entry leaves a second link to
+	// the old content alone, where writing through the file would change what
+	// both names point at. It proves the rename happened, and it pins the cost
+	// of taking that path — a save breaks hard links (§4.7-3).
+	client, err := a.mgr.SFTP("fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := path.Join(dir, "nginx.conf.hardlink")
+	if err := client.Link(file, link); err != nil {
+		t.Skipf("서버가 하드링크를 지원하지 않습니다: %v", err)
+	}
+	if res := a.SaveTextFile("fixture", SaveRequest{Path: file, Content: "server { listen 443; }\n"}); !res.OK || res.InPlace {
+		t.Fatalf("%+v", res)
+	}
+	old, err := a.ReadTextFile("fixture", link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if old.Content != "server { listen 80; }\n" {
+		t.Errorf("the old content was written through, not replaced: %q — the save was not atomic", old.Content)
+	}
+}
+
+func TestSaveDetectsAnEditThatArrivedFromElsewhere(t *testing.T) {
+	a := connectedApp(t)
+	dir := scratchDir(t, a, "litedeck-conflict")
+	file := path.Join(dir, "app.yaml")
+
+	if res := a.WriteTextFile("fixture", file, "version: 1\n"); !res.OK {
+		t.Fatalf("%+v", res)
+	}
+	opened, err := a.ReadTextFile("fixture", file)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Somebody else edits it. mtime is whole seconds over SFTP v3, so a same-second
+	// rewrite of the same length is genuinely undetectable — wait it out rather
+	// than write a test that passes for the wrong reason.
+	time.Sleep(1100 * time.Millisecond)
+	if res := a.WriteTextFile("fixture", file, "version: 2\nfrom: elsewhere\n"); !res.OK {
+		t.Fatalf("out-of-band edit: %+v", res)
+	}
+
+	req := SaveRequest{
+		Path:        file,
+		Content:     "version: 99\n",
+		BaseModTime: opened.ModTime,
+		BaseSize:    opened.Size,
+	}
+	res := a.SaveTextFile("fixture", req)
+	if !res.Conflict || res.OK {
+		t.Fatalf("overwrote a file that had changed: %+v", res)
+	}
+	// A refused save must not have written anything.
+	now, err := a.ReadTextFile("fixture", file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if now.Content != "version: 2\nfrom: elsewhere\n" {
+		t.Errorf("a conflicting save still wrote: %q", now.Content)
+	}
+
+	// Once the user has seen the conflict, they get to overrule it.
+	req.Force = true
+	if res := a.SaveTextFile("fixture", req); !res.OK || res.Conflict {
+		t.Fatalf("forced save: %+v", res)
+	}
+	if now, _ := a.ReadTextFile("fixture", file); now.Content != "version: 99\n" {
+		t.Errorf("forced save did not land: %q", now.Content)
+	}
+
+	// The mtime a save hands back has to be good enough for the save after it,
+	// or every second save in a session reports a conflict with itself.
+	first := a.SaveTextFile("fixture", SaveRequest{Path: file, Content: "a\n"})
+	if !first.OK {
+		t.Fatalf("%+v", first)
+	}
+	time.Sleep(1100 * time.Millisecond)
+	second := a.SaveTextFile("fixture", SaveRequest{
+		Path: file, Content: "b\n", BaseModTime: first.ModTime, BaseSize: first.Size,
+	})
+	if !second.OK || second.Conflict {
+		t.Fatalf("consecutive saves conflicted with each other: %+v", second)
+	}
+
+	// Deletion is a conflict too: saving would recreate a file the user may have
+	// meant to be gone.
+	if res := a.DeletePaths("fixture", []string{file}, false, ""); !res.OK {
+		t.Fatalf("%+v", res)
+	}
+	gone := a.SaveTextFile("fixture", SaveRequest{
+		Path: file, Content: "c\n", BaseModTime: second.ModTime, BaseSize: second.Size,
+	})
+	if !gone.Conflict || gone.OK {
+		t.Errorf("silently recreated a deleted file: %+v", gone)
+	}
+}
+
+func TestSaveFallsBackWhenTheDirectoryWillNotTakeATempFile(t *testing.T) {
+	a := connectedApp(t)
+	dir := scratchDir(t, a, "litedeck-readonly-dir")
+	file := path.Join(dir, "sshd_config")
+
+	if res := a.WriteTextFile("fixture", file, "Port 22\n"); !res.OK {
+		t.Fatalf("%+v", res)
+	}
+	// Write permission on a file and on its directory are different things, and
+	// the atomic path needs the directory. Dropping the directory's write bit is
+	// exactly the shape of /etc on a machine where the operator owns the config
+	// but not the folder — the save has to still work, and has to admit how.
+	if res := a.Chmod("fixture", dir, 0o555); !res.OK {
+		t.Fatalf("Chmod dir: %+v", res)
+	}
+	t.Cleanup(func() { a.Chmod("fixture", dir, 0o755) })
+
+	res := a.SaveTextFile("fixture", SaveRequest{Path: file, Content: "Port 2222\n"})
+	if !res.OK {
+		t.Fatalf("fallback save failed: %+v", res)
+	}
+	if !res.InPlace {
+		t.Error("wrote in place without saying so — the UI cannot warn about what it is not told")
+	}
+	if got, _ := a.ReadTextFile("fixture", file); got.Content != "Port 2222\n" {
+		t.Errorf("content = %q", got.Content)
+	}
+}
+
 func TestChmod(t *testing.T) {
 	a := connectedApp(t)
 	dir := scratchDir(t, a, "litedeck-chmod")

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { usePoll } from './usePoll'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { LogPanel } from './LogPanel'
 import { TimersView } from './TimersView'
@@ -79,12 +80,7 @@ export function ServiceView({
   // Only the visible tab polls, and it stops the moment it is hidden (§3.2d).
   // With no agent on the server this is the only way to stay current, so it has
   // to be frugal.
-  useEffect(() => {
-    if (!visible) return
-    void refresh()
-    const id = window.setInterval(() => void refresh(), POLL_MS)
-    return () => window.clearInterval(id)
-  }, [visible, refresh])
+  usePoll(refresh, POLL_MS, visible)
 
   // §7.2: run as the logged-in user first. Only if the server refuses do we
   // offer to retry as administrator — LiteDeck never reaches for root on its

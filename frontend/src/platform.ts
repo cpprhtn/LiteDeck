@@ -87,6 +87,21 @@ export function shortcutLabel(action: Action): string {
   return bindings[action].label
 }
 
+/**
+ * Whether the event came from somewhere the user is typing.
+ *
+ * Window-level shortcuts have to ask: on macOS `rename` is bare Enter and on
+ * Windows `delete` is bare Delete, so an editor or a text field that does not
+ * exclude itself turns ordinary typing into file operations. CodeMirror's
+ * document is a contenteditable, which is why the tag list alone is not enough.
+ */
+export function isTyping(e: KeyboardEvent): boolean {
+  const t = e.target as HTMLElement | null
+  if (!t) return false
+  if (t.isContentEditable) return true
+  return ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName)
+}
+
 /** Whether a keyboard event should trigger an action on this platform. */
 export function matches(e: KeyboardEvent, action: Action): boolean {
   const b = bindings[action]

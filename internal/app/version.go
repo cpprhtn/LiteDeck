@@ -9,4 +9,4 @@ package app
 //
 // Bumping a release means editing this line and wails.json's info.productVersion
 // together, then tagging v<Version>.
-const Version = "0.1.1-beta"
+const Version = "0.1.2-beta"

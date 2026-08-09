@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { usePoll } from './usePoll'
 import { ListTimers, type Timer } from './ipc'
 
 // Scheduled jobs (v1.x): systemd timers, read-only.
@@ -61,12 +62,7 @@ export function TimersView({
     }
   }, [hostID, onError])
 
-  useEffect(() => {
-    if (!visible) return
-    void refresh()
-    const id = window.setInterval(() => void refresh(), POLL_MS)
-    return () => window.clearInterval(id)
-  }, [visible, refresh])
+  usePoll(refresh, POLL_MS, visible)
 
   if (loading) return <div className="placeholder">타이머를 읽는 중…</div>
   if (timers.length === 0) {

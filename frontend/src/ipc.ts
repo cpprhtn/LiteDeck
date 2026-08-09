@@ -133,8 +133,30 @@ export interface TextFile {
   content: string
   size: number
   perm: number
+  /** Unix seconds. Handed back on save so the app can tell an untouched file
+   *  from one somebody else edited meanwhile (§4.7-3). */
+  modTime: number
   tooLarge: boolean
   binary: boolean
+}
+
+export interface SaveRequest {
+  path: string
+  content: string
+  /** What the file looked like when it was opened. Zero skips the check. */
+  baseModTime: number
+  baseSize: number
+  /** Save anyway, after the user has been shown the conflict. */
+  force: boolean
+}
+
+export interface SaveResult extends ActionResult {
+  /** The file on the server is not the one that was opened. Nothing was written. */
+  conflict: boolean
+  /** The atomic path was unavailable and the file was written over itself. */
+  inPlace: boolean
+  modTime: number
+  size: number
 }
 
 export interface Transfer {
@@ -192,6 +214,18 @@ export interface TerminalInfo {
   id: string
   hostId: string
   title: string
+  /** Orders tabs recovered after the view remounted. */
+  seq: number
+}
+
+/** A path a caught `code`/`vi` resolved to (§4.6a). */
+export interface RevealRequest {
+  hostId: string
+  path: string
+  isDir: boolean
+  /** Not there yet, but its directory is — `vi test.cpp`. */
+  new: boolean
+  error?: string
 }
 
 export interface TerminalOptions {
@@ -409,6 +443,8 @@ interface Bindings {
   ListTimers(id: string): Promise<Timer[]>
 
   OpenTerminal(id: string, opts: TerminalOptions): Promise<TerminalInfo>
+  ListTerminals(id: string): Promise<TerminalInfo[]>
+  RevealFromTerminal(termId: string, arg: string): Promise<RevealRequest>
   WriteTerminal(termId: string, data: string): Promise<void>
   ResizeTerminal(termId: string, cols: number, rows: number): Promise<void>
   CloseTerminal(termId: string): Promise<void>
@@ -427,6 +463,7 @@ interface Bindings {
   ): Promise<ActionResult>
   ReadTextFile(id: string, p: string): Promise<TextFile>
   WriteTextFile(id: string, p: string, content: string): Promise<ActionResult>
+  SaveTextFile(id: string, req: SaveRequest): Promise<SaveResult>
 
   StartUpload(id: string, localPaths: string[], remoteDir: string): Promise<string[]>
   StartDownload(id: string, remotePaths: string[], localDir: string): Promise<string[]>
@@ -602,6 +639,9 @@ export const ListTimers = (id: string) => api().ListTimers(id)
 
 export const OpenTerminal = (id: string, opts: TerminalOptions) =>
   api().OpenTerminal(id, opts)
+export const ListTerminals = (id: string) => api().ListTerminals(id)
+export const RevealFromTerminal = (termId: string, arg: string) =>
+  api().RevealFromTerminal(termId, arg)
 export const WriteTerminal = (termId: string, data: string) =>
   api().WriteTerminal(termId, data)
 export const ResizeTerminal = (termId: string, cols: number, rows: number) =>
@@ -625,6 +665,8 @@ export const DeletePaths = (
 export const ReadTextFile = (id: string, p: string) => api().ReadTextFile(id, p)
 export const WriteTextFile = (id: string, p: string, content: string) =>
   api().WriteTextFile(id, p, content)
+export const SaveTextFile = (id: string, req: SaveRequest) =>
+  api().SaveTextFile(id, req)
 
 export const StartUpload = (id: string, localPaths: string[], remoteDir: string) =>
   api().StartUpload(id, localPaths, remoteDir)

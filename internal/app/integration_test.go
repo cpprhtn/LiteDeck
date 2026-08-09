@@ -670,6 +670,84 @@ func TestTerminalBudget(t *testing.T) {
 	if _, err := a.ListServices("fixture"); err != nil {
 		t.Errorf("service listing broke while terminals were open: %v", err)
 	}
+
+	// The SFTP subsystem must not be spending the terminal budget. It is one
+	// channel per connection either way, and charging it here made the real
+	// terminal limit one lower than the error message claimed.
+	if len(opened) < sshcore.DefaultMaxLongLived {
+		t.Errorf("only %d terminals fit alongside SFTP, want %d — SFTP is eating the pool",
+			len(opened), sshcore.DefaultMaxLongLived)
+	}
+}
+
+// TestTerminalsSurviveTheViewUnmounting is the leak that took a host's channels
+// four tab switches at a time (§4.6).
+//
+// The terminal view unmounts whenever the user looks at another tab, so its list
+// of tabs is not a record of anything — it came back empty, opened another
+// terminal, and abandoned the previous one with no way left to name it. Go has
+// to be the one that remembers.
+func TestTerminalsSurviveTheViewUnmounting(t *testing.T) {
+	a := connectedApp(t)
+
+	first, err := a.OpenTerminal("fixture", TerminalOptions{Cols: 80, Rows: 24})
+	if err != nil {
+		t.Fatalf("OpenTerminal: %v", err)
+	}
+	t.Cleanup(func() { _ = a.CloseTerminal(first.ID) })
+
+	// What the view asks for when it mounts again.
+	back := a.ListTerminals("fixture")
+	if len(back) != 1 || back[0].ID != first.ID {
+		t.Fatalf("ListTerminals = %+v, want the one open session %s", back, first.ID)
+	}
+	if back[0].Title == "" {
+		t.Error("recovered tab has no title to render")
+	}
+
+	// Simulate the loop that caused it: open, forget, open again. Adopting means
+	// the count stays at one; leaking means it climbs until the budget is gone.
+	for i := 0; i < sshcore.DefaultMaxLongLived+3; i++ {
+		if existing := a.ListTerminals("fixture"); len(existing) > 0 {
+			continue // what the fixed view does: adopt, do not open
+		}
+		t.Fatal("the session disappeared between mounts")
+	}
+	if got := a.ListTerminals("fixture"); len(got) != 1 {
+		t.Errorf("%d terminals after repeated remounts, want 1", len(got))
+	}
+
+	// Ending the shell releases the slot without anyone closing the tab.
+	second, err := a.OpenTerminal("fixture", TerminalOptions{Cols: 80, Rows: 24})
+	if err != nil {
+		t.Fatalf("second terminal: %v", err)
+	}
+	if err := a.WriteTerminal(second.ID, base64.StdEncoding.EncodeToString([]byte("exit\n"))); err != nil {
+		t.Fatalf("WriteTerminal: %v", err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(a.ListTerminals("fixture")) == 1 {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Error("a shell that exited on its own still held its slot")
+}
+
+// TestDisconnectDropsTerminals: a tab that cannot be typed into must not be
+// offered back after the connection it belonged to is gone.
+func TestDisconnectDropsTerminals(t *testing.T) {
+	a := connectedApp(t)
+	if _, err := a.OpenTerminal("fixture", TerminalOptions{Cols: 80, Rows: 24}); err != nil {
+		t.Fatalf("OpenTerminal: %v", err)
+	}
+	if err := a.DisconnectHost("fixture"); err != nil {
+		t.Fatalf("DisconnectHost: %v", err)
+	}
+	if got := a.ListTerminals("fixture"); len(got) != 0 {
+		t.Errorf("ListTerminals = %+v after disconnect, want none", got)
+	}
 }
 
 // TestHostMetrics covers §4.7: one round trip yields CPU, memory, disk and

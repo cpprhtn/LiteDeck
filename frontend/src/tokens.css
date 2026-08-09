@@ -50,6 +50,29 @@
   --ok: #1a7f37;
   --warn: #bf8700;
   --danger: #d1242f;
+
+  /* Syntax highlighting (§4.7-3). Here rather than in the editor module for the
+     same reason as everything else above: a theme should be a change to this
+     file. Chosen to sit at similar weight so nothing in a config file shouts —
+     the point is to make structure visible, not to decorate it. */
+  --syn-comment: #6e7781;
+  --syn-keyword: #cf222e;
+  --syn-string: #0a3069;
+  --syn-number: #0550ae;
+  --syn-function: #8250df;
+  --syn-def: #8250df;
+  --syn-type: #953800;
+  --syn-property: #0550ae;
+  --syn-variable: #1d1d1f;
+  --syn-operator: #0550ae;
+  --syn-punct: #6e6e73;
+  --syn-meta: #116329;
+  --syn-heading: #0550ae;
+  --syn-link: #0a84ff;
+
+  /* Tree indent guides. Fainter than a border: they are there to be followed
+     when you look for them, not to draw a grid over the listing. */
+  --tree-guide: #00000018;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -71,6 +94,23 @@
     --ok: #3fb950;
     --warn: #d29922;
     --danger: #f85149;
+
+    --syn-comment: #8b949e;
+    --syn-keyword: #ff7b72;
+    --syn-string: #a5d6ff;
+    --syn-number: #79c0ff;
+    --syn-function: #d2a8ff;
+    --syn-def: #d2a8ff;
+    --syn-type: #ffa657;
+    --syn-property: #79c0ff;
+    --syn-variable: #f5f5f7;
+    --syn-operator: #79c0ff;
+    --syn-punct: #98989d;
+    --syn-meta: #7ee787;
+    --syn-heading: #79c0ff;
+    --syn-link: #58a6ff;
+
+    --tree-guide: #ffffff1f;
   }
 }
 

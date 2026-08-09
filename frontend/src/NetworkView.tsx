@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { usePoll } from './usePoll'
 import { HostNetwork, type NetworkView as NetView } from './ipc'
 
 // The network view (v1.x). Answers the two questions people actually open a
@@ -34,12 +35,7 @@ export function NetworkView({
     }
   }, [hostID, onError])
 
-  useEffect(() => {
-    if (!visible) return
-    void refresh()
-    const id = window.setInterval(() => void refresh(), POLL_MS)
-    return () => window.clearInterval(id)
-  }, [visible, refresh])
+  usePoll(refresh, POLL_MS, visible)
 
   if (loading && !net) {
     return <div className="placeholder">네트워크 상태를 읽는 중…</div>

@@ -194,7 +194,8 @@
   flex-direction: column;
   min-height: 0;
 }
-.view > .table {
+.view > .table,
+.file-tree > .table {
   flex: 1;
   min-height: 0;
 }
@@ -721,21 +722,257 @@ button.danger {
   width: min(880px, calc(100vw - 48px));
 }
 
-.editor {
-  width: 100%;
-  height: 52vh;
-  resize: vertical;
-  font-family: var(--font-mono);
+/* Code editor (§4.7-3) ---------------------------------------------------- */
+
+/* Tree and editor side by side. With nothing open the tree takes the width and
+   the split is invisible — the file view is unchanged until it needs to be. */
+.file-split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.file-tree {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The tree's toolbars have six buttons apiece and are the first thing to run out
+   of room when the editor takes half the window. Without wrapping they compress
+   until the labels break mid-word. */
+.view-toolbar.wrap {
+  flex-wrap: wrap;
+  row-gap: var(--sp-1);
+  padding-inline: var(--sp-3);
+}
+.view-toolbar.wrap > * {
+  flex-shrink: 0;
+}
+.view-toolbar.wrap form {
+  min-width: 140px;
+}
+
+/* One visible pixel, nine grabbable ones: a divider you can hit without a bar
+   down the middle of the window. */
+.split-handle {
+  flex: 0 0 1px;
+  box-sizing: content-box;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  background: var(--border-strong);
+  background-clip: padding-box;
+  cursor: col-resize;
+}
+.split-handle:hover,
+.split-handle:active {
+  background-color: var(--accent);
+}
+
+.editor-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+}
+
+.editor-tabs {
+  display: flex;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--border);
+}
+
+.editor-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 0 1 auto;
+  max-width: 200px;
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3);
   font-size: var(--text-sm);
-  line-height: 1.5;
+  color: var(--fg-muted);
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+  white-space: nowrap;
+}
+.editor-tab[data-on] {
   color: var(--fg);
   background: var(--bg);
+  /* An inset line rather than a border, so the tab does not move by a pixel
+     when it becomes the active one. */
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.editor-tab[data-dirty] {
+  font-style: italic;
+}
+
+.editor-tab-close {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  border-radius: 4px;
+  color: var(--fg-faint);
+  font-size: var(--text-xs);
+}
+.editor-tab[data-dirty] .editor-tab-close {
+  color: var(--accent);
+}
+.editor-tab-close:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+/* CodeMirror sizes itself from its host, which has to be told it may shrink —
+   without min-height a long file pushes the status bar off the bottom. */
+.cm-host {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.editor-status {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--border);
+  background: var(--bg-sunken);
+  font-size: var(--text-sm);
+  min-width: 0;
+}
+.editor-status .grow {
+  flex: 1;
+}
+/* The path is the first thing to give up room, and the tail — the filename —
+   is the part worth keeping, so it shrinks from the front. */
+.editor-status .mono {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Tree rows. The twisty sits inside the name cell so indentation moves the name
+   and nothing else — the size and date columns stay aligned at every depth. */
+.tree-name {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  /* One rule at the left edge of every ancestor level. `background-size` is set
+     per row to depth × indent, so the pattern stops where the name begins and
+     each row draws exactly as many guides as it has parents. */
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--tree-guide) 0 1px,
+    transparent 1px 14px
+  );
+  background-repeat: no-repeat;
+  background-position: left center;
+}
+
+/* Open, closed, or busy — the state of a directory, not its kind. Blank for a
+   file, which is what keeps the icons below in a single column. */
+.tree-twisty {
+  flex: none;
+  width: 12px;
+  text-align: center;
+  font-size: 9px;
+  color: var(--fg-faint);
+  user-select: none;
+}
+.trow:hover .tree-twisty {
+  color: var(--fg-muted);
+}
+
+.tree-icon {
+  flex: none;
+  width: 16px;
+  text-align: center;
+  font-size: 11px;
+  user-select: none;
+  /* The emoji carry their own colour, which is louder than anything else in a
+     dense listing. Muted back down so the filenames stay the thing you read. */
+  opacity: 0.75;
+}
+
+/* A trailing slash: the oldest and cheapest way to say "this one opens". */
+.tree-slash {
+  flex: none;
+  color: var(--fg-faint);
+}
+
+/* Directories read one step stronger than the files under them, so a deep tree
+   has a visible skeleton rather than one uniform column of names. */
+.tree-name[data-dir] {
+  font-weight: 600;
+}
+.tree-name:not([data-dir]) {
+  color: var(--fg-muted);
+}
+.trow[data-selected] .tree-name:not([data-dir]),
+.trow[data-open] .tree-name:not([data-dir]) {
+  color: var(--fg);
+}
+
+/* A row already open in a tab, so the tree and the editor read as one view. */
+.trow[data-open] {
+  font-weight: 600;
+}
+.trow[data-open]::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  height: 100%;
+  background: var(--accent);
+}
+
+/* Save-time diff ---------------------------------------------------------- */
+
+.diff-dialog {
+  width: min(1100px, calc(100vw - 48px));
+  display: flex;
+  flex-direction: column;
+}
+
+.diff-head {
+  padding-bottom: var(--sp-2);
+}
+
+/* A merge view sizes its editors to their content and expects the container to
+   scroll — height on the editors themselves is overridden with !important
+   inside it, so this is the element that has to bound the diff. */
+.diff-host {
+  flex: 1;
+  min-height: 200px;
+  max-height: 60vh;
+  overflow: auto;
+  margin-bottom: var(--sp-3);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
-  padding: var(--sp-2);
-  margin-bottom: var(--sp-3);
-  white-space: pre;
-  tab-size: 4;
+  background: var(--bg);
+}
+
+/* Everything @codemirror/merge draws is translucent and adapts to the
+   background on its own, except the collapsed-region band, which is opaque and
+   picked from a light/dark flag this app does not set — left alone it is a
+   light-grey stripe across a dark window. */
+.diff-host .cm-collapsedLines {
+  color: var(--fg-muted) !important;
+  background: var(--bg-sunken) !important;
 }
 
 .delete-list {

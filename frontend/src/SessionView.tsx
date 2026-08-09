@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { usePoll } from './usePoll'
 import { EndSSHSession, ListSSHSessions, type ActionResult, type SSHSession } from './ipc'
 
 // Who is logged in to this server over SSH, and cutting them off.
@@ -49,12 +50,7 @@ export function SessionView({
     }
   }, [hostID, onError])
 
-  useEffect(() => {
-    if (!visible) return
-    void refresh()
-    const id = window.setInterval(() => void refresh(), POLL_MS)
-    return () => window.clearInterval(id)
-  }, [visible, refresh])
+  usePoll(refresh, POLL_MS, visible)
 
   const end = async (s: SSHSession) => {
     setConfirm(null)

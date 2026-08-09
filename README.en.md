@@ -32,7 +32,7 @@
 ---
 
 > [!NOTE]
-> **v0.1.1-beta** — verified on macOS and Windows clients, against a real Windows machine and Linux containers.
+> **v0.1.2-beta** — verified on macOS and Windows clients, against a real Windows machine and Linux containers.
 > It has not yet been run against real Linux hardware. Exactly what has and has not been checked is written down in
 > [What is and is not verified](#what-is-and-is-not-verified).
 > If you point this at a production server, try the irreversible actions — deleting files, killing processes — on a
@@ -65,19 +65,20 @@ All the server does is **run commands it already had and hand back text**. Which
 2. **SSH only** — one port. No web server, no relay
 3. **Beyond files** — processes, services, containers and health, not just a file browser
 4. **No account, no telemetry, open source** — nothing to sign up for, nothing collected, all source public
-5. **Lightweight** — not Electron. Under 10 MB, cold start under a second
+5. **Lightweight** — not Electron. Around 11 MB, cold start under a second
 
 ## Features
 
 | | |
 |---|---|
-| **Files** | Browse, upload, download (with progress and cancel), rename, delete, permissions (checkboxes or `chmod 755` typed directly), text editing |
+| **Files** | Browse as a tree, upload, download (with progress and cancel), rename, delete, permissions (checkboxes or `chmod 755` typed directly) |
+| **Code editing** | Split view beside the tree, file tabs, syntax highlighting for 24 languages, find/replace, **a diff before every save**, **atomic saves** (temp file + rename) |
 | **Services** | systemd units / Windows services — list, filter, start/stop/restart, set start-at-boot, **live log tailing** (Linux) |
 | **Processes** | A task-manager table — sort, search, tree view, terminate (TERM then KILL), change priority |
 | **Containers** | Docker and Podman cards — start/stop/restart/remove, **live log tailing**, image and volume cleanup |
 | **Network** | Interfaces and listening ports — **flags which ones are reachable from outside** |
 | **Scheduled jobs** | systemd timers — next and last run |
-| **Terminal** | xterm.js PTY, multiple tabs |
+| **Terminal** | xterm.js PTY, multiple tabs. `code .` and `vi foo.conf` are **caught by the app** and open in the file tab — never sent to the server, so neither VS Code nor vi needs to exist there |
 | **Monitoring** | CPU, memory, disk summary bar with sparklines |
 | **Command Log** | **Every command the GUI runs, live.** Click to copy |
 
@@ -240,7 +241,7 @@ go test ./... -race           # includes integration tests (needs Docker)
 
 Integration tests bring up real servers — `testdata/` holds sshd, systemd and Docker-in-Docker fixtures. Without Docker they skip rather than fail, so **if `-race` finishes in a few seconds the integration tests did not run** (with Docker up it takes about a minute).
 
-v0.1.1-beta was built with Go 1.26.5, Node 22.13.1, Wails 2.13.0, Docker 29.4.0 on macOS 26.5.2 arm64.
+v0.1.2-beta was built with Go 1.26.5, Node 22.13.1, Wails 2.13.0, Docker 29.4.0 on macOS 26.5.2 arm64.
 
 ## Contributing
 

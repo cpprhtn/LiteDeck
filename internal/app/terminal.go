@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"path"
+	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/cpprhtn/LiteDeck/internal/adapter"
 	"github.com/cpprhtn/LiteDeck/internal/sshcore"
 )
 
@@ -24,6 +28,8 @@ type TerminalInfo struct {
 	ID     string `json:"id"`
 	HostID string `json:"hostId"`
 	Title  string `json:"title"`
+	// Seq orders recovered tabs the way they were opened.
+	Seq int `json:"seq"`
 }
 
 // TerminalOptions is what the frontend asks for.
@@ -36,22 +42,35 @@ type TerminalOptions struct {
 	ContainerID string `json:"containerId,omitempty"`
 }
 
+// openTerminal is one live session and what the UI needs to show it again.
+//
+// The info is kept here, not only in the frontend, because the terminal view
+// unmounts whenever the user looks at another tab. Go outliving the component
+// is what lets the tabs be recovered instead of leaked (§4.6).
+type openTerminal struct {
+	info TerminalInfo
+	sess *sshcore.PTYSession
+}
+
 type terminalRegistry struct {
 	app *App
 	mu  sync.Mutex
 	seq int
-	all map[string]*sshcore.PTYSession
+	all map[string]*openTerminal
 }
 
 func newTerminalRegistry(a *App) *terminalRegistry {
-	return &terminalRegistry{app: a, all: make(map[string]*sshcore.PTYSession)}
+	return &terminalRegistry{app: a, all: make(map[string]*openTerminal)}
 }
 
 func (r *terminalRegistry) get(id string) (*sshcore.PTYSession, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	s, ok := r.all[id]
-	return s, ok
+	t, ok := r.all[id]
+	if !ok {
+		return nil, false
+	}
+	return t.sess, true
 }
 
 func (r *terminalRegistry) drop(id string) {
@@ -60,18 +79,64 @@ func (r *terminalRegistry) drop(id string) {
 	delete(r.all, id)
 }
 
+// list returns the sessions still open on one host, oldest first.
+func (r *terminalRegistry) list(hostID string) []TerminalInfo {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]TerminalInfo, 0, len(r.all))
+	for _, t := range r.all {
+		if t.info.HostID == hostID {
+			out = append(out, t.info)
+		}
+	}
+	// By the sequence in the ID, so tabs come back in the order they were made
+	// rather than in map order, which changes on every call.
+	sort.Slice(out, func(i, j int) bool { return out[i].Seq < out[j].Seq })
+	return out
+}
+
+// closeHost ends the terminals belonging to one host.
+//
+// Dropping the connection kills the sessions on the server either way, but the
+// entries would otherwise linger and be offered back to the UI as tabs that
+// cannot be typed into.
+func (r *terminalRegistry) closeHost(hostID string) {
+	r.mu.Lock()
+	var doomed []*openTerminal
+	for id, t := range r.all {
+		if t.info.HostID == hostID {
+			doomed = append(doomed, t)
+			delete(r.all, id)
+		}
+	}
+	r.mu.Unlock()
+	for _, t := range doomed {
+		_ = t.sess.Close()
+	}
+}
+
 // closeAll ends every terminal, used on shutdown.
 func (r *terminalRegistry) closeAll() {
 	r.mu.Lock()
 	sessions := make([]*sshcore.PTYSession, 0, len(r.all))
-	for _, s := range r.all {
-		sessions = append(sessions, s)
+	for _, t := range r.all {
+		sessions = append(sessions, t.sess)
 	}
-	r.all = make(map[string]*sshcore.PTYSession)
+	r.all = make(map[string]*openTerminal)
 	r.mu.Unlock()
 	for _, s := range sessions {
 		_ = s.Close()
 	}
+}
+
+// ListTerminals reports the sessions already open on a host (§4.6).
+//
+// The terminal view calls this on mount and adopts what it finds. Without it
+// the view came back from a tab switch with an empty list, opened another
+// terminal, and left the previous one holding a channel nothing could release —
+// four round trips and the host had no slots left.
+func (a *App) ListTerminals(hostID string) []TerminalInfo {
+	return a.terminals.list(hostID)
 }
 
 // OpenTerminal starts an interactive session and returns its ID.
@@ -86,13 +151,15 @@ func (a *App) OpenTerminal(hostID string, opts TerminalOptions) (TerminalInfo, e
 
 	a.terminals.mu.Lock()
 	a.terminals.seq++
-	id := "term" + strconv.Itoa(a.terminals.seq)
+	seq := a.terminals.seq
+	id := "term" + strconv.Itoa(seq)
 	a.terminals.mu.Unlock()
 
 	ptyOpts := sshcore.PTYOptions{
 		Cols:       opts.Cols,
 		Rows:       opts.Rows,
 		InitialDir: opts.Dir,
+		Windows:    a.isWindows(hostID),
 	}
 	title := hostID
 	if opts.ContainerID != "" {
@@ -129,11 +196,12 @@ func (a *App) OpenTerminal(hostID string, opts TerminalOptions) (TerminalInfo, e
 		return TerminalInfo{}, err
 	}
 
+	info := TerminalInfo{ID: id, HostID: hostID, Title: title, Seq: seq}
 	a.terminals.mu.Lock()
-	a.terminals.all[id] = sess
+	a.terminals.all[id] = &openTerminal{info: info, sess: sess}
 	a.terminals.mu.Unlock()
 
-	return TerminalInfo{ID: id, HostID: hostID, Title: title}, nil
+	return info, nil
 }
 
 // WriteTerminal sends keystrokes. data is base64 for the same reason output is.
@@ -167,6 +235,125 @@ func (a *App) CloseTerminal(id string) error {
 	}
 	a.terminals.drop(id)
 	return sess.Close()
+}
+
+// isWindows reports whether this host's shell is cmd.exe rather than a POSIX
+// one, which changes how it is asked where it is standing.
+//
+// A host nobody has identified is treated as POSIX, which is what the SSH world
+// mostly is. Guessing wrong here costs one failed question and an error the user
+// can read, not a broken terminal — the shell is never handed anything at
+// session start any more.
+func (a *App) isWindows(hostID string) bool {
+	info, ok := a.detected.get(hostID)
+	return ok && info.Platform == adapter.PlatformWindows
+}
+
+// RevealFromTerminal handles a `code` or `vi` the app caught before it was sent
+// (§4.6a).
+//
+// arg is exactly what followed the command, unresolved: the client does not
+// know where that shell is standing, and for a relative path this is where the
+// terminal gets asked. An absolute path never needs asking, so the common
+// `code /etc/nginx` costs nothing and works even while something is running.
+func (a *App) RevealFromTerminal(termID, arg string) RevealRequest {
+	a.terminals.mu.Lock()
+	t, ok := a.terminals.all[termID]
+	a.terminals.mu.Unlock()
+	if !ok {
+		return RevealRequest{Error: "이 터미널은 더 이상 열려 있지 않습니다"}
+	}
+
+	target := strings.TrimSpace(arg)
+	if target == "" {
+		target = "."
+	}
+	if !isAbsoluteRemote(target, a.isWindows(t.info.HostID)) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		cwd, err := t.sess.CurrentDir(ctx)
+		if err != nil {
+			return RevealRequest{HostID: t.info.HostID, Path: arg, Error: err.Error()}
+		}
+		target = joinRemote(cwd, target)
+	}
+	return a.reveal(t.info.HostID, target)
+}
+
+// isAbsoluteRemote answers for the server's world, not this machine's.
+// `C:\Users\KTJ` is absolute on a Windows host and a relative filename here.
+func isAbsoluteRemote(p string, windows bool) bool {
+	if strings.HasPrefix(p, "/") {
+		return true
+	}
+	if !windows {
+		return false
+	}
+	if strings.HasPrefix(p, `\\`) {
+		return true // UNC
+	}
+	return len(p) >= 3 && p[1] == ':' && (p[2] == '\\' || p[2] == '/')
+}
+
+// joinRemote resolves a relative path against the shell's directory, leaving
+// the cleanup to CleanRemotePath so `..` is handled in exactly one place.
+func joinRemote(cwd, rel string) string {
+	if rel == "." {
+		return cwd
+	}
+	rel = strings.ReplaceAll(rel, `\`, "/")
+	cwd = strings.ReplaceAll(cwd, `\`, "/")
+	return strings.TrimSuffix(cwd, "/") + "/" + rel
+}
+
+// RevealRequest is a path the terminal asked the GUI to open (§4.6a).
+type RevealRequest struct {
+	HostID string `json:"hostId"`
+	Path   string `json:"path"`
+	IsDir  bool   `json:"isDir"`
+	// New means the file is not there yet but could be — `vi test.cpp` in a
+	// directory that exists. Refusing that would break the oldest idiom the
+	// command has; the editor opens empty and the first save creates it.
+	New bool `json:"new"`
+	// Set when the path could not be inspected; the UI says so rather than
+	// navigating somewhere arbitrary.
+	Error string `json:"error,omitempty"`
+}
+
+// reveal decides what the file view should do with a path the shell sent.
+//
+// The shell already resolved it to an absolute path, but only the server knows
+// whether it is a directory to navigate to or a file to open — and `code`
+// against a path that has since been deleted must say so rather than send the
+// tree somewhere arbitrary.
+func (a *App) reveal(hostID, p string) RevealRequest {
+	out := RevealRequest{HostID: hostID, Path: p}
+	cleaned, err := CleanRemotePath(p)
+	if err != nil {
+		out.Error = err.Error()
+		return out
+	}
+	out.Path = cleaned
+
+	st, err := a.StatPath(hostID, cleaned)
+	if err != nil {
+		out.Error = err.Error()
+		return out
+	}
+	if st.Exists {
+		out.IsDir = st.IsDir
+		return out
+	}
+
+	// Not there yet. If the directory it would live in exists, this is somebody
+	// creating a file, not a typo.
+	parent, err := a.StatPath(hostID, path.Dir(cleaned))
+	if err == nil && parent.Exists && parent.IsDir {
+		out.New = true
+		return out
+	}
+	out.Error = fmt.Sprintf("%s 를 찾을 수 없습니다", cleaned)
+	return out
 }
 
 func shortID(id string) string {

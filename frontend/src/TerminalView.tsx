@@ -4,12 +4,15 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import {
   CloseTerminal,
+  ListTerminals,
   OpenTerminal,
   ResizeTerminal,
+  RevealFromTerminal,
   WriteTerminal,
   on,
   type TerminalInfo,
 } from './ipc'
+import { requestReveal } from './openFiles'
 
 // The built-in terminal (§4.6).
 //
@@ -52,18 +55,68 @@ function themeFromTokens() {
   }
 }
 
+/** The commands the app answers itself. `vim` is deliberately not among them. */
+const CAUGHT = /^\s*(code|vi)(?:\s+(.*))?$/
+
+/**
+ * Watches what is being typed, so a `code .` can be answered before it is sent.
+ *
+ * Only a line typed straight through counts. The moment anything arrives that
+ * the shell interprets for itself — an arrow key recalling history, a Tab
+ * completing a name, any control sequence — this stops claiming to know what
+ * is on that line and passes everything through until the next Enter. That is
+ * the difference between missing an interception, which costs nothing, and
+ * swallowing a line the user meant to run, which is unforgivable.
+ */
+class LineWatcher {
+  private buf = ''
+  private blind = false
+
+  /** Returns the command to handle, or null to send the input on as usual. */
+  feed(data: string, atPrompt: boolean): { command: string; arg: string } | null {
+    if (data === '\r' || data === '\n') {
+      const line = this.buf
+      const blind = this.blind
+      this.buf = ''
+      this.blind = false
+      if (blind || !atPrompt) return null
+      const m = CAUGHT.exec(line)
+      return m ? { command: m[1], arg: m[2] ?? '' } : null
+    }
+    // Backspace, the one edit that can be tracked exactly.
+    if (data === '\x7f' || data === '\b') {
+      this.buf = this.buf.slice(0, -1)
+      return null
+    }
+    // Anything the shell will act on rather than insert. Escape sequences carry
+    // history and completion; C0 controls carry Ctrl-C, Ctrl-R and the rest.
+    if (/[\x00-\x1f]/.test(data)) {
+      this.blind = true
+      return null
+    }
+    this.buf += data
+    return null
+  }
+}
+
 function TerminalPane({
   info,
   onClosed,
   onError,
+  onCommand,
 }: {
   info: TerminalInfo
   onClosed: () => void
   onError: (msg: string) => void
+  onCommand: (command: string, arg: string) => void
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
+  // Through a ref: the terminal is built once, and rebuilding it whenever the
+  // parent re-renders would throw away the session's scrollback.
+  const command = useRef(onCommand)
+  command.current = onCommand
 
   useEffect(() => {
     if (!hostRef.current) return
@@ -95,7 +148,24 @@ function TerminalPane({
       onClosed()
     })
 
+    // `code` and `vi` are handled here and never sent (§4.6a).
+    //
+    // Catching them on this side rather than in the shell is what makes them
+    // work at all on a server with no VS Code, no vi, and cmd.exe for a shell.
+    // Nothing runs remotely, so nothing has to be installed, exported or
+    // shadowed, and there is no version of this that opens an editor on the
+    // server by accident.
+    const typed = new LineWatcher()
     const disposeInput = term.onData((data) => {
+      const caught = typed.feed(data, term.buffer.active.type === 'normal')
+      if (caught) {
+        // Ctrl-U instead of Enter: the shell's input line is cleared, so the
+        // command neither runs nor reaches history. The user sees their prompt
+        // come back, which is what "the app handled it" should look like.
+        void WriteTerminal(info.id, b64encode('\x15')).catch(() => {})
+        command.current(caught.command, caught.arg)
+        return
+      }
       void WriteTerminal(info.id, b64encode(data)).catch((e) => onError(String(e)))
     })
 
@@ -131,15 +201,20 @@ export function TerminalView({
   hostID,
   visible,
   onError,
+  onReveal,
 }: {
   hostID: string
   visible: boolean
   onError: (msg: string) => void
+  /** A caught `code`/`vi` wants the file tab brought forward. */
+  onReveal: () => void
 }) {
   const [tabs, setTabs] = useState<TerminalInfo[]>([])
   const [active, setActive] = useState<string | null>(null)
   const [dead, setDead] = useState<Set<string>>(new Set())
   const opening = useRef(false)
+  /** The host whose sessions this view has already taken over. */
+  const adopted = useRef<string | null>(null)
 
   const openTab = useCallback(async () => {
     if (opening.current) return
@@ -155,20 +230,63 @@ export function TerminalView({
     }
   }, [hostID, onError])
 
-  // Open one on first view, not on mount: a terminal costs a channel from the
-  // long-lived budget, and someone who never opens the tab should not pay it.
+  // Adopt whatever is already running, and only open a new terminal if there is
+  // nothing to adopt.
+  //
+  // This view unmounts every time the user looks at another tab, so its own
+  // state is not a record of anything — Go is. Trusting the local list meant
+  // coming back from the file tab with an empty one, opening a second terminal,
+  // and leaving the first holding a channel no one could name any more. Four
+  // round trips and the host was out of slots (§4.6).
+  //
+  // Sessions deliberately survive the unmount: a running build or an htop should
+  // not die because someone glanced at the file tree.
   useEffect(() => {
-    if (visible && tabs.length === 0) void openTab()
-  }, [visible, tabs.length, openTab])
+    // Claimed synchronously, before any await: React runs mount effects twice in
+    // development, and two passes that both find an empty list would both open a
+    // terminal — the very leak this effect exists to close.
+    if (adopted.current === hostID) return
+    adopted.current = hostID
 
-  // Terminals belong to a connection; closing them all when the tab unmounts
-  // would kill sessions the user is coming back to, so they persist until the
-  // host disconnects or the tab is closed explicitly.
-  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const existing = await ListTerminals(hostID)
+        if (cancelled) return
+        if (existing.length > 0) {
+          setTabs(existing)
+          setActive((cur) =>
+            cur && existing.some((t) => t.id === cur) ? cur : existing[existing.length - 1].id,
+          )
+          return
+        }
+        // A terminal costs a channel from the long-lived budget, so someone who
+        // never opens this tab should not pay for one.
+        if (visible) void openTab()
+      } catch (e) {
+        if (!cancelled) onError(String(e))
+      }
+    })()
     return () => {
-      // Nothing here on purpose — see above.
+      cancelled = true
     }
-  }, [])
+  }, [hostID, visible, openTab, onError])
+
+  // Resolving the path may mean asking that shell where it is standing, which
+  // only Go can do — it is the side holding the session.
+  const reveal = async (termID: string, arg: string) => {
+    try {
+      const req = await RevealFromTerminal(termID, arg)
+      if (req.error) {
+        onError(req.error)
+        return
+      }
+      requestReveal(req.hostId, req.path, req.isDir, req.new)
+      onReveal()
+    } catch (e) {
+      onError(String(e))
+    }
+  }
 
   const close = async (id: string) => {
     try {
@@ -226,6 +344,7 @@ export function TerminalView({
               info={t}
               onClosed={() => setDead((d) => new Set(d).add(t.id))}
               onError={onError}
+              onCommand={(_cmd, arg) => void reveal(t.id, arg)}
             />
           </div>
         ))}

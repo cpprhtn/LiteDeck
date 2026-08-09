@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { usePoll } from './usePoll'
 import { ImagesVolumes } from './ImagesVolumes'
 import { LogPanel } from './LogPanel'
 import {
@@ -55,12 +56,7 @@ export function ContainerView({
     }
   }, [hostID, onError])
 
-  useEffect(() => {
-    if (!visible) return
-    void refresh()
-    const id = window.setInterval(() => void refresh(), POLL_MS)
-    return () => window.clearInterval(id)
-  }, [visible, refresh])
+  usePoll(refresh, POLL_MS, visible)
 
   const run = async (
     id: string,

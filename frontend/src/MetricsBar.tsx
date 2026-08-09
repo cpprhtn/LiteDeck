@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { HostMetrics, type MetricsView } from './ipc'
+import { usePoll } from './usePoll'
 
 // The summary bar (§4.7). Shown above every tab for the connected host, so
 // "is this box healthy" is answered without navigating anywhere.
@@ -98,38 +99,34 @@ export function MetricsBar({ hostID }: { hostID: string }) {
     setCpuHist([])
     setMemHist([])
     setFailed(null)
+  }, [hostID])
 
-    let cancelled = false
-    const tick = async () => {
-      if (inFlight.current || cancelled) return
-      inFlight.current = true
-      try {
-        const next = await HostMetrics(hostID)
-        if (cancelled) return
-        setM(next)
-        setFailed(null)
-        // CPU is -1 until a second sample exists; plotting that would draw a
-        // spike down to zero on every connect.
-        if (next.cpu >= 0) {
-          setCpuHist((h) => [...h, next.cpu].slice(-HISTORY))
-        }
-        setMemHist((h) => [...h, next.memPercent].slice(-HISTORY))
-      } catch (e) {
-        // The bar must never interrupt what the user is doing: a failure here
-        // is shown in place, not raised as an app-level error.
-        if (!cancelled) setFailed(String(e))
-      } finally {
-        inFlight.current = false
+  // This bar sits above the tabs, so it polls for as long as the host is
+  // connected — every view's worth of load put together is smaller than this
+  // one running unattended all day, which is why it goes through usePoll.
+  const tick = useCallback(async () => {
+    if (inFlight.current) return
+    inFlight.current = true
+    try {
+      const next = await HostMetrics(hostID)
+      setM(next)
+      setFailed(null)
+      // CPU is -1 until a second sample exists; plotting that would draw a
+      // spike down to zero on every connect.
+      if (next.cpu >= 0) {
+        setCpuHist((h) => [...h, next.cpu].slice(-HISTORY))
       }
-    }
-
-    void tick()
-    const id = window.setInterval(tick, POLL_MS)
-    return () => {
-      cancelled = true
-      window.clearInterval(id)
+      setMemHist((h) => [...h, next.memPercent].slice(-HISTORY))
+    } catch (e) {
+      // The bar must never interrupt what the user is doing: a failure here is
+      // shown in place, not raised as an app-level error.
+      setFailed(String(e))
+    } finally {
+      inFlight.current = false
     }
   }, [hostID])
+
+  usePoll(tick, POLL_MS)
 
   if (failed && !m) {
     return (

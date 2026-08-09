@@ -38,20 +38,32 @@ type HostConfig struct {
 	MaxSessions int
 
 	// MaxLongLived bounds channels that stay open for as long as the user keeps
-	// them: the SFTP subsystem and terminal tabs. 0 means DefaultMaxLongLived.
+	// them: terminal tabs and live log follows. 0 means DefaultMaxLongLived.
 	MaxLongLived int
 }
 
-// The channel budget, split in two.
+// The channel budget.
 //
-// sshd's default MaxSessions is 10. A single pool would let a few terminal tabs
-// starve command execution — every view would begin failing with an error the
-// server does not explain. Two pools make the failure impossible instead of
-// unlikely: terminals can fill their own budget and no more, and Exec always has
-// its slots. The total stays under 10 with margin.
+// sshd's default MaxSessions is 10, and it rejects channels past it with a bare
+// "open failed" that surfaces as random unexplained failures. So the app counts
+// its own channels and stays under that number.
+//
+// The split matters because the two pools fail differently. Exec *queues*: a
+// full pool costs a short wait and nothing else. A terminal or a log follow
+// cannot queue — the user asked for it now — so it fails outright. The pool that
+// fails hard gets the larger share, and the one that degrades gracefully gets
+// less.
+//
+// The SFTP subsystem is not in either pool. It is structurally one channel per
+// connection (created once, reused by every file operation), so a semaphore
+// around it would bound something already bounded. It is counted in the total
+// below instead. Charging it to the long-lived pool is what made the terminal
+// budget quietly 3 rather than the 4 the error message claimed.
+//
+//	1 (SFTP) + 5 (terminals, logs) + 3 (Exec) = 9, one under the default.
 const (
-	DefaultMaxSessions  = 4 // transient: Exec
-	DefaultMaxLongLived = 4 // long-lived: SFTP subsystem + terminal tabs
+	DefaultMaxSessions  = 3 // transient: Exec. Queues when full.
+	DefaultMaxLongLived = 5 // long-lived: terminal tabs + log follows.
 )
 
 // Result is the outcome of one remote command.
@@ -350,16 +362,11 @@ func (c *Conn) SFTP() (*sftp.Client, error) {
 	if c.sftp != nil {
 		return c.sftp, nil
 	}
-	// The SFTP subsystem is a long-lived channel too, so it takes a slot from
-	// that budget rather than appearing out of nowhere against the server limit.
-	select {
-	case c.longLived <- struct{}{}:
-	default:
-		return nil, errors.New("sshcore: no channel slots left for the SFTP subsystem — close a terminal tab")
-	}
+	// No semaphore: this runs under c.mu with the c.sftp != nil check above, so
+	// there is exactly one of these per connection for its whole life. It is
+	// accounted for in the budget arithmetic, not policed by a counter.
 	cl, err := sftp.NewClient(c.client)
 	if err != nil {
-		<-c.longLived
 		return nil, fmt.Errorf("sshcore: start sftp subsystem: %w", err)
 	}
 	c.sftp = cl
@@ -372,7 +379,6 @@ func (c *Conn) Close() error {
 	if c.sftp != nil {
 		_ = c.sftp.Close()
 		c.sftp = nil
-		<-c.longLived
 	}
 	c.mu.Unlock()
 	return c.client.Close()

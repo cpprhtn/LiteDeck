@@ -1,11 +1,13 @@
 package sshcore
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	"github.com/cpprhtn/LiteDeck/internal/shellquote"
 	"golang.org/x/crypto/ssh"
@@ -33,6 +35,10 @@ type PTYOptions struct {
 	// same quoting as every other command (§3.2b). What the *user* subsequently
 	// types is raw by definition; that is what a terminal is.
 	Exec []string
+
+	// Windows makes the shell cmd.exe rather than a POSIX one, which changes
+	// the only question this package ever asks a live terminal (§4.6a).
+	Windows bool
 }
 
 // PTYSession is one live terminal.
@@ -40,9 +46,19 @@ type PTYSession struct {
 	sess    *ssh.Session
 	stdin   io.WriteCloser
 	release func() // returns the long-lived channel slot
+	windows bool
 
 	mu     sync.Mutex
 	closed bool
+	// Set while a question is in flight. Output goes here instead of to the
+	// screen, so the user never sees what was asked or what came back.
+	probe *pendingProbe
+}
+
+type pendingProbe struct {
+	seen bytes.Buffer
+	done chan string
+	spec cwdProbe
 }
 
 const defaultTerm = "xterm-256color"
@@ -78,7 +94,9 @@ func (c *Conn) OpenPTY(
 		return nil, fmt.Errorf("sshcore: waiting for a terminal slot: %w", ctx.Err())
 	default:
 		return nil, fmt.Errorf(
-			"sshcore: 이 호스트에 열 수 있는 터미널 수를 초과했습니다 (동시 %d개)",
+			"sshcore: 이 호스트에 열 수 있는 터미널·로그 창 수를 초과했습니다 (동시 %d개) — "+
+				"쓰지 않는 터미널 탭이나 로그 창을 닫으세요. "+
+				"서버의 sshd MaxSessions 가 기본값(10)보다 낮으면 이보다 먼저 막힐 수 있습니다",
 			cap(c.longLived))
 	}
 	release := func() { <-c.longLived }
@@ -117,7 +135,7 @@ func (c *Conn) OpenPTY(
 	// With a PTY the server merges stderr into stdout, so only one reader is
 	// needed; asking for a separate stderr pipe would just sit idle.
 
-	p := &PTYSession{sess: sess, stdin: stdin, release: release}
+	p := &PTYSession{sess: sess, stdin: stdin, release: release, windows: opts.Windows}
 
 	startErr := p.start(opts)
 	if startErr != nil {
@@ -129,7 +147,7 @@ func (c *Conn) OpenPTY(
 		buf := make([]byte, 32*1024)
 		for {
 			n, err := stdout.Read(buf)
-			if n > 0 {
+			if n > 0 && !p.absorb(buf[:n]) {
 				chunk := make([]byte, n)
 				copy(chunk, buf[:n])
 				onOutput(chunk)
@@ -184,6 +202,101 @@ func (p *PTYSession) start(opts PTYOptions) error {
 		}
 	}
 	return nil
+}
+
+// probeTimeout bounds how long the screen may stay frozen waiting for an
+// answer. A shell that is busy running something will not reply, and the user
+// must get their terminal back rather than a hang.
+const probeTimeout = 3 * time.Second
+
+// CurrentDir asks the live shell where it is standing (§4.6a).
+//
+// Needed only when somebody types a relative path — `code .` — because that is
+// the one thing the client genuinely cannot know. Absolute paths never come
+// here, so a session where nobody uses a relative path is never asked anything.
+//
+// The question and its answer are both kept off the screen: output is diverted
+// from the moment it is asked until the reply arrives. What the user sees is
+// their prompt, then their prompt again.
+func (p *PTYSession) CurrentDir(ctx context.Context) (string, error) {
+	spec := posixCWD
+	if p.windows {
+		spec = cmdCWD
+	}
+
+	pending := &pendingProbe{done: make(chan string, 1), spec: spec}
+
+	p.mu.Lock()
+	if p.closed {
+		p.mu.Unlock()
+		return "", errors.New("sshcore: terminal is closed")
+	}
+	if p.probe != nil {
+		p.mu.Unlock()
+		return "", errors.New("sshcore: already asking this terminal where it is")
+	}
+	p.probe = pending
+	p.mu.Unlock()
+
+	stop := func() {
+		p.mu.Lock()
+		p.probe = nil
+		p.mu.Unlock()
+	}
+
+	if _, err := p.stdin.Write([]byte(spec.command + "\n")); err != nil {
+		stop()
+		return "", fmt.Errorf("sshcore: ask terminal for its directory: %w", err)
+	}
+
+	select {
+	case dir := <-pending.done:
+		stop()
+		if dir == "" {
+			return "", errors.New("sshcore: 터미널이 현재 디렉터리를 알려주지 않았습니다")
+		}
+		return dir, nil
+	case <-ctx.Done():
+		stop()
+		return "", ctx.Err()
+	case <-time.After(probeTimeout):
+		stop()
+		// Most likely a full-screen program is running and never saw the line.
+		return "", errors.New("sshcore: 터미널이 응답하지 않습니다 — 실행 중인 프로그램이 있는지 확인하세요")
+	}
+}
+
+// absorb diverts output while a question is in flight.
+//
+// Reports whether the chunk was taken, in which case it must not be displayed:
+// the echoed question and its answer are both noise the user did not ask for.
+func (p *PTYSession) absorb(chunk []byte) bool {
+	p.mu.Lock()
+	pending := p.probe
+	if pending == nil {
+		p.mu.Unlock()
+		return false
+	}
+	pending.seen.Write(chunk)
+	dir := parseCWD(pending.seen.Bytes(), pending.spec)
+	// Keep swallowing until the answer is complete; a reply split across reads
+	// would otherwise be half-shown and half-parsed.
+	if dir == "" {
+		// Unless the shell is clearly saying something else entirely, in which
+		// case the screen is more use to the user than the silence is.
+		if pending.seen.Len() > 64<<10 {
+			p.probe = nil
+			p.mu.Unlock()
+			pending.done <- ""
+			return false
+		}
+		p.mu.Unlock()
+		return true
+	}
+	p.probe = nil
+	p.mu.Unlock()
+	pending.done <- dir
+	return true
 }
 
 // Write sends user keystrokes to the remote terminal.
