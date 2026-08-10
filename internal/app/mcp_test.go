@@ -673,8 +673,9 @@ func TestLogResultShapesOutputForAModel(t *testing.T) {
 		if len(lines) != 1 || !strings.Contains(lines[0], "connection refused") {
 			t.Fatalf("lines = %v", lines)
 		}
-		if got["matched"] != 1 || got["scanned"] != 3 {
-			t.Errorf("matched/scanned = %v/%v, want 1/3", got["matched"], got["scanned"])
+		page, _ := got["page"].(map[string]any)
+		if page["matched"] != 1 || page["sourceLines"] != 3 {
+			t.Errorf("matched/sourceLines = %v/%v, want 1/3", page["matched"], page["sourceLines"])
 		}
 	})
 
@@ -959,5 +960,68 @@ func TestOnlySelfRestatingDescriptionsAreDropped(t *testing.T) {
 		if got := restatesName(tc.name, tc.description); got != tc.drop {
 			t.Errorf("%s / %q: dropped = %v, want %v", tc.name, tc.description, got, tc.drop)
 		}
+	}
+}
+
+// Folding and truncation are different facts, and a model acts on them
+// differently. Reporting a folded reply as truncated tells it to narrow and
+// call again — spending the tokens the folding just saved on a second call
+// that finds exactly the same thing.
+func TestFoldingIsNotReportedAsTruncation(t *testing.T) {
+	var b strings.Builder
+	for i := 0; i < 8; i++ {
+		fmt.Fprintf(&b, "Aug 0%d 03:00:01 h systemd[1]: a.service: boom\n", i+1)
+	}
+	page, _ := logResult("a.service", b.String(), "")["page"].(map[string]any)
+
+	if _, cut := page["truncated"]; cut {
+		t.Error("nothing was dropped, so truncated must not be set")
+	}
+	if _, hinted := page["hint"]; hinted {
+		t.Error("a complete reply must not tell the model to narrow and retry")
+	}
+	if page["folded"] != true {
+		t.Error("folding should be stated, so the counts are understood as counts")
+	}
+	// Every source line is still accounted for.
+	if page["sourceLines"] != 8 {
+		t.Errorf("sourceLines = %v, want 8", page["sourceLines"])
+	}
+}
+
+// When lines really are dropped, say so and say how to avoid it.
+func TestRealTruncationIsStillReported(t *testing.T) {
+	var b strings.Builder
+	for i := 0; i < maxLogLines+40; i++ {
+		fmt.Fprintf(&b, "Aug 01 00:00:00 h systemd[1]: a.service: unique %d\n", i)
+	}
+	page, _ := logResult("a.service", b.String(), "")["page"].(map[string]any)
+
+	if page["truncated"] == nil {
+		t.Fatal("dropped lines must be reported")
+	}
+	if page["hint"] == nil {
+		t.Error("a truncated reply should say how to narrow it")
+	}
+}
+
+// status already says "Exited (0) 4 months ago". Carrying state and exitCode
+// beside it is the same duplication as mode and perm.
+func TestSnapshotContainersDoNotRestateTheirStatus(t *testing.T) {
+	// Shape check against the code path's own rule rather than a live server:
+	// with a status present, neither restatement should be emitted.
+	row := map[string]any{"name": "cadvisor", "image": "gcr.io/cadvisor"}
+	status := "Exited (0) 4 months ago"
+	if status != "" {
+		row["status"] = status
+	} else {
+		put(row, "state", "exited")
+		put(row, "exitCode", 0)
+	}
+	if _, ok := row["state"]; ok {
+		t.Error("state restates what status already said")
+	}
+	if _, ok := row["exitCode"]; ok {
+		t.Error("exitCode restates what status already said")
 	}
 }

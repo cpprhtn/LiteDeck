@@ -679,18 +679,34 @@ func logResult(subject, out, grep string) map[string]any {
 	}
 	matched := len(lines)
 	lines = collapseRepeats(lines)
+
+	truncatedBy := 0
 	if len(lines) > maxLogLines {
-		lines = lines[len(lines)-maxLogLines:]
+		truncatedBy = len(lines) - maxLogLines
+		lines = lines[truncatedBy:]
+	}
+
+	// Folding and truncation are different facts and the model acts on them
+	// differently. A folded reply is complete — every line is still accounted
+	// for by a count — so telling it to "narrow the query" would spend the
+	// tokens the folding just saved on a second call that finds the same
+	// thing. Only a reply that actually dropped lines gets that hint.
+	page := map[string]any{"shown": len(lines), "sourceLines": total}
+	if grep != "" {
+		page["matched"] = matched
+	}
+	if len(lines) < matched {
+		page["folded"] = true
+	}
+	if truncatedBy > 0 {
+		page["truncated"] = truncatedBy
+		page["hint"] = "narrow with since, priority or grep"
 	}
 
 	res := map[string]any{
 		"subject": subject,
 		"lines":   lines,
-		"page":    truncated(len(lines), matched, "narrow with since, priority or grep"),
-	}
-	if grep != "" {
-		res["matched"] = matched
-		res["scanned"] = total
+		"page":    page,
 	}
 	// An empty journal is an answer that gets misread. Say what it means so a
 	// model does not report "the service never logged anything".
@@ -710,8 +726,7 @@ var syslogPrefix = regexp.MustCompile(`^\w{3} [ 0-9]\d \d\d:\d\d:\d\d \S+ [^:]+:
 //
 // A unit that fails every few hours writes the same block over and over with
 // only the timestamps moving. Reading sixty lines of that costs a model as much
-// as sixty distinct lines and tells it what eight would have. Sixty lines of
-// certbot's failure measured at 1.8k tokens with under 300 tokens of content.
+// as sixty distinct lines and tells it what eight would have.
 //
 // Order is preserved and the collapsed line stays where the message *first*
 // appeared, so a diagnosis that depends on what happened before what still
@@ -722,37 +737,37 @@ func collapseRepeats(lines []string) []string {
 	const minRepeat = 3
 
 	type seen struct {
-		at    int // where it first appeared
 		count int
 		last  string // the last full line, for its timestamp
 	}
 	index := map[string]*seen{}
 	order := make([]string, 0, len(lines))
 
-	for _, line := range lines {
-		key := syslogPrefix.ReplaceAllString(line, "")
-		if key == "" {
-			key = line
+	key := func(line string) string {
+		k := syslogPrefix.ReplaceAllString(line, "")
+		if k == "" {
+			return line
 		}
-		if s, ok := index[key]; ok {
+		return k
+	}
+
+	for _, line := range lines {
+		k := key(line)
+		if s, ok := index[k]; ok {
 			s.count++
 			s.last = line
 			continue
 		}
-		index[key] = &seen{at: len(order), count: 1, last: line}
+		index[k] = &seen{count: 1, last: line}
 		order = append(order, line)
 	}
 
 	out := make([]string, 0, len(order))
 	for _, line := range order {
-		key := syslogPrefix.ReplaceAllString(line, "")
-		if key == "" {
-			key = line
-		}
-		s := index[key]
+		s := index[key(line)]
 		if s.count < minRepeat {
-			// Kept verbatim: two occurrences are not a pattern, and folding them
-			// would cost more characters than it saves.
+			// Two occurrences are not a pattern, and the fold marker would cost
+			// more characters than leaving them alone.
 			for i := 0; i < s.count; i++ {
 				out = append(out, line)
 			}
@@ -877,10 +892,16 @@ func (a *App) healthSnapshot(hostID string) (map[string]any, error) {
 		bad := []map[string]any{}
 		for _, c := range list {
 			if c.State != "running" {
-				bad = append(bad, map[string]any{
-					"name": c.Name, "image": c.Image, "state": c.State,
-					"status": c.Status, "exitCode": c.ExitCode,
-				})
+				row := map[string]any{"name": c.Name, "image": c.Image}
+				// "Exited (0) 4 months ago" already carries the state and the
+				// exit code, the same way a mode string carried the octal.
+				if c.Status != "" {
+					row["status"] = c.Status
+				} else {
+					put(row, "state", c.State)
+					put(row, "exitCode", c.ExitCode)
+				}
+				bad = append(bad, row)
 			}
 		}
 		out["notRunningContainers"] = bad
