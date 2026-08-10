@@ -1581,7 +1581,7 @@ button.danger {
 .mcp-heading {
   margin: 18px 0 4px;
   font-size: 13px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--border);
   padding-top: 14px;
 }
 .mcp-endpoint {
@@ -1591,8 +1591,8 @@ button.danger {
   margin: 10px 0;
 }
 .mcp-endpoint > code {
-  background: var(--surface-2);
-  border: 1px solid var(--line);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 6px 8px;
   font-size: 12px;
@@ -1614,7 +1614,7 @@ button.danger {
 /* An AI-caused line has to be attributable at a glance, so the prompt marker
    itself changes rather than a badge being added somewhere on the row. */
 .cmdlog-row[data-origin='ai'] .cmdlog-marker {
-  color: var(--accent, #6aa4ff);
+  color: var(--accent);
   font-weight: 700;
   font-size: 10px;
 }
@@ -1627,8 +1627,8 @@ button.danger {
 }
 .mcp-command {
   display: block;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 8px;
   margin: 4px 0 12px;
@@ -1644,4 +1644,74 @@ button.danger {
 .cmdlog-queued {
   margin-left: 6px;
   opacity: 0.7;
+}
+
+/* 호스트별 AI 변경 권한. 켜져 있는 동안 헤더에서 보여야 한다 —
+   아무도 못 보는 스위치는 아무도 끄지 않는다. */
+.mcp-badge-wrap {
+  position: relative;
+}
+.mcp-badge {
+  height: auto;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-sunken);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.mcp-badge[data-mode='strict'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+/* 통과 중일 때는 조용하지 않아야 한다. */
+.mcp-badge[data-mode='bypass'] {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--danger);
+  font-weight: 600;
+}
+.mcp-badge-left {
+  opacity: 0.75;
+  font-weight: 400;
+}
+.mcp-badge-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  min-width: 230px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+/* The global button is a fixed 28px, which clips a two-line entry into the one
+   below it. These are menu rows, not buttons in a toolbar. */
+.mcp-badge-menu button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  height: auto;
+  line-height: 1.4;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.mcp-badge-menu button + button {
+  border-top: 1px solid var(--border);
+}
+.mcp-badge-menu button:hover {
+  background: var(--bg-sunken);
+}
+.mcp-approve-actions {
+  flex-wrap: wrap;
 }

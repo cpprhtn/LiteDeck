@@ -7,6 +7,7 @@ import {
   type HostKeyPrompt,
   type MCPWritePrompt,
   type SecretPrompt,
+  SetMCPWritePolicy,
 } from './ipc'
 import { t } from './i18n'
 
@@ -183,6 +184,15 @@ export function McpWriteDialog({
     onDone()
   }
 
+  // "Yes, and stop asking" belongs here rather than only in a settings panel.
+  // Somebody who has decided to let an agent work unattended decides it at the
+  // moment they are being interrupted, not before — and a switch they have to
+  // go and find is a switch they turn off by stopping using the feature.
+  const allowFor = (minutes: number) => {
+    void SetMCPWritePolicy(prompt.hostId, 'bypass', minutes).catch(() => {})
+    answer(true)
+  }
+
   const isFileWrite = prompt.after !== undefined && prompt.path
 
   return (
@@ -222,15 +232,28 @@ export function McpWriteDialog({
           </>
         )}
 
-        <div className="dialog-actions">
+        <div className="dialog-actions mcp-approve-actions">
           {/* Decline is first and Approve is the one you reach for, but neither
               is the default action of the window: an approval nobody read is
               the failure this dialog exists to prevent. */}
           <button onClick={() => answer(false)}>{t('거부')}</button>
+          <span className="spacer" />
+          <button className="ghost" onClick={() => allowFor(60)}>
+            {t('허용하고 1시간 안 묻기')}
+          </button>
+          {/* The overnight option exists because that is when people actually
+              leave an agent running. An hour expiring at 3am blocks everything
+              until morning, which reads as the feature being broken. */}
+          <button className="ghost" onClick={() => allowFor(8 * 60)}>
+            {t('허용하고 밤새 안 묻기')}
+          </button>
           <button ref={ok} className="danger" onClick={() => answer(true)}>
-            {t('실행 허용')}
+            {t('이번만 허용')}
           </button>
         </div>
+        <p className="muted small">
+          {t('안 묻기는 이 호스트에만 적용되고 시간이 지나면 스스로 돌아옵니다. 되돌리기는 아직 없습니다 — 지금은 Command Log 가 유일한 기록입니다.')}
+        </p>
       </div>
     </div>
   )

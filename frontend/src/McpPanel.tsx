@@ -88,7 +88,7 @@ export function McpPanel({
             the worst case here is a file being read, not a service restarted. */}
         <p className="warn-text">
           {t(
-            '변경은 기본적으로 매번 물어봅니다. 다이얼로그에는 실제로 실행될 명령이나 파일 diff 가 그대로 표시됩니다. 임의 명령 실행과 삭제는 아예 제공하지 않습니다.',
+            '기본은 파일 변경만 물어봅니다 — 승인창이 서버의 현재 내용 대비 diff 를 보여주는데, 그건 AI 클라이언트가 가질 수 없는 정보이기 때문입니다. 재시작 같은 것은 클라이언트가 이미 같은 내용을 보여줬으므로 그냥 실행합니다. 임의 명령 실행과 삭제는 아예 제공하지 않습니다.',
           )}
         </p>
 
@@ -184,12 +184,12 @@ export function McpPanel({
                   value={state?.write?.[h.id]?.mode ?? 'ask'}
                   onClick={(e) => e.preventDefault()}
                   onChange={(e) =>
-                    void apply(() => SetMCPWritePolicy(h.id, e.target.value, 60))
+                    void apply(() => SetMCPWritePolicy(h.id, e.target.value, 8 * 60))
                   }
                 >
-                  <option value="ask">{t('변경 시 물어보기')}</option>
-                  <option value="auto">{t('1시간 자동 승인')}</option>
-                  <option value="bypass">{t('1시간 전부 통과')}</option>
+                  <option value="strict">{t('전부 물어보기')}</option>
+                  <option value="ask">{t('파일 변경만 물어보기')}</option>
+                  <option value="bypass">{t('밤새 안 묻기 (8시간)')}</option>
                 </select>
               )}
             </label>

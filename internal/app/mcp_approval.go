@@ -48,16 +48,37 @@ import (
 // is set per host so production can stay behind a dialog while staging does not.
 
 // Write modes, per host.
+//
+// The default is not "ask about everything", and that is a deliberate reversal.
+// A restart is something the MCP client already showed the user in the same
+// words LiteDeck would use, so asking again is a second click for a decision
+// they just made — and a gate people click through without reading is not a
+// gate. What LiteDeck knows that no client can is the file's *current contents
+// on the server*, so that is the one place the extra dialog earns itself.
 const (
-	// WriteAsk shows a dialog for every write. The default.
+	// WriteAsk asks before changing a file, and lets service, container and
+	// process actions through. The default.
 	WriteAsk = "ask"
-	// WriteAuto approves writes without asking, until it expires.
-	WriteAuto = "auto"
-	// WriteBypass is WriteAuto with no intention of coming back. Kept distinct
-	// so the UI can say different things about them and so "why did this run"
-	// has a different answer in the log.
+	// WriteStrict asks before anything. For the host you cannot afford to be
+	// wrong about, whatever mode the AI client happens to be in.
+	WriteStrict = "strict"
+	// WriteBypass asks about nothing, until it expires.
 	WriteBypass = "bypass"
 )
+
+// asksAbout reports whether a mode wants a dialog for this tool.
+func asksAbout(mode, tool string) bool {
+	switch mode {
+	case WriteBypass:
+		return false
+	case WriteStrict:
+		return true
+	default:
+		// Only the tools whose dialog shows something the client could not:
+		// a diff against what is on the server right now.
+		return tool == "fs_write" || tool == "fs_edit"
+	}
+}
 
 // maxWriteWindow bounds how long a relaxed mode can last.
 //
@@ -150,7 +171,7 @@ func (a *App) policyFor(hostID string) config.MCPWritePolicy {
 // approveWrite is the gate every write tool passes through.
 func (a *App) approveWrite(req writeRequest) (approvalOutcome, error) {
 	policy := a.policyFor(req.hostID)
-	if policy.Mode == WriteAuto || policy.Mode == WriteBypass {
+	if !asksAbout(policy.Mode, req.tool) {
 		a.log.AIWrite(req.hostID, req.summary, string(outcomeAuto))
 		return outcomeAuto, nil
 	}
@@ -230,7 +251,7 @@ func (a *App) SetMCPWritePolicy(hostID, mode string, minutes int) MCPStatus {
 		return a.MCPState()
 	}
 	switch mode {
-	case WriteAsk, WriteAuto, WriteBypass:
+	case WriteAsk, WriteStrict, WriteBypass:
 	default:
 		out := a.MCPState()
 		out.Error = i18n.T("알 수 없는 쓰기 모드: %s", mode)
@@ -242,7 +263,7 @@ func (a *App) SetMCPWritePolicy(hostID, mode string, minutes int) MCPStatus {
 		s.Write = map[string]config.MCPWritePolicy{}
 	}
 	if mode == WriteAsk {
-		delete(s.Write, hostID)
+		delete(s.Write, hostID) // the default needs no entry
 	} else {
 		window := time.Duration(minutes) * time.Minute
 		if window <= 0 || window > maxWriteWindow {

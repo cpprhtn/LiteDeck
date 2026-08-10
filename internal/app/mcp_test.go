@@ -138,52 +138,96 @@ func TestNoEscapeHatchAndNoDeletion(t *testing.T) {
 	}
 }
 
-// The property the whole design rests on: nothing changes a server until a
-// person has said so. Run with the default mode and nobody answering, every
-// write tool must fail rather than proceed.
-func TestWriteToolsCannotRunWithoutApproval(t *testing.T) {
+// Which mode asks about what. This is the whole approval model in one table.
+//
+// The default deliberately does not ask about a restart: the MCP client already
+// showed the user those exact arguments, and a second dialog for a decision
+// just made is a click people learn to skip. It does ask about a file, because
+// the diff is against what is on the server right now — something no client can
+// know. strict is for the host you cannot afford to be wrong about.
+func TestWhichModeAsksAboutWhat(t *testing.T) {
+	for _, tc := range []struct {
+		mode string
+		tool string
+		asks bool
+	}{
+		{WriteAsk, "svc_control", false},
+		{WriteAsk, "container_control", false},
+		{WriteAsk, "proc_signal", false},
+		{WriteAsk, "fs_write", true},
+		{WriteAsk, "fs_edit", true},
+
+		{WriteStrict, "svc_control", true},
+		{WriteStrict, "proc_signal", true},
+		{WriteStrict, "fs_write", true},
+
+		{WriteBypass, "svc_control", false},
+		{WriteBypass, "fs_write", false},
+	} {
+		if got := asksAbout(tc.mode, tc.tool); got != tc.asks {
+			t.Errorf("%s/%s: asks = %v, want %v", tc.mode, tc.tool, got, tc.asks)
+		}
+	}
+}
+
+// A file change is never silent in the default mode. This is the one gate that
+// survived the reduction, so it gets its own test rather than living only in
+// the table above.
+func TestFileWritesAreNotSilentByDefault(t *testing.T) {
 	a := appWithSettings(t)
 	seedSharedHost(t, a)
-
-	// Short enough that the test is quick, long enough to be a real wait.
 	restore := WriteApprovalTimeoutForTest(150 * time.Millisecond)
 	defer restore()
-
-	writes := map[string]map[string]any{
-		"svc_control":       {"hostId": "h1", "unit": "nginx.service", "action": "restart"},
-		"container_control": {"hostId": "h1", "id": "abc123", "action": "stop"},
-		"proc_signal":       {"hostId": "h1", "pid": float64(4242), "signal": "TERM"},
-		"fs_write":          {"hostId": "h1", "path": "/etc/nginx/nginx.conf", "content": "new"},
-	}
 
 	byName := map[string]mcp.Tool{}
 	for _, tool := range registered(t, a).Tools() {
 		byName[tool.Name] = tool
 	}
-
-	for name, args := range writes {
-		tool, ok := byName[name]
-		if !ok {
-			t.Errorf("%s is not registered", name)
-			continue
-		}
-		if _, err := tool.Handler(context.Background(), args); err == nil {
-			t.Errorf("%s ran with nobody approving it", name)
-		} else if !strings.Contains(err.Error(), "nobody answered") {
-			t.Errorf("%s failed for the wrong reason: %v", name, err)
-		}
+	tool, ok := byName["fs_write"]
+	if !ok {
+		t.Fatal("fs_write is not registered")
 	}
 
-	// And the refusal is in the record, whichever way it went.
+	_, err := tool.Handler(context.Background(), map[string]any{
+		"hostId": "h1", "path": "/etc/nginx/nginx.conf", "content": "new",
+	})
+	if err == nil {
+		t.Fatal("a file write ran with nobody approving it")
+	}
+	if !strings.Contains(err.Error(), "nobody answered") {
+		t.Errorf("failed for the wrong reason: %v", err)
+	}
+
 	var timeouts int
 	for _, e := range a.CommandLog() {
 		if e.Origin == "ai" && strings.Contains(e.Line, "timeout") {
 			timeouts++
 		}
 	}
-	if timeouts != len(writes) {
-		t.Errorf("logged %d timeouts, want %d — a write nobody approved still "+
-			"belongs in the record", timeouts, len(writes))
+	if timeouts != 1 {
+		t.Errorf("logged %d timeouts, want 1", timeouts)
+	}
+}
+
+// strict restores the old behaviour for a host that needs it.
+func TestStrictAsksAboutEverything(t *testing.T) {
+	a := appWithSettings(t)
+	seedSharedHost(t, a)
+	a.SetMCPWritePolicy("h1", WriteStrict, 60)
+	restore := WriteApprovalTimeoutForTest(120 * time.Millisecond)
+	defer restore()
+
+	raised := 0
+	a.emit = func(event string, _ any) {
+		if event == "prompt:mcpwrite" {
+			raised++
+		}
+	}
+	if _, err := a.approveWrite(writeRequest{hostID: "h1", tool: "svc_control", summary: "restart nginx"}); err == nil {
+		t.Error("strict must not let a restart through unasked")
+	}
+	if raised != 1 {
+		t.Errorf("raised %d dialogs, want 1", raised)
 	}
 }
 
@@ -191,6 +235,7 @@ func TestWriteToolsCannotRunWithoutApproval(t *testing.T) {
 func TestDeclinedWriteDoesNotRun(t *testing.T) {
 	a := appWithSettings(t)
 	seedSharedHost(t, a)
+	a.SetMCPWritePolicy("h1", WriteStrict, 60)
 
 	// Answer "no" as soon as the dialog is raised.
 	a.emit = func(event string, payload any) {
@@ -216,6 +261,8 @@ func TestDeclinedWriteDoesNotRun(t *testing.T) {
 func TestApprovalPromptCarriesTheRealChange(t *testing.T) {
 	a := appWithSettings(t)
 	seedSharedHost(t, a)
+	// A restart only raises a dialog on a host held at strict.
+	a.SetMCPWritePolicy("h1", WriteStrict, 60)
 
 	var got MCPWritePrompt
 	a.emit = func(event string, payload any) {

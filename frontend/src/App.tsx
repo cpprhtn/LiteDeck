@@ -40,6 +40,7 @@ import {
 } from './ipc'
 import { getLanguage, initLanguage, k, t, useT } from './i18n'
 import { McpPanel } from './McpPanel'
+import { McpHostBadge } from './McpHostBadge'
 import { closeHost } from './openFiles'
 import { initPlatform } from './platform'
 
@@ -265,6 +266,7 @@ export default function App() {
                   )}
                 </div>
               </div>
+              <McpHostBadge hostID={active.id} />
               {unsupported && (
                 <span
                   className="badge warn"

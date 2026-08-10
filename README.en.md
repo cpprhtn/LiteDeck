@@ -408,7 +408,8 @@ is not.
 | | |
 |---|---|
 | Per-server opt-in | **Everything off by default.** Adding a host does not expose it. Only what you switch on can be read |
-| Change approval | **Ask every time** by default. Per host you can relax it, and it **reverts on its own after an hour** |
+| Change approval | **Only file changes are confirmed** by default, because the dialog shows a diff against what is on the server right now — information no AI client has. A restart just runs; the client already showed you the same thing |
+| Per host | A badge in the header: **ask always / files only / don't ask overnight**. While it is not asking the badge stays red, and the window **reverts on its own** |
 | Not settable remotely | No tool flips that switch and no parameter relaxes it. **A model has no way to request its own approval** |
 | Reading ≠ writing | Sharing a server to be read does not make it changeable |
 | Binding | `127.0.0.1` only. No setting exposes it on another interface |
