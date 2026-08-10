@@ -49,9 +49,11 @@ type MCPStatus struct {
 	Token   string `json:"token,omitempty"`
 	// Hosts the AI may read, by host ID.
 	Hosts map[string]bool `json:"hosts"`
-	// Write is the approval mode per host: "ask", "auto" or "bypass", with the
-	// unix second it reverts. A host with no entry is "ask".
+	// Write is the approval mode per host: "ask", "strict" or "bypass", with
+	// the unix second it reverts. A host with no entry is "ask".
 	Write map[string]WritePolicyView `json:"write"`
+	// Delete lists hosts where file deletion is offered at all.
+	Delete map[string]bool `json:"delete"`
 	// Snippet is the line to paste into an MCP client.
 	Snippet string `json:"snippet,omitempty"`
 	Error   string `json:"error,omitempty"`
@@ -202,6 +204,10 @@ func (a *App) MCPState() MCPStatus {
 	for k, v := range s.Hosts {
 		out.Hosts[k] = v
 	}
+	out.Delete = map[string]bool{}
+	for k, v := range s.Delete {
+		out.Delete[k] = v
+	}
 	out.Write = map[string]WritePolicyView{}
 	for id := range s.Hosts {
 		// Reported through policyFor so an expired window reads as "ask" here
@@ -266,6 +272,28 @@ func (a *App) SetMCPHost(hostID string, allowed bool) MCPStatus {
 		s.Hosts[hostID] = true
 	} else {
 		delete(s.Hosts, hostID)
+	}
+	if err := a.settings.SetMCP(s); err != nil {
+		out := a.MCPState()
+		out.Error = err.Error()
+		return out
+	}
+	return a.MCPState()
+}
+
+// SetMCPHostDelete decides whether file deletion is offered on one host.
+func (a *App) SetMCPHostDelete(hostID string, allowed bool) MCPStatus {
+	if a.settings == nil {
+		return a.MCPState()
+	}
+	s := a.settings.Get().MCP
+	if s.Delete == nil {
+		s.Delete = map[string]bool{}
+	}
+	if allowed {
+		s.Delete[hostID] = true
+	} else {
+		delete(s.Delete, hostID)
 	}
 	if err := a.settings.SetMCP(s); err != nil {
 		out := a.MCPState()

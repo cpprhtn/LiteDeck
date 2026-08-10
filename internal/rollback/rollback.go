@@ -45,6 +45,14 @@ const (
 // Limits. Generous enough for a night of unattended work, bounded so a runaway
 // agent cannot fill the disk it is supposed to be protecting.
 const (
+	// MaxAge is how long a copy is worth keeping.
+	//
+	// Somebody who sets an agent working overnight checks the result the next
+	// day; a copy nobody looked at in that window is not being kept for them,
+	// it is just an old copy of their config sitting on disk. This is a guard
+	// against a night going wrong, not an archive.
+	MaxAge = 24 * time.Hour
+
 	MaxEntries = 300
 	MaxBytes   = 64 << 20 // 64 MiB of saved contents
 	// MaxFileBytes skips anything too large to be worth holding. A file this
@@ -150,6 +158,10 @@ func (s *Store) Record(hostID, path, action string, before []byte, created bool)
 // List returns the history for one host, newest first. An empty hostID returns
 // everything.
 func (s *Store) List(hostID string) []Entry {
+	// Enforced on read as well as on write: an app left open overnight would
+	// otherwise keep showing entries that have already aged out.
+	s.prune()
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := make([]Entry, 0, len(s.entries))
@@ -212,6 +224,19 @@ func (s *Store) prune() {
 	defer s.mu.Unlock()
 
 	sort.Slice(s.entries, func(i, j int) bool { return s.entries[i].At.Before(s.entries[j].At) })
+
+	// Age first, so an expired entry frees its bytes before the size cap has to
+	// throw away something recent.
+	cutoff := time.Now().Add(-MaxAge)
+	fresh := s.entries[:0:0]
+	for _, e := range s.entries {
+		if e.At.Before(cutoff) {
+			_ = os.Remove(s.blobPath(e.ID))
+			continue
+		}
+		fresh = append(fresh, e)
+	}
+	s.entries = fresh
 
 	var total int64
 	for _, e := range s.entries {

@@ -67,16 +67,16 @@ export function McpHostBadge({ hostID }: { hostID: string }) {
         className="mcp-badge"
         data-mode={mode}
         onClick={() => setOpen(!open)}
-        title={t('이 서버에 대한 AI 변경 권한')}
+        title={t('이 서버에 대한 MCP 변경 권한')}
       >
         {mode === 'bypass' && (
           <>
-            {t('AI 통과')}
+            {t('MCP 통과')}
             {left && <span className="mcp-badge-left"> {left}</span>}
           </>
         )}
-        {mode === 'strict' && t('AI 전부 승인')}
-        {mode === 'ask' && t('AI 파일만 승인')}
+        {mode === 'strict' && t('MCP 전부 승인')}
+        {mode === 'ask' && t('MCP 파일만 승인')}
       </button>
 
       {open && (

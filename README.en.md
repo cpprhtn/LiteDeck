@@ -399,10 +399,14 @@ containers and exposed ports; `svc_logs` is what says *why* something died.
 **Five write tools**: `svc_control` (start/stop/restart), `container_control`, `proc_signal`
 (TERM/KILL), `fs_write` and `fs_delete`.
 
-**They can be undone.** Before an AI overwrites or deletes a file, the previous contents are
-kept **on this machine**, and the AI panel restores them per file. When you have told it to stop
-asking and walked away, this is what you have instead of prevention. Nothing is left on the
+**They can be undone.** Before MCP overwrites or deletes a file, the previous contents are kept
+**on this machine**, and the **Changed files** tab restores them one at a time. When you have told
+it to stop asking and walked away, this is what you have instead of prevention. **Copies clear
+themselves after 24 hours** — this is a guard for one night, not an archive. Nothing is left on the
 server, and `fs_delete` refuses outright when no copy can be made (binary, or too large).
+
+**Deleting is enabled per server**, separately from sharing and from the approval mode: whether the
+tool exists and whether using it interrupts you are different questions.
 
 **Deliberately absent**: arbitrary command execution, recursive directory deletion, and removing
 containers or images. An arbitrary-command tool makes the per-tool allowlist decorative; the

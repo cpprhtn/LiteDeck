@@ -205,7 +205,7 @@ export function McpWriteDialog({
           if (e.key === 'Escape') answer(false)
         }}
       >
-        <h2>{t('AI 가 서버를 바꾸려 합니다')}</h2>
+        <h2>{t('MCP 클라이언트가 서버를 바꾸려 합니다')}</h2>
         <p className="muted">
           {t('{host} · {tool}', { host: prompt.host, tool: prompt.tool })}
         </p>

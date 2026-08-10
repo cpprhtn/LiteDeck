@@ -221,6 +221,7 @@ func TestFileWritesAreNotSilentByDefault(t *testing.T) {
 func TestDeleteIsRefusedWhenItCannotBeUndone(t *testing.T) {
 	a := appWithSettings(t)
 	seedSharedHost(t, a)
+	a.SetMCPHostDelete("h1", true) // past the permission gate, onto the path guard
 
 	byName := map[string]mcp.Tool{}
 	for _, tool := range registered(t, a).Tools() {
@@ -779,14 +780,14 @@ func TestBusyPortFallsBackAndIsRemembered(t *testing.T) {
 
 // A change an AI makes has to be recoverable, because the mode people want —
 // set it and go to bed — removes the dialog that would otherwise catch it.
-func TestAIChangesAreRecordedAndRestorable(t *testing.T) {
+func TestMCPChangesAreRecordedAndRestorable(t *testing.T) {
 	a := appWithSettings(t)
 	seedSharedHost(t, a)
 
 	a.recordAIChange("h1", "/etc/nginx/nginx.conf", "write", []byte("worker_processes 1;\n"), false)
 	a.recordAIChange("h1", "/tmp/new.md", "write", nil, true)
 
-	changes := a.AIChanges("h1")
+	changes := a.MCPChanges("h1")
 	if len(changes) != 2 {
 		t.Fatalf("want 2 changes, got %d", len(changes))
 	}
@@ -803,7 +804,7 @@ func TestAIChangesAreRecordedAndRestorable(t *testing.T) {
 			t.Errorf("%s should be undoable", c.Path)
 		}
 	}
-	if a.AIChanges("other") != nil && len(a.AIChanges("other")) != 0 {
+	if a.MCPChanges("other") != nil && len(a.MCPChanges("other")) != 0 {
 		t.Error("the list is per host")
 	}
 }
@@ -820,5 +821,47 @@ func TestRestoreIsNotAnMCPTool(t *testing.T) {
 				t.Errorf("%q lets the AI reach the undo history", tool.Name)
 			}
 		}
+	}
+}
+
+// Whether deletion exists at all is a different question from whether using it
+// interrupts you, so it has its own switch — and it is off until asked for.
+func TestDeletionIsOffUntilTurnedOn(t *testing.T) {
+	a := appWithSettings(t)
+	seedSharedHost(t, a)
+
+	byName := map[string]mcp.Tool{}
+	for _, tool := range registered(t, a).Tools() {
+		byName[tool.Name] = tool
+	}
+	tool := byName["fs_delete"]
+
+	_, err := tool.Handler(context.Background(), map[string]any{
+		"hostId": "h1", "path": "/tmp/x.md",
+	})
+	if err == nil {
+		t.Fatal("deletion must be off until the user turns it on")
+	}
+	if !strings.Contains(err.Error(), "cannot be enabled from here") {
+		t.Errorf("the refusal must close the door rather than suggest a parameter: %v", err)
+	}
+
+	// Sharing a host to be read, and even letting writes through, is still not
+	// permission to delete.
+	a.SetMCPWritePolicy("h1", WriteBypass, 60)
+	if _, err := tool.Handler(context.Background(), map[string]any{
+		"hostId": "h1", "path": "/tmp/x.md",
+	}); err == nil {
+		t.Error("bypass is about being asked, not about what may be done")
+	}
+
+	a.SetMCPHostDelete("h1", true)
+	if got := a.MCPState().Delete["h1"]; !got {
+		t.Error("the switch should be reported to the panel")
+	}
+	// Now it gets past the permission check and fails on the file instead.
+	_, err = tool.Handler(context.Background(), map[string]any{"hostId": "h1", "path": "/tmp/x.md"})
+	if err != nil && strings.Contains(err.Error(), "switched off") {
+		t.Errorf("still refused after being enabled: %v", err)
 	}
 }

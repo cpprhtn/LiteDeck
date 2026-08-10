@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRecordAndRestoreRoundTrip(t *testing.T) {
@@ -196,5 +197,51 @@ func TestUnknownEntry(t *testing.T) {
 	s := Open(t.TempDir())
 	if _, err := s.Contents("nope"); err == nil || !strings.Contains(err.Error(), "no entry") {
 		t.Errorf("want a clear error, got %v", err)
+	}
+}
+
+// A copy nobody looked at within a day is not being kept for anybody. Somebody
+// who set an agent working overnight checks the result the next morning.
+func TestEntriesExpireAfterADay(t *testing.T) {
+	dir := t.TempDir()
+	s := Open(dir)
+
+	old, _ := s.Record("h1", "/etc/old.conf", ActionWrite, []byte("old"), false)
+	fresh, _ := s.Record("h1", "/etc/new.conf", ActionWrite, []byte("new"), false)
+
+	// Age the first entry past the window, the way a reopened app would find it.
+	s.mu.Lock()
+	for i := range s.entries {
+		if s.entries[i].ID == old.ID {
+			s.entries[i].At = time.Now().Add(-MaxAge - time.Minute)
+		}
+	}
+	s.mu.Unlock()
+
+	list := s.List("h1")
+	if len(list) != 1 || list[0].ID != fresh.ID {
+		t.Fatalf("expired entry should be gone, got %v", list)
+	}
+	// The bytes go with it, or the expiry would cap the list and not the disk.
+	if _, err := os.Stat(filepath.Join(dir, "ai-history", old.ID+".blob")); !os.IsNotExist(err) {
+		t.Error("the expired entry's copy is still on disk")
+	}
+}
+
+// Expiry has to apply on read too: an app left open overnight would otherwise
+// keep offering to restore something whose copy is already gone.
+func TestExpiryAppliesWithoutAnyNewWrites(t *testing.T) {
+	s := Open(t.TempDir())
+	e, _ := s.Record("h1", "/etc/a.conf", ActionWrite, []byte("a"), false)
+
+	s.mu.Lock()
+	s.entries[0].At = time.Now().Add(-MaxAge - time.Second)
+	s.mu.Unlock()
+
+	if len(s.List("")) != 0 {
+		t.Error("List must apply the age limit rather than only Record")
+	}
+	if _, err := s.Contents(e.ID); err == nil {
+		t.Error("an expired entry should no longer be restorable")
 	}
 }

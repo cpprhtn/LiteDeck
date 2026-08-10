@@ -221,6 +221,15 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 			if err != nil {
 				return nil, err
 			}
+			// Whether deletion is offered at all is a separate question from
+			// whether using it interrupts the user, so it is a separate switch.
+			// Off unless asked for: most people want an agent that reads and
+			// edits, not one that removes things.
+			if !a.mcpDeleteAllowed(hostID) {
+				return nil, fmt.Errorf("deleting files is switched off for this server. " +
+					"The user turns it on per server in LiteDeck's MCP settings; it cannot be " +
+					"enabled from here")
+			}
 			path := str(args, "path")
 			if path == "" {
 				return nil, fmt.Errorf("path is required")

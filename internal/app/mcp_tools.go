@@ -660,6 +660,14 @@ func (a *App) healthSnapshot(hostID string) (map[string]any, error) {
 	return out, nil
 }
 
+// mcpDeleteAllowed reports whether deletion is offered on this host.
+func (a *App) mcpDeleteAllowed(hostID string) bool {
+	if a.settings == nil {
+		return false
+	}
+	return a.settings.Get().MCP.Delete[hostID]
+}
+
 // mcpAllowed reports whether the user has shared this host with AI clients.
 func (a *App) mcpAllowed(hostID string) bool {
 	if a.settings == nil {

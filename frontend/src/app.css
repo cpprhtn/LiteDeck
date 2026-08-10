@@ -1732,3 +1732,41 @@ button.danger {
   border-bottom: 1px solid var(--border);
   font-size: var(--text-sm);
 }
+
+/* MCP 패널의 탭. 연결은 한 번 하고 안 보고, 권한은 다시 와서 바꾸고,
+   바뀐 파일은 나중에 읽는 기록이다 — 셋을 쌓으면 원하는 게 스크롤에 묻힌다. */
+.mcp-tabs {
+  display: flex;
+  gap: var(--sp-1);
+  margin: var(--sp-3) 0 var(--sp-2);
+  border-bottom: 1px solid var(--border);
+}
+.mcp-tabs button {
+  height: auto;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--fg-muted);
+}
+.mcp-tabs button[data-on] {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+.mcp-tabs .badge {
+  margin-left: var(--sp-1);
+}
+.mcp-tabbody {
+  min-height: 220px;
+}
+.mcp-host {
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+.mcp-host-opts {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding-left: 22px;
+}

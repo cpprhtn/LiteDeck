@@ -50,6 +50,10 @@ type MCPSettings struct {
 	// Write is the per-host approval mode for changes. Absent means "ask",
 	// which is the default and the only mode that needs no expiry.
 	Write map[string]MCPWritePolicy `json:"write,omitempty"`
+	// Delete lists hosts where file deletion is offered at all. Separate from
+	// the approval mode because they answer different questions: whether the
+	// tool exists, and whether using it interrupts you. Absent means no.
+	Delete map[string]bool `json:"delete,omitempty"`
 }
 
 // MCPWritePolicy is how one host handles a write an AI asks for (§4.2).

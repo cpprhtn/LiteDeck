@@ -133,9 +133,9 @@ export function HostSidebar({
         <button
           className="ghost small-btn"
           onClick={onOpenMCP}
-          title={t('AI 연동 (MCP) 설정')}
+          title={t('MCP 연동 설정')}
         >
-          AI
+          MCP
         </button>
         {/* Each language is named in its own script: somebody who cannot read
             the current UI is exactly the person looking for this control. */}

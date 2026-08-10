@@ -14,7 +14,7 @@ import (
 // checks against — not another surface for the thing being checked.
 
 // AIChange is one recorded change, as the panel shows it.
-type AIChange struct {
+type MCPChange struct {
 	ID       string `json:"id"`
 	HostID   string `json:"hostId"`
 	Path     string `json:"path"`
@@ -25,15 +25,15 @@ type AIChange struct {
 	Undoable bool   `json:"undoable"`
 }
 
-// AIChanges lists what an AI changed on a host, newest first.
-func (a *App) AIChanges(hostID string) []AIChange {
+// MCPChanges lists what an AI changed on a host, newest first.
+func (a *App) MCPChanges(hostID string) []MCPChange {
 	if a.rollback == nil {
 		return nil
 	}
 	entries := a.rollback.List(hostID)
-	out := make([]AIChange, 0, len(entries))
+	out := make([]MCPChange, 0, len(entries))
 	for _, e := range entries {
-		out = append(out, AIChange{
+		out = append(out, MCPChange{
 			ID: e.ID, HostID: e.HostID, Path: e.Path,
 			At: e.At.Format("2006-01-02 15:04:05"), Action: e.Action,
 			Created: e.Created, Bytes: e.Bytes, Undoable: e.Undoable(),
@@ -42,12 +42,12 @@ func (a *App) AIChanges(hostID string) []AIChange {
 	return out
 }
 
-// RestoreAIChange puts a file back the way it was.
+// RestoreMCPChange puts a file back the way it was.
 //
 // The restore goes through the same atomic write the editor uses, so undoing a
 // change cannot itself leave a half-written file. Undoing a *creation* deletes
 // the file instead: there were no previous contents to put back.
-func (a *App) RestoreAIChange(id string) ActionResult {
+func (a *App) RestoreMCPChange(id string) ActionResult {
 	if a.rollback == nil {
 		return failResult(fmt.Errorf("app: no history"))
 	}
