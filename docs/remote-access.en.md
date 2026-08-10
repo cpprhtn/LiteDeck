@@ -122,6 +122,6 @@ may reach port 22. The default allows everything.
 
 **This combination has not been verified by the author.** LiteDeck is built to work
 against any address SSH can reach, so there is no reason it would not, but by the same
-standard used in [what is and is not verified](../README.en.md#what-is-and-is-not-verified),
+standard used in [what is and is not verified](support.en.md),
 **unverified means unverified.** If you try it, please report back in an
 [issue](https://github.com/cpprhtn/LiteDeck/issues).
