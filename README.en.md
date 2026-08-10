@@ -61,11 +61,16 @@ All the server does is **run commands it already had and hand back text**. Which
 
 ## Five principles
 
-1. **Zero server install** — no agent, no daemon, no package, and no files left behind
+1. **Zero server install** — no agent, no daemon, no package. What is left on the server is whatever you asked it to do[^tmp]
 2. **SSH only** — one port. No web server, no relay
 3. **Beyond files** — processes, services, containers and health, not just a file browser
 4. **No account, no telemetry, open source** — nothing to sign up for, nothing collected, all source public
-5. **Lightweight** — not Electron. Around 11 MB, cold start under a second
+5. **Lightweight** — not Electron. A 5–10 MB download, 12–15 MB installed, cold start under a second
+
+[^tmp]: To be exact: saving from the editor writes a temp file in the same directory and swaps it
+    in with `rename`, so an interrupted save cannot leave the original half-written. On success
+    nothing is left behind. If the `rename` fails, the temp file's path is shown on screen and the
+    file is deliberately not deleted — that beats losing the edit.
 
 ## Features
 
@@ -98,15 +103,80 @@ Passwords go over stdin, so **the command line is safe to display verbatim**. Th
 
 ## How it compares
 
-| | LiteDeck | Termius | Cockpit | SSHFS/WinSCP |
-|---|---|---|---|---|
-| Server install | **none** | none | **required** | none |
-| Extra port | **none** | none | **9090** | none |
-| Files | ✅ | ✅ | ✅ | ✅ |
-| Services / processes / containers | ✅ | ❌ | ✅ | ❌ |
-| Account required | **no** | yes | no | no |
-| Telemetry | **none** | yes | none | none |
-| Price | **free, open source** | paid tiers | free | free |
+> [!NOTE]
+> **Written in August 2026 from each project's own docs and releases.**
+> If a cell is wrong, [open an issue](https://github.com/cpprhtn/LiteDeck/issues) and it gets fixed.
+> Sources are [linked below the table](#sources). Rows where LiteDeck loses are in the same table.
+
+| | LiteDeck | XPipe | Muon (ex-Snowflake) | Termius | Cockpit |
+|---|---|---|---|---|---|
+| Server install | none | none | none | none | **required** (package) |
+| Extra port | none | none | none | none | **9090** |
+| Client | Go + OS webview | Java · JavaFX | Java 13+ | closed source | browser |
+| Download size | **4.8–9.8 MB** | 210–216 MB | 27–40 MB | — | (server package) |
+| File browser | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Remote code editing | ✅ syntax + **diff before save** | opens in your local editor | ✅ | ❌ | ❌ |
+| Start/stop systemd units | ✅ | ❌ | ✅ | ❌ | ✅ |
+| Kill / renice processes | ✅ | ❌ | ✅ | ❌ | ✅ |
+| Container management | ✅ Docker · Podman | ✅ | ❌ | ❌ | ✅ Podman |
+| **Shows every command it runs** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Account required | no | no | no | **yes** | no |
+| Licence | Apache-2.0 (all of it) | Apache-2.0 core + closed extensions | GPL-3.0 | proprietary | LGPL-2.1 |
+| Behind a paywall | nothing | 2+ concurrent tunnels, hypervisors, team vaults | nothing | device sync · snippets · teams | nothing |
+| Non-SSH protocols (RDP, VNC, k8s, Proxmox) | **❌** | ✅ | ❌ | ❌ | — |
+| Port forwarding | **❌** | ✅ (one at a time on free) | ✅ | ✅ | — |
+| Config sync | **❌ local only** | ✅ self-hosted git vault | ❌ | ✅ account sync | — |
+| Code signing | **❌ unsigned** | ✅ | ❌ | ✅ | (distro packages) |
+| Latest release | 2026-08 | 2026-08 (23.9) | **2020-02 (v1.0.4)** | active | active |
+| GitHub stars | 1 — this is day one | 14.4k | 2.2k | (closed source) | 14.9k |
+
+### When XPipe is the better answer
+
+**XPipe is the most mature and the broadest tool on this list.** It reaches beyond SSH to RDP, VNC,
+Kubernetes, Proxmox and AWS; its installers are signed; it syncs your configuration through a
+self-hosted git vault and integrates with password managers. **If your infrastructure is varied, or
+what you need is a hub for the connections themselves, XPipe is the right tool.** LiteDeck is not
+competing for that job.
+
+Two things separate them.
+
+**First, XPipe's "services" means port tunnelling, not systemd.** Their docs define it as
+*"a way to open and securely tunnel any kind of remote ports to your local machine over an existing
+shell connection."* Getting onto a box to restart `nginx.service`, kill a wedged process and fix a
+config file — that is what LiteDeck does.
+
+**Second, it is a 210 MB download against a 5 MB one.** XPipe ships a whole JavaFX runtime; LiteDeck
+uses the webview your OS already has. If 200 MB to manage two or three servers does not bother you,
+that is a preference, not an argument. If it does, this is the other option.
+
+### Muon (ex-Snowflake)
+
+**This is the closest overlap** — systemd service management, a process manager, a remote text
+editor, a disk usage analyser. It got here first, and a good share of the idea was already here.
+
+But **its last release was February 2020 (v1.0.4), and the repository has been quiet since May
+2024.** There is still no macOS build ("TBD"), and it needs Java 13+ to run. It works; just know
+that before picking something to depend on.
+
+### Also worth naming
+
+- **MobaXterm** — Windows only, closed source. The free Home edition caps you at 12 sessions,
+  2 SSH tunnels and 4 macros; Professional is $69 per user per year. It bundles an X server and a
+  pile of network tools, so it is aiming at something much wider
+- **WinSCP · SSHFS** — files and nothing else. If files are all you need, they are more mature at it
+
+### Sources
+
+Every link checked on 9 August 2026.
+
+- XPipe — [repository](https://github.com/xpipe-io/xpipe) (licence, release sizes, the
+  "closed-source extensions" wording), [pricing](https://xpipe.io/pricing) (free tier scope, one
+  concurrent tunnel), [services docs](https://docs.xpipe.io/guide/services) (services = tunnelling)
+- Muon — [repository](https://github.com/subhra74/snowflake) (v1.0.4 released 2020-02-07, Java 13+, macOS TBD)
+- Termius — [pricing](https://termius.com/pricing) (free tier scope, account requirement, paid features)
+- MobaXterm — [download page](https://mobaxterm.mobatek.net/download.html) (Home edition limits, Professional price)
+- Cockpit — [project site](https://cockpit-project.org/) (server package, port 9090)
+- LiteDeck sizes are measured from the [v0.1.6-beta release](https://github.com/cpprhtn/LiteDeck/releases/tag/v0.1.6-beta)
 
 ## Install
 
