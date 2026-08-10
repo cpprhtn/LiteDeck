@@ -187,10 +187,14 @@ jobs:
           # only means the release sits invisible until someone remembers to press
           # a button — and a release nobody can download is not a release.
           draft: false
-          # Marked pre-release while the version says beta. It is downloadable
-          # either way; the flag is what keeps GitHub from calling it "Latest" and
-          # is the honest signal about how much of this has been run in anger.
-          prerelease: true
+          # Pre-release exactly when the tag says so. Semver puts that in the
+          # suffix — v1.2.3-beta, -rc.1 — and a bare v1.2.3 is a real release.
+          #
+          # This was hard-coded true while every tag was a beta, so v1.0.0 came
+          # out wearing a "Pre-release" badge and GitHub refused to call it
+          # Latest. A constant that happens to be right for a while is a constant
+          # that will be wrong the first time it matters.
+          prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
           files: release/*
           body: |
