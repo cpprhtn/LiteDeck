@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -637,5 +638,60 @@ func TestJournalTimeExpressionsAreValidated(t *testing.T) {
 		if safeJournalArg(bad) {
 			t.Errorf("%q should be refused", bad)
 		}
+	}
+}
+
+// The port has to survive a restart, or the line the user pasted into their MCP
+// client is dead the next morning. Letting the OS pick looks tidier and is the
+// bug: it lands in that line.
+func TestPortIsStableAcrossRestart(t *testing.T) {
+	dir := t.TempDir()
+
+	first := New()
+	first.configDir = dir
+	first.settings = config.OpenSettings(dir)
+	state := first.SetMCPEnabled(true)
+	if !state.Running {
+		t.Fatalf("did not start: %s", state.Error)
+	}
+	url := state.URL
+	port := first.mcpSettings().Port
+	if port == 0 {
+		t.Fatal("the bound port was not written back to settings")
+	}
+	first.stopMCP()
+
+	second := New()
+	second.configDir = dir
+	second.settings = config.OpenSettings(dir)
+	again := second.SetMCPEnabled(true)
+	defer second.stopMCP()
+	if again.URL != url {
+		t.Errorf("address moved across a restart: %s then %s", url, again.URL)
+	}
+}
+
+// A taken port must not leave the integration switched off.
+func TestBusyPortFallsBackAndIsRemembered(t *testing.T) {
+	dir := t.TempDir()
+
+	// Hold the preferred port so the app has to move.
+	blocker, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", defaultMCPPort))
+	if err != nil {
+		t.Skipf("port %d is already in use by something else", defaultMCPPort)
+	}
+	defer blocker.Close()
+
+	a := New()
+	a.configDir = dir
+	a.settings = config.OpenSettings(dir)
+	state := a.SetMCPEnabled(true)
+	defer a.stopMCP()
+
+	if !state.Running {
+		t.Fatalf("a busy preferred port must not stop the endpoint: %s", state.Error)
+	}
+	if got := a.mcpSettings().Port; got == 0 || got == defaultMCPPort {
+		t.Errorf("fell back to port %d without remembering a usable one", got)
 	}
 }

@@ -2,7 +2,9 @@ package app
 
 import (
 	"fmt"
+	"net"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -24,6 +26,14 @@ const (
 	mcpCallsPerSecond = 1.5
 	mcpBurst          = 8
 )
+
+// defaultMCPPort is tried first so the endpoint has a stable address.
+//
+// Letting the OS choose looks tidier and is wrong: the port lands in the line
+// the user pasted into their MCP client, and a new one on every launch means
+// that line is dead by tomorrow. Whatever is actually bound is written back to
+// settings, so it stays put even when this preference was unavailable.
+const defaultMCPPort = 8779
 
 type mcpState struct {
 	mu       sync.Mutex
@@ -89,17 +99,50 @@ func (a *App) startMCP() {
 	a.registerMCPTools(srv)
 	a.registerMCPWriteTools(srv)
 
-	listener, url, err := srv.Serve(mcp.Options{
+	opts := mcp.Options{
 		Token:   token,
 		Port:    s.Port,
 		Limiter: mcp.NewLimiter(mcpCallsPerSecond, mcpBurst),
 		OnCall:  a.logAICall,
-	})
+	}
+	if opts.Port == 0 {
+		opts.Port = defaultMCPPort
+	}
+
+	listener, url, err := srv.Serve(opts)
+	if err != nil && opts.Port != 0 {
+		// Something else has the port. Take any free one rather than leaving the
+		// integration off, and remember it so this is a one-time change.
+		opts.Port = 0
+		listener, url, err = srv.Serve(opts)
+	}
 	if err != nil {
 		a.emit("log:warning", i18n.T("MCP 서버를 열지 못했습니다: %v", err))
 		return
 	}
 	a.mcp.listener, a.mcp.url = listener, url
+
+	// Persist whatever was bound. This is what keeps the client config the user
+	// pasted once from going stale on the next launch.
+	if bound := listenerPort(listener.Addr()); bound != 0 && bound != s.Port {
+		s.Port = bound
+		if err := a.settings.SetMCP(s); err != nil {
+			a.emit("log:warning", i18n.T("MCP 설정을 저장하지 못했습니다: %v", err))
+		}
+	}
+}
+
+// listenerPort pulls the port out of a "127.0.0.1:8779" address.
+func listenerPort(addr string) int {
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return 0
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // stopMCP closes the endpoint.
