@@ -10,7 +10,13 @@ package secret
 // package cannot reach; it becomes garbage immediately and is freed on the next
 // collection, but it is not zeroed on demand.
 //
-// What Buffer does achieve: the app's own long-lived copy — the one sitting in
+// Status: NOT WIRED UP. The auth and sudo paths still carry the password as a
+// plain string end to end, so nothing is wiped on demand today — the README's
+// security section says exactly this rather than implying otherwise. This type
+// exists for the paths that will hold a secret long enough to be worth wiping;
+// until one uses it, do not read the comment above as a guarantee.
+//
+// What Buffer does achieve when it is used: the app's own long-lived copy — the one sitting in
 // a struct between the user typing it and the handshake finishing, and the one
 // that would otherwise appear in a heap dump or a core file minutes later — is
 // held as bytes and wiped deterministically. That is the copy whose lifetime is
