@@ -118,10 +118,12 @@ export function CommandLogPanel({
               onClick={() => void copy(e)}
               title={t('클릭해서 복사')}
             >
-              {/* An AI-caused line has to be attributable at a glance. The
-                  marker replaces the prompt rather than sitting beside it: this
-                  entry is a tool call, not a shell command. */}
-              <span className="cmdlog-marker">{e.origin === 'ai' ? 'AI' : '$'}</span>
+              {/* A line an MCP client caused has to be attributable at a
+                  glance. The marker replaces the prompt rather than sitting
+                  beside it: this entry is a tool call, not a shell command.
+                  Labelled MCP rather than AI because that is the word the
+                  person set up in their client. */}
+              <span className="cmdlog-marker">{e.origin === 'ai' ? 'MCP' : '$'}</span>
               {/* Newlines shown as ⏎ rather than collapsed to whitespace by the
                   browser. A multi-line command such as the metrics script read as
                   `... | head -1 echo '#mem'` — a command that would be broken if

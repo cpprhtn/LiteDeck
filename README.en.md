@@ -86,6 +86,7 @@ All the server does is **run commands it already had and hand back text**. Which
 | **Terminal** | xterm.js PTY, multiple tabs. `code .` and `vi foo.conf` are **caught by the app** and open in the file tab. They are never sent to the server, so neither VS Code nor vi needs to exist there |
 | **Monitoring** | CPU, memory, disk summary bar with sparklines |
 | **Command Log** | **Every command the GUI runs, live.** Click to copy |
+| **MCP** | Claude Code and Claude Desktop read and change your servers through this app. Per-server opt-in, changes are approved, **and can be undone** |
 | **Language** | English and Korean. Follows your OS on first run; switch with `KO`/`EN` at the bottom of the sidebar |
 
 ### Command Log: learn the CLI from the GUI
@@ -143,7 +144,7 @@ it in with `rename`, so an interrupted save cannot leave the original half-writt
 | Kill / renice processes | ✅ | ❌ | ✅ | ❌ | ✅ |
 | Container management | ✅ Docker · Podman | ✅ | ❌ | ❌ | ✅ Podman |
 | **Shows every command it runs** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| MCP (AI integration) | ✅ read-only, per-server opt-in | ✅ shell, files, command execution | ❌ | ❌ | ❌ |
+| MCP integration | ✅ structured tools, per-server opt-in, changes approved and **undoable** | ✅ shell, files, command execution; approval delegated to the client | ❌ | ❌ | ❌ |
 | Account required | no | no | no | **yes** | no |
 | Licence | Apache-2.0 (all of it) | Apache-2.0 core + closed extensions | GPL-3.0 | proprietary | LGPL-2.1 |
 | Behind a paywall | nothing | 2+ concurrent tunnels, hypervisors, team vaults | nothing | device sync · snippets · teams | nothing |
@@ -315,6 +316,41 @@ matching what you believe you asked for, and that log is the only reason to trus
 - NOPASSWD is detected with `sudo -n true`, and then nothing is asked. Prompting for a password the
   server does not want is not just pointless. **It trains you to type your password into any dialog**
 
+### The MCP endpoint
+
+Turning on [MCP integration](#mcp-integration) opens one local HTTP endpoint. That single endpoint
+**speaks for every server you have shared**, so what is written here decides whether the feature is
+safe ([`internal/mcp/http.go`](internal/mcp/http.go)).
+
+- **Bound to `127.0.0.1` only.** There is no setting to expose it elsewhere. The absence of that
+  option is the only thing making this endpoint safe
+- **Bearer token**, stored in settings, compared in constant time, and changed **only by the rotate
+  button**. Rotating on the app's schedule would break the client config you pasted in, at a moment
+  you did not choose
+- **Origin is checked.** A browser page can POST to loopback, and DNS rebinding can make that look
+  same-origin. The MCP spec asks for this; a real MCP client sends no Origin at all
+- **Rate limited** to 1.5 calls a second, burst of 8. Not politeness: the Exec pool is three
+  channels wide, so an agent burst does not slow the server down, it **starves the GUI you are
+  looking at**
+- **Per-server opt-in, and deleting files is a separate switch.** Registering a host, or sharing it
+  to be read, does not grant deletion
+- **The approval policy belongs to the app.** No tool changes it and no parameter relaxes it, so
+  **a model has no way to request its own approval.** That the protocol carries no trustworthy
+  statement of a client's intent was verified against Claude Code 2.1.22
+- **Undo copies live on this machine** and clear after 24 hours. Nothing is left on the server
+
+**Stated plainly:**
+
+- **With "stop asking" on, prompt injection wins.** Text planted in a log or a file can steer the
+  model, and in that mode nobody sees it in time. What remains is not defence but **attribution and
+  blast radius**: everything in the Command Log, the mode expiring on its own, and the fact that it
+  is set per host
+- **Only files can be undone.** A service restart or a killed process has no copy behind it. Those
+  are the recoverable kind, which is why they are offered; the unrecoverable ones (arbitrary command
+  execution, recursive directory deletion, removing containers or images) are not offered at all
+- **The MCP layer never touches credentials.** The token is for this endpoint only, and SSH
+  credentials stay in the OS keychain as described above
+
 ### What it does not do, stated up front
 
 - **It cannot bound how long a password stays in memory.** Go strings are immutable and the runtime
@@ -373,10 +409,10 @@ systemd below 246 (Ubuntu 20.04, RHEL 8) has no JSON output, so LiteDeck **falls
 
 Connecting to an OS with no adapter still gives you **files and a terminal**: SFTP and PTY come from SSH itself. The remaining tabs say which OS was detected and why they cannot help.
 
-## AI integration (MCP)
+## MCP integration
 
-An MCP client (Claude Code, Claude Desktop) can **query** your servers through this app.
-Turn it on with the **AI** button at the bottom of the sidebar.
+An MCP client (Claude Code, Claude Desktop) can **read and change** your servers through this
+app. Turn it on with the **MCP** button at the bottom of the sidebar.
 
 > [!IMPORTANT]
 > **Changes are confirmed one at a time by default**, and the dialog shows the literal
@@ -386,8 +422,8 @@ Turn it on with the **AI** button at the bottom of the sidebar.
 Claude Code  ──MCP (local HTTP)──▶  LiteDeck  ──existing SSH──▶  server
 ```
 
-The AI **sits where the GUI sat**: same adapters, same already-authenticated SSH connection,
-same Command Log. What it asks for scrolls past tagged `AI`. And **still nothing is installed
+The client **sits where the GUI sat**: same adapters, same already-authenticated SSH connection,
+same Command Log. What it asks for scrolls past tagged `MCP`. And **still nothing is installed
 on the server.** Putting an AI tool there means a runtime and a resident process, and its
 context-gathering hammers a small box's I/O. All of that load stays on the client.
 
@@ -402,7 +438,7 @@ containers and exposed ports; `svc_logs` is what says *why* something died.
 **They can be undone.** Before MCP overwrites or deletes a file, the previous contents are kept
 **on this machine**, and the **Changed files** tab restores them one at a time. When you have told
 it to stop asking and walked away, this is what you have instead of prevention. **Copies clear
-themselves after 24 hours** — this is a guard for one night, not an archive. Nothing is left on the
+themselves after 24 hours**: this is a guard for one night, not an archive. Nothing is left on the
 server, and `fs_delete` refuses outright when no copy can be made (binary, or too large).
 
 **Deleting is enabled per server**, separately from sharing and from the approval mode: whether the
@@ -416,8 +452,8 @@ other three cannot be copied first, so nothing could put them back.
 
 | | |
 |---|---|
-| Per-server opt-in | **Everything off by default.** Adding a host does not expose it. Only what you switch on can be read |
-| Change approval | **Only file changes are confirmed** by default, because the dialog shows a diff against what is on the server right now — information no AI client has. A restart just runs; the client already showed you the same thing |
+| Per-server opt-in | **Everything off by default.** Adding a host does not expose it; only what you switch on can be read, and deleting files is a separate switch again |
+| Change approval | **Only file changes are confirmed** by default, because the dialog shows a diff against what is on the server right now, which is information no client has. A restart just runs; the client already showed you the same thing |
 | Per host | A badge in the header: **ask always / files only / don't ask overnight**. While it is not asking the badge stays red, and the window **reverts on its own** |
 | Not settable remotely | No tool flips that switch and no parameter relaxes it. **A model has no way to request its own approval** |
 | Reading ≠ writing | Sharing a server to be read does not make it changeable |
@@ -426,7 +462,7 @@ other three cannot be copied first, so nothing could put them back.
 | Rate limit | 1.5 calls/sec, burst of 8, so an agent loop cannot hammer a small server |
 | Audit | Every tool call lands in the Command Log. Local only, sent nowhere |
 
-**Connecting.** Press **Copy** in the AI panel and paste:
+**Connecting.** Press **Copy** on the MCP panel's **Connection** tab and paste:
 
 ```bash
 claude mcp add --transport http litedeck http://127.0.0.1:<port>/mcp \
