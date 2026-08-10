@@ -32,7 +32,7 @@
 ---
 
 > [!NOTE]
-> **v0.1.6-beta.** Verified on macOS and Windows clients, against a real Windows machine and Linux containers.
+> **v0.2.0-beta.** Verified on macOS and Windows clients, against a real Windows machine and Linux containers.
 > It has not yet been run against real Linux hardware. Exactly what has and has not been checked is written down in
 > [What is and is not verified](#what-is-and-is-not-verified).
 > If you point this at a production server, try the irreversible actions — deleting files, killing processes — on a
@@ -65,7 +65,7 @@ All the server does is **run commands it already had and hand back text**. Which
 2. **SSH only.** One port. No web server, no relay
 3. **Beyond files.** Processes, services, containers and health, not just a file browser
 4. **No account, no telemetry, open source.** Nothing to sign up for, nothing collected, all source public
-5. **Lightweight.** Not Electron. A 5–10 MB download, 12–15 MB installed, cold start under a second
+5. **Lightweight.** Not Electron. A 5–10 MB download, 13–16 MB installed, cold start under a second
 
 [^tmp]: To be exact: saving from the editor writes a temp file in the same directory and swaps it
     in with `rename`, so an interrupted save cannot leave the original half-written. On success
@@ -143,6 +143,7 @@ it in with `rename`, so an interrupted save cannot leave the original half-writt
 | Kill / renice processes | ✅ | ❌ | ✅ | ❌ | ✅ |
 | Container management | ✅ Docker · Podman | ✅ | ❌ | ❌ | ✅ Podman |
 | **Shows every command it runs** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| MCP (AI integration) | ✅ read-only, per-server opt-in | ✅ shell, files, command execution | ❌ | ❌ | ❌ |
 | Account required | no | no | no | **yes** | no |
 | Licence | Apache-2.0 (all of it) | Apache-2.0 core + closed extensions | GPL-3.0 | proprietary | LGPL-2.1 |
 | Behind a paywall | nothing | 2+ concurrent tunnels, hypervisors, team vaults | nothing | device sync · snippets · teams | nothing |
@@ -372,26 +373,53 @@ systemd below 246 (Ubuntu 20.04, RHEL 8) has no JSON output, so LiteDeck **falls
 
 Connecting to an OS with no adapter still gives you **files and a terminal**: SFTP and PTY come from SSH itself. The remaining tabs say which OS was detected and why they cannot help.
 
-## What is coming
+## AI integration (MCP)
+
+An MCP client (Claude Code, Claude Desktop) can **query** your servers through this app.
+Turn it on with the **AI** button at the bottom of the sidebar.
 
 > [!IMPORTANT]
-> **Not built yet.** This section alone is a plan, and none of it is in the build you download
-> today. Everything else in this README is a working feature.
+> **Read-only.** There are no tools that change a server, and none are hidden behind a
+> parameter. Writes need an approval model first, and that is not built.
 
-**An MCP server (planned for v0.2).** LiteDeck would open an MCP endpoint on localhost so that
-Claude Code or Claude Desktop can work a server in plain language. Ask *"why is myapp returning
-500s"* and the model queries service state, logs and disk for itself.
+```
+Claude Code  ──MCP (local HTTP)──▶  LiteDeck  ──existing SSH──▶  server
+```
 
-What the design already fixes:
+The AI **sits where the GUI sat**: same adapters, same already-authenticated SSH connection,
+same Command Log. What it asks for scrolls past tagged `AI`. And **still nothing is installed
+on the server.** Putting an AI tool there means a runtime and a resident process, and its
+context-gathering hammers a small box's I/O. All of that load stays on the client.
 
-- **The AI sits where the GUI sat.** Same adapters, same SSH connection, same Command Log.
-  Commands the AI causes scroll past on screen tagged `[AI]`, like everyone else's
-- **Still nothing installed on the server.** Putting an AI tool on the server means a runtime and
-  a resident process, and its context-gathering hammers a small box's I/O. All of that load stays
-  on the well-specified client
-- **Writes go through an approval the app owns.** The AI cannot turn it off. If you want an
-  autonomous mode you enable it inside LiteDeck, and you can set it per host
-- **Read-only ships first.** Querying comes before acting
+**Ten tools**: `hosts_list`, `health_snapshot`, `sys_stats`, `svc_list`, `proc_list`,
+`container_list`, `net_ports`, `fs_list`, `fs_read`, `sessions_list`. One `health_snapshot`
+returns CPU, memory, disk, failed units, unhealthy containers and externally reachable ports,
+which answers most of *"why is myapp returning 500s"* in a single round trip.
+
+**What holds it back**
+
+| | |
+|---|---|
+| Per-server opt-in | **Everything off by default.** Adding a host does not expose it. Only what you switch on can be read |
+| Not settable remotely | There is no tool that flips that switch. The AI can ask; only the app can change it |
+| Binding | `127.0.0.1` only. No setting exposes it on another interface |
+| Auth | Bearer token, stored in settings, changed only by the rotate button |
+| Rate limit | 1.5 calls/sec, burst of 8, so an agent loop cannot hammer a small server |
+| Audit | Every tool call lands in the Command Log. Local only, sent nowhere |
+
+**Connecting.** Press **Copy** in the AI panel and paste:
+
+```bash
+claude mcp add --transport http litedeck http://127.0.0.1:<port>/mcp \
+  --header "Authorization: Bearer <token>"
+```
+
+> [!NOTE]
+> **Verification status.** Claude Code 2.1.22 connecting to this endpoint (`✓ Connected`) and
+> the full protocol path (initialize, tools/list, tools/call, refusal, auth, rate limiting)
+> are confirmed working. **A model autonomously invoking the tools has not been verified by
+> the author.** That is a limitation of the checking environment, not of the code. One line in your
+> terminal will tell you. Report back and this note gets corrected.
 
 ## Non-goals
 
@@ -435,7 +463,7 @@ go test ./... -race           # includes integration tests (needs Docker)
 
 Integration tests bring up real servers. `testdata/` holds sshd, systemd and Docker-in-Docker fixtures. Without Docker they skip rather than fail, so **if `-race` finishes in a few seconds the integration tests did not run** (with Docker up it takes about a minute).
 
-v0.1.6-beta was built with Go 1.26.5, Node 22.13.1, Wails 2.13.0, Docker 29.4.0 on macOS 26.5.2 arm64.
+v0.2.0-beta was built with Go 1.26.5, Node 22.13.1, Wails 2.13.0, Docker 29.4.0 on macOS 26.5.2 arm64.
 
 ## Contributing
 

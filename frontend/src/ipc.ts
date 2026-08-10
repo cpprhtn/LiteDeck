@@ -47,6 +47,17 @@ export interface BootstrapData {
 
 export type ServerPlatform = 'linux' | 'windows' | 'darwin' | 'bsd' | 'unknown'
 
+export interface MCPStatus {
+  enabled: boolean
+  running: boolean
+  url?: string
+  token?: string
+  hosts: Record<string, boolean>
+  /** The exact `claude mcp add` line, assembled by Go so nobody mistypes it. */
+  snippet?: string
+  error?: string
+}
+
 export interface ServerInfo {
   platform: ServerPlatform
   /** Whether an adapter exists for this platform. Comes from Go rather than being
@@ -352,6 +363,8 @@ export interface CommandEntry {
   /** '' = user action, 'poll' = background refresh, 'probe' = capability check. */
   kind?: '' | 'poll' | 'probe'
   stderr?: string
+  /** 'ai' when an MCP client asked for it. */
+  origin?: string
 }
 
 export interface ConnectionState {
@@ -394,6 +407,10 @@ interface Bindings {
 
   ListHosts(): Promise<HostView[]>
   ApplyLanguage(tag: string): Promise<void>
+  MCPState(): Promise<MCPStatus>
+  SetMCPEnabled(enabled: boolean): Promise<MCPStatus>
+  SetMCPHost(hostID: string, allowed: boolean): Promise<MCPStatus>
+  RotateMCPToken(): Promise<MCPStatus>
   SetLanguage(tag: string): Promise<ActionResult>
   SaveHost(h: Host): Promise<void>
   DeleteHost(id: string): Promise<void>
@@ -589,6 +606,10 @@ export const ColdStartMs = () => api().ColdStartMs()
 
 export const ListHosts = () => api().ListHosts()
 export const ApplyLanguage = (tag: string) => api().ApplyLanguage(tag)
+export const MCPState = () => api().MCPState()
+export const SetMCPEnabled = (enabled: boolean) => api().SetMCPEnabled(enabled)
+export const SetMCPHost = (hostID: string, allowed: boolean) => api().SetMCPHost(hostID, allowed)
+export const RotateMCPToken = () => api().RotateMCPToken()
 export const SetLanguage = (tag: string) => api().SetLanguage(tag)
 export const SaveHost = (h: Host) => api().SaveHost(h)
 export const DeleteHost = (id: string) => api().DeleteHost(id)

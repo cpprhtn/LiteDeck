@@ -38,6 +38,7 @@ import {
   type ServerInfo,
 } from './ipc'
 import { getLanguage, initLanguage, k, t, useT } from './i18n'
+import { McpPanel } from './McpPanel'
 import { closeHost } from './openFiles'
 import { initPlatform } from './platform'
 
@@ -74,6 +75,7 @@ export default function App() {
   // needs to know about it.
   const t = useT() // shadows the module import; subscribing is the point
   const [benchMode, setBenchMode] = useState<boolean | null>(null)
+  const [mcpOpen, setMcpOpen] = useState(false)
   const [boot, setBoot] = useState<BootstrapData | null>(null)
   const [hosts, setHosts] = useState<HostView[]>([])
   const [activeID, setActiveID] = useState<string | null>(null)
@@ -227,7 +229,12 @@ export default function App() {
         onEdit={(h) => setEditing(h)}
         busy={busy}
         version={boot?.version}
+        onOpenMCP={() => setMcpOpen(true)}
       />
+
+      {mcpOpen && (
+        <McpPanel hosts={hosts} onClose={() => setMcpOpen(false)} onError={setError} />
+      )}
 
       <main className="main">
         <header className="main-head">

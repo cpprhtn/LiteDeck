@@ -35,6 +35,7 @@ type App struct {
 	terminals *terminalRegistry
 	cpu       *cpuHistory
 	logs      *logRegistry
+	mcp       mcpState
 
 	// emit sends an event to the frontend. It is a field rather than a direct
 	// call to the Wails runtime so the prompt bridge — the one piece of logic
@@ -113,6 +114,10 @@ func (a *App) Startup(ctx context.Context) {
 		return
 	}
 	a.hosts = store
+
+	// Last, and only if the user asked for it: the endpoint speaks for every
+	// host above, so it must not come up before they are loaded.
+	a.startMCP()
 }
 
 // Shutdown closes every connection before the window goes away.
@@ -129,6 +134,7 @@ func (a *App) Shutdown(context.Context) {
 	if a.rep != nil {
 		a.rep.close()
 	}
+	a.stopMCP()
 }
 
 // Bootstrap is the frontend's first call: everything needed to draw the shell,

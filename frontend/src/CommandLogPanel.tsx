@@ -114,10 +114,14 @@ export function CommandLogPanel({
               className="cmdlog-row"
               data-status={e.status}
               data-kind={e.kind || undefined}
+              data-origin={e.origin || undefined}
               onClick={() => void copy(e)}
               title={t('클릭해서 복사')}
             >
-              <span className="cmdlog-marker">$</span>
+              {/* An AI-caused line has to be attributable at a glance. The
+                  marker replaces the prompt rather than sitting beside it: this
+                  entry is a tool call, not a shell command. */}
+              <span className="cmdlog-marker">{e.origin === 'ai' ? 'AI' : '$'}</span>
               {/* Newlines shown as ⏎ rather than collapsed to whitespace by the
                   browser. A multi-line command such as the metrics script read as
                   `... | head -1 echo '#mem'` — a command that would be broken if

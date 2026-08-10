@@ -29,6 +29,10 @@ type CommandEntry struct {
 	// Kind is "", "poll" or "probe" — see sshcore.CommandKind.
 	Kind   string `json:"kind,omitempty"`
 	Stderr string `json:"stderr,omitempty"`
+	// Origin is "ai" for a tool call an MCP client made, empty for the user's
+	// own actions. The panel marks these so a command nobody remembers asking
+	// for is attributable at a glance (§4.6).
+	Origin string `json:"origin,omitempty"`
 }
 
 // commandLogLimit bounds the in-memory history. The panel is a live view, not
@@ -137,4 +141,30 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// AICall records a tool call an MCP client made.
+//
+// The entry is the AI's request, not the SSH commands it produces — those
+// arrive on their own lines a moment later, indistinguishable from a click,
+// which is correct: the server ran them the same way. What the user needs to
+// see is that something other than their own hands asked.
+func (l *commandLog) AICall(hostID, line string) {
+	l.mu.Lock()
+	l.seq++
+	e := CommandEntry{
+		Seq:    l.seq,
+		HostID: hostID,
+		Line:   line,
+		At:     time.Now().Format(time.RFC3339),
+		Status: "ok",
+		Origin: "ai",
+	}
+	l.entries = append(l.entries, e)
+	if len(l.entries) > commandLogLimit {
+		l.entries = l.entries[len(l.entries)-commandLogLimit:]
+	}
+	l.mu.Unlock()
+
+	l.emit("cmd:started", e)
 }

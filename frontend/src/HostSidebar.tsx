@@ -27,6 +27,7 @@ export function HostSidebar({
   onEdit,
   busy,
   version,
+  onOpenMCP,
 }: {
   hosts: HostView[]
   activeID: string | null
@@ -41,6 +42,7 @@ export function HostSidebar({
   // a missing version reads as "the app failed to start properly", which is
   // information too.
   version?: string
+  onOpenMCP: () => void
 }) {
   const groups = new Map<string, HostView[]>()
   for (const h of hosts) {
@@ -128,6 +130,13 @@ export function HostSidebar({
           LiteDeck {version ?? '—'}
         </span>
         <span className="spacer" />
+        <button
+          className="ghost small-btn"
+          onClick={onOpenMCP}
+          title={t('AI 연동 (MCP) 설정')}
+        >
+          AI
+        </button>
         {/* Each language is named in its own script: somebody who cannot read
             the current UI is exactly the person looking for this control. */}
         <select

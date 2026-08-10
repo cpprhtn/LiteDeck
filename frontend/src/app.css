@@ -1559,3 +1559,62 @@ button.danger {
   color: var(--fg);
   border-color: var(--border-strong);
 }
+
+/* AI 연동 설정 (§4). 다이얼로그 하나에 스위치 두 종류 — 엔드포인트, 그리고
+   어떤 서버를 읽게 할지. 둘을 시각적으로 붙여 두면 "켰으니 전부 읽히는구나"
+   로 읽히므로 사이에 제목을 넣어 끊는다. */
+.mcp-dialog {
+  width: min(560px, 92vw);
+  max-height: 82vh;
+  overflow-y: auto;
+}
+.mcp-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  cursor: pointer;
+}
+.mcp-toggle input {
+  flex: none;
+}
+.mcp-heading {
+  margin: 18px 0 4px;
+  font-size: 13px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+.mcp-endpoint {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 10px 0;
+}
+.mcp-endpoint > code {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+/* The snippet is long and must stay copyable in one piece, so it wraps rather
+   than scrolling out of reach. */
+.mcp-snippet {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.mcp-row {
+  display: flex;
+  gap: 6px;
+}
+.mcp-hosts {
+  display: flex;
+  flex-direction: column;
+}
+/* An AI-caused line has to be attributable at a glance, so the prompt marker
+   itself changes rather than a badge being added somewhere on the row. */
+.cmdlog-row[data-origin='ai'] .cmdlog-marker {
+  color: var(--accent, #6aa4ff);
+  font-weight: 700;
+  font-size: 10px;
+}

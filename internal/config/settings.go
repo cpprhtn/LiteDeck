@@ -26,6 +26,27 @@ type Settings struct {
 	// which is the default and stays the default until somebody chooses
 	// otherwise — an explicit choice is the only reason to write this file.
 	Language string `json:"language,omitempty"`
+
+	// MCP holds the AI integration's settings. Off until somebody turns it on:
+	// an endpoint that speaks for every connected server is not something to
+	// open because the app was installed.
+	MCP MCPSettings `json:"mcp,omitzero"`
+}
+
+// MCPSettings is the AI integration (§4 of the MCP design note).
+type MCPSettings struct {
+	// Enabled starts the local endpoint at launch.
+	Enabled bool `json:"enabled,omitempty"`
+	// Token authorises clients. Persisted rather than regenerated per launch,
+	// because a token that changes every start breaks the client config the
+	// user pasted in once and expects to keep working.
+	Token string `json:"token,omitempty"`
+	// Port to bind on loopback. Zero asks the OS, which is fine until the user
+	// wants a stable line in their client config — then they pin one.
+	Port int `json:"port,omitempty"`
+	// Hosts the AI may read, by host ID. Absent means no: registering a server
+	// in LiteDeck must not hand it to an AI as a side effect.
+	Hosts map[string]bool `json:"hosts,omitempty"`
 }
 
 // SettingsStore is settings.json.
@@ -69,6 +90,14 @@ func (s *SettingsStore) Get() Settings {
 
 // SetLanguage records an explicit choice. An empty tag means "follow the OS"
 // and is a legitimate value — it is how somebody undoes a choice.
+// SetMCP replaces the MCP settings.
+func (s *SettingsStore) SetMCP(m MCPSettings) error {
+	s.mu.Lock()
+	s.settings.MCP = m
+	s.mu.Unlock()
+	return s.save()
+}
+
 func (s *SettingsStore) SetLanguage(tag string) error {
 	s.mu.Lock()
 	s.settings.Language = tag
