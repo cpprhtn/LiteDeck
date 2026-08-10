@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -30,7 +31,10 @@ import (
 // Row caps. Chosen so a full answer stays inside a few thousand tokens.
 const (
 	maxProcessRows = 40
-	maxServiceRows = 80
+	// Sixty rather than eighty: an unfiltered listing is somebody browsing for
+	// a name, and the page note tells them how to narrow. A real server has
+	// hundreds of units and no answer needs all of them at once.
+	maxServiceRows = 60
 	maxListenRows  = 60
 	maxDirRows     = 200
 	maxFileBytes   = 64 * 1024
@@ -76,6 +80,41 @@ func num(args map[string]any, key string, def, max int) int {
 	return max
 }
 
+// Everything a tool returns is spent from the model's context, so these shape
+// the adapters' structs into what a model can act on and nothing else.
+//
+// The GUI structs are the wrong shape here and it is not a small difference:
+// measured against a real Ubuntu server, svc_list returned 13KB where the
+// useful part was under 4KB. A field that is constant across every row (load
+// "loaded"), a field that restates another (mode and perm), or one nothing can
+// be done with (uid 1000 with no name to resolve it against) is pure cost.
+//
+// The rule applied throughout: emit a key only when it says something. An
+// absent key reads as "nothing to report" to a model just as well as a null,
+// and costs nothing.
+
+func put(m map[string]any, key string, v any) {
+	switch t := v.(type) {
+	case string:
+		if t == "" {
+			return
+		}
+	case int:
+		if t == 0 {
+			return
+		}
+	case int64:
+		if t == 0 {
+			return
+		}
+	case bool:
+		if !t {
+			return
+		}
+	}
+	m[key] = v
+}
+
 // truncated annotates a capped list so the model knows it is not seeing
 // everything, and knows how to narrow rather than asking again for more.
 func truncated(shown, total int, hint string) map[string]any {
@@ -114,13 +153,23 @@ func (a *App) registerMCPTools(s *mcp.Server) {
 			views := a.ListHosts()
 			out := make([]map[string]any, 0, len(views))
 			for _, h := range views {
+				// A host that is not shared is still listed, or a model asked
+				// about "prod" would answer that there is no such server. But
+				// its address and connection state are of no use to something
+				// that cannot read it, so they are left off.
+				if !a.mcpAllowed(h.ID) {
+					out = append(out, map[string]any{
+						"hostId": h.ID, "label": h.Label(), "sharedWithAI": false,
+					})
+					continue
+				}
 				out = append(out, map[string]any{
 					"hostId":       h.ID,
 					"label":        h.Label(),
 					"address":      h.Addr(),
 					"user":         h.User,
 					"state":        h.State,
-					"sharedWithAI": a.mcpAllowed(h.ID),
+					"sharedWithAI": true,
 				})
 			}
 			return map[string]any{
@@ -203,9 +252,36 @@ func (a *App) registerMCPTools(s *mcp.Server) {
 			if len(kept) > maxServiceRows {
 				kept = kept[:maxServiceRows]
 			}
+			out := make([]map[string]any, 0, len(kept))
+			for _, u := range kept {
+				row := map[string]any{"name": u.Name}
+				// active and sub are always read together ("active/running"), so
+				// one composite costs a key less per row across eighty rows.
+				state := u.Active
+				if u.Sub != "" {
+					state += "/" + u.Sub
+				}
+				put(row, "state", state)
+				put(row, "enabled", u.Enabled)
+				// Plenty of units describe themselves by restating their own
+				// name ("auditd.service" → "auditd.service", "ModemManager"
+				// → "Modem Manager"). Only descriptions that say something the
+				// name does not are worth carrying — and the test for that has
+				// to be exact equality, because a loose one throws away real
+				// ones like apparmor's "Load AppArmor profiles".
+				if !restatesName(u.Name, u.Description) {
+					put(row, "description", u.Description)
+				}
+				// "loaded" is what almost every listed unit says. Only the
+				// exceptions — not-found, masked — are worth a key.
+				if u.Load != "" && u.Load != "loaded" {
+					row["load"] = u.Load
+				}
+				out = append(out, row)
+			}
 			return map[string]any{
-				"units": kept,
-				"page":  truncated(len(kept), total, "narrow with state or grep"),
+				"units": out,
+				"page":  truncated(len(out), total, "narrow with state or grep"),
 			}, nil
 		},
 	})
@@ -325,9 +401,28 @@ func (a *App) registerMCPTools(s *mcp.Server) {
 			if n := num(args, "limit", 20, maxProcessRows); len(procs) > n {
 				procs = procs[:n]
 			}
+			out := make([]map[string]any, 0, len(procs))
+			for _, p := range procs {
+				row := map[string]any{"pid": p.PID, "user": p.User, "cpu": p.CPU, "mem": p.Mem}
+				put(row, "rssKb", p.RSS)
+				// args is the full command line and command is its first word,
+				// so the short form only earns its place when it is not already
+				// there — a kernel thread, mostly.
+				cmd := p.Args
+				if cmd == "" {
+					cmd = p.Command
+				}
+				row["command"] = cmd
+				// Sleeping is what almost every process is doing. Running,
+				// zombie and uninterruptible sleep are the ones worth a key.
+				if st := p.State; st != "" && st[0] != 'S' {
+					row["state"] = st
+				}
+				out = append(out, row)
+			}
 			return map[string]any{
-				"processes": procs,
-				"page":      truncated(len(procs), total, "filter with grep"),
+				"processes": out,
+				"page":      truncated(len(out), total, "filter with grep"),
 			}, nil
 		},
 	})
@@ -360,7 +455,27 @@ func (a *App) registerMCPTools(s *mcp.Server) {
 				}
 				list = kept
 			}
-			return map[string]any{"containers": list}, nil
+			out := make([]map[string]any, 0, len(list))
+			for _, c := range list {
+				// The short ID is what the CLI accepts and what a person reads;
+				// the other 52 characters are never used.
+				id := c.ID
+				if len(id) > 12 {
+					id = id[:12]
+				}
+				row := map[string]any{"id": id, "name": c.Name, "image": c.Image, "state": c.State}
+				// Status already says "Exited (0) 4 months ago", which covers
+				// what created would have told us.
+				put(row, "status", c.Status)
+				if c.State != "running" && c.ExitCode != 0 {
+					row["exitCode"] = c.ExitCode
+				}
+				if len(c.Ports) > 0 {
+					row["ports"] = c.Ports
+				}
+				out = append(out, row)
+			}
+			return map[string]any{"containers": out}, nil
 		},
 	})
 
@@ -395,12 +510,37 @@ func (a *App) registerMCPTools(s *mcp.Server) {
 			if len(listeners) > maxListenRows {
 				listeners = listeners[:maxListenRows]
 			}
-			return map[string]any{
-				"interfaces": net.Interfaces,
-				"listeners":  listeners,
-				"warnings":   net.Warnings,
-				"page":       truncated(len(listeners), total, "set exposedOnly"),
-			}, nil
+			// The tool is about ports; interfaces are context. MAC addresses and
+			// MTUs answer no question a model is being asked here.
+			ifaces := make([]map[string]any, 0, len(net.Interfaces))
+			for _, n := range net.Interfaces {
+				addrs := make([]string, 0, len(n.Addresses))
+				for _, a := range n.Addresses {
+					addrs = append(addrs, fmt.Sprintf("%s/%d", a.Address, a.Prefix))
+				}
+				row := map[string]any{"name": n.Name, "state": n.State}
+				if len(addrs) > 0 {
+					row["addresses"] = addrs
+				}
+				ifaces = append(ifaces, row)
+			}
+			out := make([]map[string]any, 0, len(listeners))
+			for _, l := range listeners {
+				row := map[string]any{"proto": l.Protocol, "port": l.Port, "address": l.Address}
+				put(row, "process", l.Process)
+				put(row, "pid", l.PID)
+				put(row, "exposed", l.Exposed)
+				out = append(out, row)
+			}
+			res := map[string]any{
+				"interfaces": ifaces,
+				"listeners":  out,
+				"page":       truncated(len(out), total, "set exposedOnly"),
+			}
+			if len(net.Warnings) > 0 {
+				res["warnings"] = net.Warnings
+			}
+			return res, nil
 		},
 	})
 
@@ -430,11 +570,27 @@ func (a *App) registerMCPTools(s *mcp.Server) {
 			if len(entries) > maxDirRows {
 				entries = entries[:maxDirRows]
 			}
+			// Names, not paths: the directory is already on the response, and
+			// repeating it on every row costs more than the names themselves.
+			// perm restates mode, and uid 1000 means nothing without a name to
+			// resolve it against.
+			out := make([]map[string]any, 0, len(entries))
+			for _, e := range entries {
+				row := map[string]any{"name": e.Name, "mode": e.Mode, "modTime": e.ModTime}
+				put(row, "isDir", e.IsDir)
+				if !e.IsDir {
+					put(row, "size", e.Size)
+				}
+				put(row, "isSymlink", e.IsSymlink)
+				put(row, "linkTarget", e.LinkTarget)
+				put(row, "broken", e.Broken)
+				out = append(out, row)
+			}
 			return map[string]any{
 				"path":    listing.Path,
 				"parent":  listing.Parent,
-				"entries": entries,
-				"page":    truncated(len(entries), listing.Total, "list a subdirectory instead"),
+				"entries": out,
+				"page":    truncated(len(out), listing.Total, "list a subdirectory instead"),
 			}, nil
 		},
 	})
@@ -522,8 +678,9 @@ func logResult(subject, out, grep string) map[string]any {
 		lines = kept
 	}
 	matched := len(lines)
-	if matched > maxLogLines {
-		lines = lines[matched-maxLogLines:]
+	lines = collapseRepeats(lines)
+	if len(lines) > maxLogLines {
+		lines = lines[len(lines)-maxLogLines:]
 	}
 
 	res := map[string]any{
@@ -542,6 +699,98 @@ func logResult(subject, out, grep string) map[string]any {
 			"the name may be wrong (check svc_list), or the filter may be too narrow."
 	}
 	return res
+}
+
+// syslogPrefix matches the timestamp, host and process that journald puts in
+// front of every line, so two occurrences of the same message can be compared.
+var syslogPrefix = regexp.MustCompile(`^\w{3} [ 0-9]\d \d\d:\d\d:\d\d \S+ [^:]+: `)
+
+// collapseRepeats folds a message that occurs several times into one line
+// carrying the count and the span it covers.
+//
+// A unit that fails every few hours writes the same block over and over with
+// only the timestamps moving. Reading sixty lines of that costs a model as much
+// as sixty distinct lines and tells it what eight would have. Sixty lines of
+// certbot's failure measured at 1.8k tokens with under 300 tokens of content.
+//
+// Order is preserved and the collapsed line stays where the message *first*
+// appeared, so a diagnosis that depends on what happened before what still
+// reads correctly. What is lost is the interleaving of repeats — a message
+// alternating with another no longer shows its rhythm. That is the trade, and
+// it is why the count and the last time are kept rather than just the first.
+func collapseRepeats(lines []string) []string {
+	const minRepeat = 3
+
+	type seen struct {
+		at    int // where it first appeared
+		count int
+		last  string // the last full line, for its timestamp
+	}
+	index := map[string]*seen{}
+	order := make([]string, 0, len(lines))
+
+	for _, line := range lines {
+		key := syslogPrefix.ReplaceAllString(line, "")
+		if key == "" {
+			key = line
+		}
+		if s, ok := index[key]; ok {
+			s.count++
+			s.last = line
+			continue
+		}
+		index[key] = &seen{at: len(order), count: 1, last: line}
+		order = append(order, line)
+	}
+
+	out := make([]string, 0, len(order))
+	for _, line := range order {
+		key := syslogPrefix.ReplaceAllString(line, "")
+		if key == "" {
+			key = line
+		}
+		s := index[key]
+		if s.count < minRepeat {
+			// Kept verbatim: two occurrences are not a pattern, and folding them
+			// would cost more characters than it saves.
+			for i := 0; i < s.count; i++ {
+				out = append(out, line)
+			}
+			continue
+		}
+		out = append(out, fmt.Sprintf("%s   [×%d, last %s]", line, s.count, timeOf(s.last)))
+	}
+	return out
+}
+
+// timeOf pulls the timestamp off a journald line, or returns the line's start
+// when it is not in that shape.
+func timeOf(line string) string {
+	if len(line) >= 15 && syslogPrefix.MatchString(line) {
+		return line[:15]
+	}
+	if len(line) > 20 {
+		return line[:20]
+	}
+	return line
+}
+
+// restatesName reports whether a unit's description only repeats its name.
+func restatesName(name, description string) bool {
+	if description == "" {
+		return true
+	}
+	squash := func(v string) string {
+		var b strings.Builder
+		for _, r := range strings.ToLower(v) {
+			if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+				b.WriteRune(r)
+			}
+		}
+		return b.String()
+	}
+	d := squash(description)
+	return d == squash(name) || d == squash(strings.TrimSuffix(name, ".service"))
 }
 
 // safeJournalArg keeps a time expression to characters journalctl uses. Not a
@@ -641,15 +890,28 @@ func (a *App) healthSnapshot(hostID string) (map[string]any, error) {
 	if net, err := a.HostNetwork(hostID); err != nil {
 		unavailable["network"] = err.Error()
 	} else {
+		// A service listening on both families shows up twice, once for
+		// 0.0.0.0 and once for ::. That is one fact, and the question this
+		// answers — what is reachable from outside — does not change with the
+		// address family.
+		seen := map[string]int{}
 		exposed := []map[string]any{}
 		for _, l := range net.Listeners {
 			if !l.Exposed {
 				continue
 			}
-			exposed = append(exposed, map[string]any{
-				"protocol": l.Protocol, "port": l.Port,
-				"address": l.Address, "process": l.Process,
-			})
+			key := l.Protocol + "/" + l.Port
+			if at, ok := seen[key]; ok {
+				// Keep whichever row managed to name the process.
+				if exposed[at]["process"] == nil && l.Process != "" {
+					exposed[at]["process"] = l.Process
+				}
+				continue
+			}
+			row := map[string]any{"proto": l.Protocol, "port": l.Port}
+			put(row, "process", l.Process)
+			seen[key] = len(exposed)
+			exposed = append(exposed, row)
 		}
 		out["exposedPorts"] = exposed
 	}

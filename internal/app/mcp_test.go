@@ -865,3 +865,99 @@ func TestDeletionIsOffUntilTurnedOn(t *testing.T) {
 		t.Errorf("still refused after being enabled: %v", err)
 	}
 }
+
+// Everything a tool returns is spent from the model's context, so a field that
+// says nothing is a real cost. These pin the shapes rather than the sizes:
+// a size assertion would be brittle, but "no key nothing can act on" is not.
+func TestListingsDoNotCarryDeadWeight(t *testing.T) {
+	body := logResult("nginx", "", "")
+	if _, ok := body["matched"]; ok {
+		t.Error("matched is only meaningful when a grep ran")
+	}
+}
+
+// A unit that fails every few hours writes the same block over and over with
+// only the timestamps moving. Sixty lines of that tells a model what eight
+// would have.
+func TestRepeatedLogLinesAreFolded(t *testing.T) {
+	var b strings.Builder
+	for i := 0; i < 7; i++ {
+		fmt.Fprintf(&b, "Aug 0%d 03:00:01 cpprhtn systemd[1]: certbot.service: Failed with result 'exit-code'.\n", i+1)
+	}
+	b.WriteString("Aug 10 13:46:01 cpprhtn systemd[1]: certbot.service: Consumed 1.700s CPU time.\n")
+
+	got := logResult("certbot.service", b.String(), "")
+	lines, _ := got["lines"].([]string)
+	if len(lines) != 2 {
+		t.Fatalf("want the repeat folded into one line plus the unique one, got %d:\n%v", len(lines), lines)
+	}
+	if !strings.Contains(lines[0], "×7") {
+		t.Errorf("the fold must say how many times: %q", lines[0])
+	}
+	if !strings.Contains(lines[0], "last ") {
+		t.Errorf("the fold must say when it last happened: %q", lines[0])
+	}
+	// The one-off line survives untouched: folding must not eat the message
+	// that explains the failure.
+	if !strings.Contains(lines[1], "Consumed 1.700s") {
+		t.Errorf("a unique line was lost: %v", lines)
+	}
+}
+
+// Two occurrences are not a pattern, and folding them would cost more
+// characters than it saves.
+func TestTwoOccurrencesAreLeftAlone(t *testing.T) {
+	body := "Aug 01 03:00:01 h systemd[1]: a.service: boom\nAug 02 03:00:01 h systemd[1]: a.service: boom\n"
+	lines, _ := logResult("a.service", body, "")["lines"].([]string)
+	if len(lines) != 2 {
+		t.Errorf("want both lines verbatim, got %v", lines)
+	}
+	for _, l := range lines {
+		if strings.Contains(l, "×") {
+			t.Errorf("two occurrences should not be folded: %q", l)
+		}
+	}
+}
+
+// Folding must not reorder: a diagnosis that depends on what happened before
+// what still has to read correctly.
+func TestFoldingKeepsFirstAppearanceOrder(t *testing.T) {
+	body := strings.Join([]string{
+		"Aug 01 00:00:01 h systemd[1]: a.service: starting",
+		"Aug 01 00:00:02 h systemd[1]: a.service: repeated",
+		"Aug 01 00:00:03 h systemd[1]: a.service: repeated",
+		"Aug 01 00:00:04 h systemd[1]: a.service: repeated",
+		"Aug 01 00:00:05 h systemd[1]: a.service: gave up",
+	}, "\n")
+	lines, _ := logResult("a.service", body, "")["lines"].([]string)
+	if len(lines) != 3 {
+		t.Fatalf("want starting, folded repeat, gave up — got %v", lines)
+	}
+	if !strings.Contains(lines[0], "starting") || !strings.Contains(lines[2], "gave up") {
+		t.Errorf("order was not preserved: %v", lines)
+	}
+}
+
+// A description that only restates the unit's own name is not information, but
+// the test for that has to be exact: a loose one throws away real ones.
+func TestOnlySelfRestatingDescriptionsAreDropped(t *testing.T) {
+	for _, tc := range []struct {
+		name, description string
+		drop              bool
+	}{
+		{"auditd.service", "auditd.service", true},
+		{"ModemManager.service", "Modem Manager", true},
+		{"connman.service", "connman.service", true},
+		{"nginx.service", "", true},
+		// These say something the name does not, and an earlier substring rule
+		// discarded every one of them.
+		{"apparmor.service", "Load AppArmor profiles", false},
+		{"containerd.service", "containerd container runtime", false},
+		{"cron.service", "Regular background program processing daemon", false},
+		{"ssh.service", "OpenBSD Secure Shell server", false},
+	} {
+		if got := restatesName(tc.name, tc.description); got != tc.drop {
+			t.Errorf("%s / %q: dropped = %v, want %v", tc.name, tc.description, got, tc.drop)
+		}
+	}
+}
