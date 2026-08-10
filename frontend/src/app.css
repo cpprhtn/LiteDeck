@@ -1639,3 +1639,9 @@ button.danger {
   margin-left: auto;
   font-size: 11px;
 }
+
+/* 큐 대기 시간. 평소엔 안 보이고, 설명이 필요할 때만 나타난다. */
+.cmdlog-queued {
+  margin-left: 6px;
+  opacity: 0.7;
+}

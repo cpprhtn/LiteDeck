@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cpprhtn/LiteDeck/internal/i18n"
 	"github.com/cpprhtn/LiteDeck/internal/shellquote"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
@@ -77,6 +78,11 @@ type Result struct {
 	Stderr   []byte
 	ExitCode int
 	Duration time.Duration
+	// Queued is how long this command waited for one of the Exec channels
+	// before it started. Recorded because it is otherwise invisible: a command
+	// that queued behind two others and then ran out of budget looks exactly
+	// like a slow server.
+	Queued time.Duration
 }
 
 // OK reports whether the command exited zero.
@@ -136,6 +142,24 @@ type CommandInfo struct {
 	HostID string
 	Line   string
 	Kind   CommandKind
+}
+
+// timedOut names which half of the budget ran out.
+//
+// The deadline covers queueing and running together, so a command that waited
+// for a channel and then had no time left fails with a message that reads as
+// "the server was slow at this" — when the truth is that it never got a fair
+// share of the budget. The first report of this in the wild could not be told
+// apart from a genuinely stalled server, which is the point of saying so.
+func timedOut(line string, err error, queued, budget time.Duration) error {
+	if budget > 0 && queued > budget/2 {
+		// One literal, not a concatenation: the i18n coverage test reads these
+		// out of the syntax tree and a split string is invisible to it.
+		note := i18n.T(" — 세션 슬롯을 기다리는 데 %s 를 써서 실행할 시간이 남지 않았습니다 (동시 실행 %d개 제한). 서버가 느린 것이 아닐 수 있습니다",
+			queued.Round(time.Millisecond), DefaultMaxSessions)
+		return fmt.Errorf("sshcore: %q: %w"+note, line, err)
+	}
+	return fmt.Errorf("sshcore: %q: %w", line, err)
 }
 
 // Probe reports whether a non-zero exit is an expected answer.
@@ -285,6 +309,15 @@ func (c *Conn) Poll(ctx context.Context, cmd string, args ...string) (*Result, e
 }
 
 func (c *Conn) run(ctx context.Context, line string, stdin io.Reader) (*Result, error) {
+	// The caller's deadline covers both waiting for a channel and running the
+	// command, so how much of it the queue took decides which of the two a
+	// timeout should be blamed on.
+	var budget time.Duration
+	if deadline, ok := ctx.Deadline(); ok {
+		budget = time.Until(deadline)
+	}
+	queuedAt := time.Now()
+
 	// Queue rather than let sshd reject the channel outright.
 	select {
 	case c.sem <- struct{}{}:
@@ -292,6 +325,7 @@ func (c *Conn) run(ctx context.Context, line string, stdin io.Reader) (*Result, 
 	case <-ctx.Done():
 		return nil, fmt.Errorf("sshcore: waiting for a session slot: %w", ctx.Err())
 	}
+	queued := time.Since(queuedAt)
 
 	sess, err := c.client.NewSession()
 	if err != nil {
@@ -333,13 +367,15 @@ func (c *Conn) run(ctx context.Context, line string, stdin io.Reader) (*Result, 
 			Stdout:   stdout.Bytes(),
 			Stderr:   stderr.Bytes(),
 			Duration: time.Since(start),
-		}, fmt.Errorf("sshcore: %q: %w", line, ctx.Err())
+			Queued:   queued,
+		}, timedOut(line, ctx.Err(), queued, budget)
 	}
 
 	res := &Result{
 		Stdout:   stdout.Bytes(),
 		Stderr:   stderr.Bytes(),
 		Duration: time.Since(start),
+		Queued:   queued,
 	}
 
 	var exitErr *ssh.ExitError

@@ -29,6 +29,10 @@ type CommandEntry struct {
 	// Kind is "", "poll" or "probe" — see sshcore.CommandKind.
 	Kind   string `json:"kind,omitempty"`
 	Stderr string `json:"stderr,omitempty"`
+	// QueuedMs is time spent waiting for one of the Exec channels. Shown only
+	// when it is long enough to matter, because a command that sat in a queue
+	// and a command that was genuinely slow look identical without it.
+	QueuedMs int64 `json:"queuedMs,omitempty"`
 	// Origin is "ai" for a tool call an MCP client made, empty for the user's
 	// own actions. The panel marks these so a command nobody remembers asking
 	// for is attributable at a glance (§4.6).
@@ -38,6 +42,11 @@ type CommandEntry struct {
 // commandLogLimit bounds the in-memory history. The panel is a live view, not
 // an audit trail; a long session should not grow without limit.
 const commandLogLimit = 500
+
+// queueNoteFloor is how long a wait has to be before it is worth reporting.
+// Every command queues for a moment; only a wait long enough to explain a slow
+// response is information.
+const queueNoteFloor = 250 * time.Millisecond
 
 type commandLog struct {
 	app *App
@@ -105,6 +114,9 @@ func (l *commandLog) CommandFinished(info sshcore.CommandInfo, res *sshcore.Resu
 		}
 		if res != nil {
 			e.Duration = res.Duration.Milliseconds()
+			if res.Queued > queueNoteFloor {
+				e.QueuedMs = res.Queued.Milliseconds()
+			}
 		}
 		updated = *e
 		break

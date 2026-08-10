@@ -385,6 +385,8 @@ export interface CommandEntry {
   stderr?: string
   /** 'ai' when an MCP client asked for it. */
   origin?: string
+  /** Time spent waiting for a session slot, when long enough to matter. */
+  queuedMs?: number
 }
 
 export interface ConnectionState {

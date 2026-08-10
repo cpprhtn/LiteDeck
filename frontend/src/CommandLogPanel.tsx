@@ -142,6 +142,14 @@ export function CommandLogPanel({
                 {e.status === 'probe' && t('없음 (exit {code})', { code: e.exitCode })}
                 {e.status === 'failed' && `exit ${e.exitCode}`}
                 {e.status === 'error' && t('오류')}
+              
+                {/* A command that sat in a queue and one that was genuinely
+                    slow read identically without this. */}
+                {e.queuedMs ? (
+                  <span className="cmdlog-queued" title={t('세션 슬롯을 기다린 시간')}>
+                    {t('대기 {n}ms', { n: e.queuedMs })}
+                  </span>
+                ) : null}
               </span>
               {copied === e.seq && <span className="badge">{t('복사됨')}</span>}
               {e.stderr && e.status !== 'probe' && (
