@@ -32,8 +32,9 @@
 ---
 
 > [!NOTE]
-> **v0.2.0-beta.** Verified on macOS and Windows clients, against a real Windows machine and Linux containers.
-> It has not yet been run against real Linux hardware. Exactly what has and has not been checked is written down in
+> **v0.2.0-beta.** Verified on macOS and Windows clients, against **real Windows and Linux machines**.
+> On Linux hardware that covers the read side and file writes; transfers and privilege escalation are
+> still container-only. Exactly what has and has not been checked is written down in
 > [What is and is not verified](#what-is-and-is-not-verified).
 > If you point this at a production server, try the irreversible actions — deleting files, killing processes — on a
 > throwaway box first.
@@ -125,83 +126,30 @@ it in with `rename`, so an interrupted save cannot leave the original half-writt
 > memory on a small VPS is a well-known problem. If you want a real remote IDE, that is the right
 > tool. **If you do not want to upload hundreds of megabytes to change one config file**, this is.
 
-## How it compares
+## When this is the right tool
 
-> [!NOTE]
-> **Written in August 2026 from each project's own docs and releases.**
-> If a cell is wrong, [open an issue](https://github.com/cpprhtn/LiteDeck/issues) and it gets fixed.
-> Sources are [linked below the table](#sources). Rows where LiteDeck loses are in the same table.
+- You look after **a handful of servers**, not a fleet. You read logs, restart services and fix
+  config files on them
+- You do not want to **install anything else** on those servers. SSH is already open; you would
+  like that to be enough
+- You want a GUI, but you want to **see what it ran**
+- You are not giving up your terminal. You just want the frequent things to be a click
 
-| | LiteDeck | XPipe | Muon (ex-Snowflake) | Termius | Cockpit |
-|---|---|---|---|---|---|
-| Server install | none | none | none | none | **required** (package) |
-| Extra port | none | none | none | none | **9090** |
-| Client | Go + OS webview | Java · JavaFX | Java 13+ | closed source | browser |
-| Download size | **4.8–9.8 MB** | 210–216 MB | 27–40 MB | — | (server package) |
-| File browser | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Remote code editing | ✅ syntax + **diff before save** | opens in your local editor | ✅ | ❌ | ❌ |
-| Start/stop systemd units | ✅ | ❌ | ✅ | ❌ | ✅ |
-| Kill / renice processes | ✅ | ❌ | ✅ | ❌ | ✅ |
-| Container management | ✅ Docker · Podman | ✅ | ❌ | ❌ | ✅ Podman |
-| **Shows every command it runs** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| MCP integration | ✅ structured tools, per-server opt-in, changes approved and **undoable** | ✅ shell, files, command execution; approval delegated to the client | ❌ | ❌ | ❌ |
-| Account required | no | no | no | **yes** | no |
-| Licence | Apache-2.0 (all of it) | Apache-2.0 core + closed extensions | GPL-3.0 | proprietary | LGPL-2.1 |
-| Behind a paywall | nothing | 2+ concurrent tunnels, hypervisors, team vaults | nothing | device sync · snippets · teams | nothing |
-| Non-SSH protocols (RDP, VNC, k8s, Proxmox) | **❌** | ✅ | ❌ | ❌ | — |
-| Port forwarding | **❌** | ✅ (one at a time on free) | ✅ | ✅ | — |
-| Config sync | **❌ local only** | ✅ self-hosted git vault | ❌ | ✅ account sync | — |
-| Code signing | **❌ unsigned** | ✅ | ❌ | ✅ | (distro packages) |
-| Latest release | 2026-08 | 2026-08 (23.9) | **2020-02 (v1.0.4)** | active | active |
-| GitHub stars | 1 (this is day one) | 14.4k | 2.2k | (closed source) | 14.9k |
+## When it is not
 
-### When XPipe is the better answer
+Stated plainly. If any of these is what you need, something else is better:
 
-**XPipe is the most mature and the broadest tool on this list.** It reaches beyond SSH to RDP, VNC,
-Kubernetes, Proxmox and AWS; its installers are signed; it syncs your configuration through a
-self-hosted git vault and integrates with password managers. **If your infrastructure is varied, or
-what you need is a hub for the connections themselves, XPipe is the right tool.** LiteDeck is not
-competing for that job.
+| What you need | The right tool |
+|---|---|
+| Dozens or hundreds of servers at once | Ansible, Salt, other configuration management |
+| Declarative state | Terraform, Ansible |
+| A real remote development environment (LSP, debugger, refactoring) | VS Code Remote-SSH |
+| The screen of a GUI application | RDP, VNC |
+| Protocols other than SSH (RDP, VNC, Kubernetes, Proxmox) | A multi-protocol connection manager |
+| File transfer and nothing else | WinSCP, an SFTP client, `rsync` |
 
-Two things separate them.
-
-**First, XPipe's "services" means port tunnelling, not systemd.** Their docs define it as
-*"a way to open and securely tunnel any kind of remote ports to your local machine over an existing
-shell connection."* Getting onto a box to restart `nginx.service`, kill a wedged process and fix a
-config file. That is what LiteDeck does.
-
-**Second, it is a 210 MB download against a 5 MB one.** XPipe ships a whole JavaFX runtime; LiteDeck
-uses the webview your OS already has. If 200 MB to manage two or three servers does not bother you,
-that is a preference, not an argument. If it does, this is the other option.
-
-### Muon (ex-Snowflake)
-
-**This is the closest overlap.** It has systemd service management, a process manager, a remote text
-editor, a disk usage analyser. It got here first, and a good share of the idea was already here.
-
-But **its last release was February 2020 (v1.0.4), and the repository has been quiet since May
-2024.** There is still no macOS build ("TBD"), and it needs Java 13+ to run. It works; just know
-that before picking something to depend on.
-
-### Also worth naming
-
-- **MobaXterm**: Windows only, closed source. The free Home edition caps you at 12 sessions,
-  2 SSH tunnels and 4 macros; Professional is $69 per user per year. It bundles an X server and a
-  pile of network tools, so it is aiming at something much wider
-- **WinSCP · SSHFS**: files and nothing else. If files are all you need, they are more mature at it
-
-### Sources
-
-Every link checked on 9 August 2026.
-
-- XPipe: [repository](https://github.com/xpipe-io/xpipe) (licence, release sizes, the
-  "closed-source extensions" wording), [pricing](https://xpipe.io/pricing) (free tier scope, one
-  concurrent tunnel), [services docs](https://docs.xpipe.io/guide/services) (services = tunnelling)
-- Muon: [repository](https://github.com/subhra74/snowflake) (v1.0.4 released 2020-02-07, Java 13+, macOS TBD)
-- Termius: [pricing](https://termius.com/pricing) (free tier scope, account requirement, paid features)
-- MobaXterm: [download page](https://mobaxterm.mobatek.net/download.html) (Home edition limits, Professional price)
-- Cockpit: [project site](https://cockpit-project.org/) (server package, port 9090)
-- LiteDeck sizes are measured from the [v0.1.6-beta release](https://github.com/cpprhtn/LiteDeck/releases/tag/v0.1.6-beta)
+LiteDeck is for **a few servers reachable over SSH, with nothing installed on them, and with what
+it runs visible while it runs**. The tools above do the rest better.
 
 ## Install
 
@@ -358,7 +306,7 @@ safe ([`internal/mcp/http.go`](internal/mcp/http.go)).
   `x/crypto/ssh` takes passwords as strings too. It becomes garbage immediately and is freed at the
   next collection, but **there is no zero-on-use implemented.** A core or heap dump could show it
 - **Release binaries are unsigned.** A SHA256 checksum is not a signature
-- **Linux servers have only been verified in containers**. See
+- **On real Linux hardware only the read side and file writes have been exercised**; transfers, completing a sudo escalation, the terminal PTY and log tailing are still container-only. See
   [what is and is not verified](#what-is-and-is-not-verified)
 - There is no audit log. The Command Log stays on your machine and goes nowhere.
   **A log the client writes is not an audit**
@@ -377,12 +325,16 @@ This section separates **what has actually been run** from what merely ought to 
 | **Client** | macOS 26.5.2 (arm64) | Development, daily use, every feature. Release binary launch confirmed |
 | **Client** | Windows | Release `litedeck.exe` launch confirmed |
 | **Server** | **Windows 10 Pro / PowerShell 5.1 (real hardware)** | Services, processes, network, monitoring. The only target that is not a container |
+| **Server** | **Ubuntu 24.04.4 (real machine)** | The whole read side (metrics, services and failed detection, containers, exposed ports, journal) plus reading, writing and deleting files, including the permission-denied path |
 | **Server** | Ubuntu 22.04.5 / systemd 249 | Full flow: services (JSON path), files, processes, timers, log tailing, privilege escalation |
 | **Server** | Ubuntu 20.04.6 / systemd 245 | Service **table-parsing fallback** (the version with no JSON output) |
 | **Server** | Alpine 3.20 + OpenSSH | Transport: SFTP, reconnect, injection defence, concurrent sessions |
 | **Containers** | docker 28 (dind) | Containers, images, volumes |
 
-**Every Linux server target is a container fixture** (`testdata/`). Real Linux hardware and cloud instances have not been tried.
+**The one real Linux machine is the row above.** An Ubuntu 24.04.4 server was driven through the
+MCP integration, covering the read side and reading, writing and deleting files. **The paths the
+GUI writes through** — file transfers, completing a sudo escalation, the terminal PTY, live log
+tailing — **are still container fixtures only** (`testdata/`).
 
 The Linux client is **link-verified only**. Ubuntu 22.04 resolves `libwebkit2gtk-4.0.so.37` and 24.04 resolves `libwebkit2gtk-4.1.so.0`. Nobody has opened the window.
 
@@ -390,7 +342,7 @@ The Linux client is **link-verified only**. Ubuntu 22.04 resolves `libwebkit2gtk
 
 | | Status |
 |---|---|
-| **Real Linux hardware** | Linux testing used containers only |
+| **Write paths on real Linux hardware** | Transfers, completing a sudo escalation, the terminal PTY and log tailing were only exercised in containers |
 | **Linux client at runtime** | Links correctly; window never opened |
 | **Debian, RHEL/Rocky 8** | Share the systemd 245 table-parsing path, so they should work, but untested |
 | **Podman** | Docker-compatible CLI, so the parser is shared, but never run |
