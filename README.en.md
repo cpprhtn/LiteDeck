@@ -424,12 +424,12 @@ claude mcp add --transport http litedeck http://127.0.0.1:<port>/mcp \
 ```
 
 > [!NOTE]
-> **Verification status.** Claude Code 2.1.22 connecting to this endpoint (`✓ Connected`), the
-> full protocol path (initialize, tools/list, tools/call, refusal, auth, rate limiting) and
-> **that no change runs without approval** are all confirmed against the live endpoint.
-> **A model autonomously invoking the tools has not been verified by the author.** That is a
-> limitation of the checking environment, not of the code. One line in your terminal will tell
-> you; report back and this note gets corrected.
+> **Verification status.** Claude Code 2.1.22 connecting (`✓ Connected`), the full protocol
+> path, and **reads and writes against a real Ubuntu 24.04 server** are all confirmed. The
+> approval dialog does appear; approving sends the command through to the server, and a write
+> nobody answers does not run. What remains unverified is **a model invoking the tools on its
+> own** — in the author's environment the MCP tools were never exposed to the model. One line
+> in your terminal will tell you; report back and this note gets corrected.
 
 ## Non-goals
 
