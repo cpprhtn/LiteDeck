@@ -1,0 +1,30 @@
+auditd.service                       not-found inactive dead    auditd.service                                           
+display-manager.service              not-found inactive dead    display-manager.service                                  
+emergency.service                    loaded    inactive dead    Emergency Shell                                          
+kmod-static-nodes.service            loaded    inactive dead    Create list of static device nodes for the current kernel
+litedeck-worker.service              loaded    active   running LiteDeck fixture worker                                  
+plymouth-start.service               not-found inactive dead    plymouth-start.service                                   
+rescue.service                       loaded    inactive dead    Rescue Shell                                             
+ssh.service                          loaded    active   running OpenBSD Secure Shell server                              
+syslog.service                       not-found inactive dead    syslog.service                                           
+systemd-ask-password-console.service loaded    inactive dead    Dispatch Password Requests to Console                    
+systemd-binfmt.service               loaded    inactive dead    Set Up Additional Binary Formats                         
+systemd-boot-system-token.service    loaded    inactive dead    Store a System Token in an EFI Variable                  
+systemd-fsck-root.service            loaded    inactive dead    File System Check on Root Device                         
+systemd-fsckd.service                loaded    inactive dead    File System Check Daemon to report status                
+systemd-journal-flush.service        loaded    active   exited  Flush Journal to Persistent Storage                      
+systemd-journald.service             loaded    active   running Journal Service                                          
+systemd-machine-id-commit.service    loaded    inactive dead    Commit a transient machine-id on disk                    
+systemd-modules-load.service         loaded    inactive dead    Load Kernel Modules                                      
+systemd-random-seed.service          loaded    inactive dead    Load/Save Random Seed                                    
+systemd-remount-fs.service           loaded    active   exited  Remount Root and Kernel File Systems                     
+systemd-sysctl.service               loaded    active   exited  Apply Kernel Variables                                   
+systemd-sysusers.service             loaded    active   exited  Create System Users                                      
+systemd-tmpfiles-clean.service       loaded    inactive dead    Cleanup of Temporary Directories                         
+systemd-tmpfiles-setup-dev.service   loaded    inactive dead    Create Static Device Nodes in /dev                       
+systemd-tmpfiles-setup.service       loaded    inactive dead    Create Volatile Files and Directories                    
+systemd-udevd.service                not-found inactive dead    systemd-udevd.service                                    
+systemd-update-done.service          not-found inactive dead    systemd-update-done.service                              
+systemd-update-utmp-runlevel.service loaded    inactive dead    Update UTMP about System Runlevel Changes                
+systemd-update-utmp.service          loaded    active   exited  Update UTMP about System Boot/Shutdown                   
+systemd-vconsole-setup.service       not-found inactive dead    systemd-vconsole-setup.service                           

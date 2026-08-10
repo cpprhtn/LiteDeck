@@ -1,0 +1,6 @@
+NEXT                        LEFT       LAST                        PASSED UNIT                         ACTIVATES
+Fri 2026-08-07 01:14:47 UTC 21s left   Fri 2026-08-07 01:14:17 UTC 8s ago litedeck-often.timer         litedeck-often.service
+Fri 2026-08-07 01:29:01 UTC 14min left n/a                         n/a    systemd-tmpfiles-clean.timer systemd-tmpfiles-clean.service
+Sat 2026-08-08 00:00:00 UTC 22h left   n/a                         n/a    litedeck-backup.timer        litedeck-backup.service
+
+3 timers listed.

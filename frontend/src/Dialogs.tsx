@@ -1,0 +1,260 @@
+import { Suspense, lazy, useEffect, useRef, useState } from 'react'
+import {
+  AnswerHostKey,
+  AnswerMCPWrite,
+  AnswerSecret,
+  CancelPrompt,
+  type HostKeyPrompt,
+  type MCPWritePrompt,
+  type SecretPrompt,
+  SetMCPWritePolicy,
+} from './ipc'
+import { t } from './i18n'
+
+// The diff is the largest thing this dialog can show and most approvals never
+// need it, so it arrives with the first file write rather than at startup.
+const DiffView = lazy(() => import('./DiffView').then((m) => ({ default: m.DiffView })))
+
+
+/**
+ * Trust on first use (§7.1).
+ *
+ * There is no "continue anyway" here for a key that contradicts a known one —
+ * that case never reaches this dialog, because sshcore refuses it before
+ * anyone is asked. This dialog only ever handles a host nobody has seen before.
+ */
+export function HostKeyDialog({
+  prompt,
+  onDone,
+}: {
+  prompt: HostKeyPrompt
+  onDone: () => void
+}) {
+  const answer = async (decision: 'always' | 'once' | 'reject') => {
+    try {
+      await AnswerHostKey(prompt.id, decision)
+    } finally {
+      onDone()
+    }
+  }
+
+  return (
+    <div className="scrim">
+      <div className="dialog" role="dialog" aria-modal="true">
+        <h2>{t('처음 접속하는 호스트입니다')}</h2>
+        <p className="muted">
+          {t('이 서버의 키를 본 적이 없습니다. 지문이 예상과 같은지 확인하세요.')}
+        </p>
+
+        <dl className="keyinfo">
+          <dt>{t('주소')}</dt>
+          <dd className="mono">{prompt.address}</dd>
+          <dt>{t('키 종류')}</dt>
+          <dd className="mono">{prompt.keyType}</dd>
+          <dt>{t('지문')}</dt>
+          <dd className="mono selectable">{prompt.fingerprint}</dd>
+        </dl>
+
+        <p className="muted small">
+          {t('서버에서')} <code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code>{' '}
+          {t('으로 대조할 수 있습니다.')}
+        </p>
+
+        <div className="dialog-actions">
+          <button onClick={() => answer('reject')}>{t('거부')}</button>
+          <button onClick={() => answer('once')}>{t('이번만 허용')}</button>
+          <button className="primary" onClick={() => answer('always')}>
+            {t('항상 신뢰')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Password, passphrase and 2FA challenges (§7.3). */
+export function SecretDialog({
+  prompt,
+  onDone,
+}: {
+  prompt: SecretPrompt
+  onDone: () => void
+}) {
+  const [value, setValue] = useState('')
+  const [remember, setRemember] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => inputRef.current?.focus(), [])
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setBusy(true)
+    try {
+      await AnswerSecret(prompt.id, value, remember)
+    } finally {
+      // The typed secret must not outlive the submit. React state is a string
+      // and cannot be wiped, but dropping the only reference means it is
+      // garbage the moment this dialog unmounts.
+      setValue('')
+      onDone()
+    }
+  }
+
+  const cancel = async () => {
+    setBusy(true)
+    try {
+      await CancelPrompt(prompt.id)
+    } finally {
+      setValue('')
+      onDone()
+    }
+  }
+
+  return (
+    <div className="scrim">
+      <form className="dialog" onSubmit={submit} role="dialog" aria-modal="true">
+        <h2>{t('인증이 필요합니다')}</h2>
+        <p className="prompt-label">{prompt.label}</p>
+
+        <input
+          ref={inputRef}
+          type={prompt.echo ? 'text' : 'password'}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          autoComplete="off"
+          spellCheck={false}
+        />
+
+        {prompt.canRemember ? (
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+            />
+            {t('OS 키체인에 저장')}
+          </label>
+        ) : (
+          <p className="muted small">
+            {t('이 시스템에는 사용 가능한 키체인이 없어 저장하지 않습니다. 접속할 때마다 입력이 필요합니다.')}
+          </p>
+        )}
+
+        <div className="dialog-actions">
+          <button type="button" onClick={cancel} disabled={busy}>
+            {t('취소')}
+          </button>
+          <button type="submit" className="primary" disabled={busy || !value}>
+            {t('확인')}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+/**
+ * The approval a write from an MCP client waits on (§4.6).
+ *
+ * This dialog is the reason the gate lives in LiteDeck rather than being left
+ * to the MCP client. The client's own confirmation shows the arguments a model
+ * composed; this shows what the server is about to be told to do — the literal
+ * command, or a diff against the file as it stands right now. When a model has
+ * been talked into something by text it read in a log, those two are not the
+ * same picture, and only the second one gives a person a chance to notice.
+ */
+export function McpWriteDialog({
+  prompt,
+  onDone,
+}: {
+  prompt: MCPWritePrompt | null
+  onDone: () => void
+}) {
+  const ok = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    // Focus lands on Approve, but see the button order below.
+    ok.current?.focus()
+  }, [prompt])
+
+  if (!prompt) return null
+
+  const answer = (approved: boolean) => {
+    void AnswerMCPWrite(prompt.id, approved).catch(() => {})
+    onDone()
+  }
+
+  // "Yes, and stop asking" belongs here rather than only in a settings panel.
+  // Somebody who has decided to let an agent work unattended decides it at the
+  // moment they are being interrupted, not before — and a switch they have to
+  // go and find is a switch they turn off by stopping using the feature.
+  const allowFor = (minutes: number) => {
+    void SetMCPWritePolicy(prompt.hostId, 'bypass', minutes).catch(() => {})
+    answer(true)
+  }
+
+  const isFileWrite = prompt.after !== undefined && prompt.path
+
+  return (
+    <div className="scrim">
+      <div
+        className="dialog mcp-approve"
+        onKeyDown={(e) => {
+          // Escape declines. A dialog dismissed without a decision must not be
+          // read as consent.
+          if (e.key === 'Escape') answer(false)
+        }}
+      >
+        <h2>{t('MCP 클라이언트가 서버를 바꾸려 합니다')}</h2>
+        <p className="muted">
+          {t('{host} · {tool}', { host: prompt.host, tool: prompt.tool })}
+        </p>
+
+        <p className="warn-text">{prompt.summary}</p>
+
+        {prompt.command && (
+          <>
+            <label className="muted small">{t('실행될 명령')}</label>
+            <code className="mono mcp-command selectable">{prompt.command}</code>
+          </>
+        )}
+
+        {isFileWrite && (
+          <>
+            <label className="muted small">{prompt.path}</label>
+            <Suspense fallback={<div className="placeholder">{t('차이를 계산하는 중…')}</div>}>
+              <DiffView
+                path={prompt.path!}
+                before={prompt.before ?? ''}
+                after={prompt.after ?? ''}
+              />
+            </Suspense>
+          </>
+        )}
+
+        <div className="dialog-actions mcp-approve-actions">
+          {/* Decline is first and Approve is the one you reach for, but neither
+              is the default action of the window: an approval nobody read is
+              the failure this dialog exists to prevent. */}
+          <button onClick={() => answer(false)}>{t('거부')}</button>
+          <span className="spacer" />
+          <button className="ghost" onClick={() => allowFor(60)}>
+            {t('허용하고 1시간 안 묻기')}
+          </button>
+          {/* The overnight option exists because that is when people actually
+              leave an agent running. An hour expiring at 3am blocks everything
+              until morning, which reads as the feature being broken. */}
+          <button className="ghost" onClick={() => allowFor(8 * 60)}>
+            {t('허용하고 밤새 안 묻기')}
+          </button>
+          <button ref={ok} className="danger" onClick={() => answer(true)}>
+            {t('이번만 허용')}
+          </button>
+        </div>
+        <p className="muted small">
+          {t('안 묻기는 이 호스트에만 적용되고 시간이 지나면 스스로 돌아옵니다. 되돌리기는 아직 없습니다 — 지금은 Command Log 가 유일한 기록입니다.')}
+        </p>
+      </div>
+    </div>
+  )
+}

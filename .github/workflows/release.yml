@@ -1,0 +1,248 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (dry run — no release is published)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: "1.25"
+  NODE_VERSION: "22"
+  WAILS_VERSION: "v2.13.0"
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macOS (universal)
+            # A universal binary rather than two downloads: the split between
+            # Intel and Apple Silicon is invisible to most users, and picking
+            # the wrong one produces an app that simply refuses to open.
+            wails_args: -platform darwin/universal
+            artifact: litedeck-macos
+          - os: windows-latest
+            name: Windows (amd64)
+            # Portable exe, no installer. -nsis was here and did nothing: the
+            # runner has no NSIS, and wails only warns and carries on, so the
+            # build "succeeded" while quietly dropping the installer — v0.1.0-beta
+            # shipped promising a file that was never built. LiteDeck is a single
+            # self-contained binary, so an installer buys a Start Menu entry and
+            # an uninstaller and little else. Dropping the flag makes the
+            # workflow say what it actually does.
+            wails_args: -platform windows/amd64
+            artifact: litedeck-windows
+          - os: ubuntu-latest
+            name: Linux (amd64)
+            wails_args: -platform linux/amd64
+            artifact: litedeck-linux
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Linux webview dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev pkg-config
+          if apt-cache show libwebkit2gtk-4.0-dev >/dev/null 2>&1; then
+            sudo apt-get install -y libwebkit2gtk-4.0-dev
+          else
+            sudo apt-get install -y libwebkit2gtk-4.1-dev
+            echo "EXTRA_TAGS=-tags webkit2_41" >> "$GITHUB_ENV"
+          fi
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
+
+      - name: Build
+        shell: bash
+        run: wails build ${{ matrix.wails_args }} ${EXTRA_TAGS:-} -clean
+
+      # Packaging, per platform. The .app bundle has to be archived rather than
+      # uploaded directly — GitHub artifacts flatten directories and would
+      # destroy the bundle's executable bit.
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          cd build/bin
+          # The bundle name comes from wails.json's outputfilename (litedeck.app),
+          # not from info.productName, so it is globbed rather than spelled out.
+          #
+          # Spelling it wrong is not a build failure on a case-insensitive APFS
+          # runner: zip matches anyway and silently stores the name as typed,
+          # producing an archive that extracts under a different name than a
+          # local build. On a case-sensitive volume it fails outright, the
+          # following rm becomes a no-op, and the raw .app directory is uploaded
+          # as an artifact — where the directory is flattened and the executable
+          # bit is lost. Both failures ship; neither announces itself.
+          shopt -s nullglob
+          apps=(*.app)
+          if [ ${#apps[@]} -ne 1 ]; then
+            echo "::error::expected exactly one .app bundle in build/bin, found ${#apps[@]}: ${apps[*]:-none}"
+            ls -la
+            exit 1
+          fi
+          zip -ry litedeck-macos.zip "${apps[0]}"
+          rm -rf "${apps[0]}"
+
+      # Windows is the only platform that was uploading a bare executable, and a
+      # freshly built unsigned .exe with no reputation is exactly what Defender
+      # deletes the moment it lands in Downloads — before the user can even see
+      # a SmartScreen prompt. That happened on the first release someone tried.
+      #
+      # A zip does not make the binary trusted; it stops the *download* from
+      # being a bare PE, which is what triggers the automatic removal. Defender
+      # can still object when the extracted file runs, and the release notes say
+      # so rather than pretending this solves it.
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cd build/bin
+          if [ ! -f litedeck.exe ]; then
+            echo "::error::litedeck.exe not found in build/bin"
+            ls -la
+            exit 1
+          fi
+          7z a -tzip litedeck-windows-amd64.zip litedeck.exe
+          rm -f litedeck.exe
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cd build/bin
+          tar czf litedeck-linux-amd64.tar.gz litedeck
+          rm -f litedeck
+
+      - name: Checksums
+        shell: bash
+        run: |
+          cd build/bin
+          # Published alongside the binaries because releases are unsigned for
+          # now (notarisation and Authenticode both cost money). A checksum is
+          # not a substitute for a signature, and the README says so.
+          if command -v sha256sum >/dev/null; then
+            sha256sum * > SHA256SUMS.txt
+          else
+            shasum -a 256 * > SHA256SUMS.txt
+          fi
+          cat SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: build/bin/
+          retention-days: 14
+
+  release:
+    name: Draft release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Collect and re-checksum
+        run: |
+          mkdir -p release
+          find dist -type f ! -name 'SHA256SUMS.txt' -exec cp {} release/ \;
+          cd release
+          # One combined manifest: the per-platform files were generated on
+          # different runners and cannot be verified against each other.
+          sha256sum * > SHA256SUMS.txt
+          ls -la
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          # Published rather than drafted. The three platform builds and the whole
+          # test suite have already passed by the time this step runs, so a draft
+          # only means the release sits invisible until someone remembers to press
+          # a button — and a release nobody can download is not a release.
+          draft: false
+          # Marked pre-release while the version says beta. It is downloadable
+          # either way; the flag is what keeps GitHub from calling it "Latest" and
+          # is the honest signal about how much of this has been run in anger.
+          prerelease: true
+          generate_release_notes: true
+          files: release/*
+          body: |
+            ## 설치
+
+            체크섬을 먼저 확인하세요:
+
+            ```
+            sha256sum -c SHA256SUMS.txt
+            ```
+
+            **이 빌드는 서명되어 있지 않습니다.** macOS는 Gatekeeper가, Windows는
+            SmartScreen이 경고를 띄웁니다. 서명·공증에는 비용이 들어 초기 릴리스는
+            미서명으로 배포하며, 체크섬은 서명의 대체물이 아닙니다.
+
+            ### macOS
+
+            `litedeck-macos.zip` 압축 해제 후 `litedeck.app`.
+            Intel·Apple Silicon 공용 바이너리입니다.
+
+            첫 실행에서 `Apple could not verify "litedeck" is free of malware…`
+            가 뜹니다. **시스템 설정 → 개인정보 보호 및 보안** 에서 아래로
+            내려가면 **"그래도 열기"** 가 있습니다. 또는:
+
+            ```
+            xattr -d com.apple.quarantine litedeck.app
+            ```
+
+            우클릭 → 열기는 macOS 15부터 Apple이 없앴습니다 — 14 이하에서만 됩니다.
+
+            ### Windows
+
+            `litedeck-windows-amd64.zip` 압축을 풀면 `litedeck.exe` 하나입니다.
+            설치 관리자는 없습니다 — 원하는 곳에 두고 쓰시고, 지울 때는 파일만
+            지우면 됩니다. WebView2가 없으면 설치 프롬프트가 뜹니다.
+
+            **Windows Defender가 파일을 삭제할 수 있습니다.** 서명되지 않은
+            새 실행 파일에는 평판 정보가 없어서, 다운로드 직후 경고 없이
+            격리되는 경우가 있습니다. 바이러스가 아니라 **서명이 없기
+            때문**이며, 서명·공증에는 비용이 들어 초기 릴리스는 미서명입니다.
+
+            지워졌다면 **Windows 보안 → 바이러스 및 위협 방지 → 보호 기록**
+            에서 해당 항목을 찾아 **작업 → 허용** 을 누르면 복원됩니다.
+            받기 전에 미리 막으려면 같은 화면의 **설정 관리 → 제외 항목 추가**
+            에 압축 푼 폴더를 등록하세요.
+
+            SmartScreen 경고는 **추가 정보 → 실행** 으로 넘깁니다.
+
+            ### Linux
+
+            `libwebkit2gtk`와 `libgtk-3`가 필요합니다.
+
+            ```
+            tar xzf litedeck-linux-amd64.tar.gz && chmod +x litedeck && ./litedeck
+            ```

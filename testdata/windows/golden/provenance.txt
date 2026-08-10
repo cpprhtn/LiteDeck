@@ -1,0 +1,15 @@
+host:      (anonymised)
+captured:  2026-08-08T19:29:14Z
+client:    Darwin 25.5.0
+transport: ssh + powershell -NoProfile -NonInteractive -EncodedCommand
+
+Output as it arrived over SSH. Structure is verbatim — key order, enum
+values, /Date(ms)/ serialisation, CRLF line endings and UTF-8 non-ASCII
+text are all exactly what the server sent.
+
+Identities are not verbatim. The capture script replaces the computer
+name with DESKTOP-EXAMPLE, the account with TESTUSER, routable IPv4 with
+192.0.2.14 and link-local interface identifiers with a fixed value,
+because these files are public and none of it is what a parser reads.
+Loopback and 169.254 addresses are kept: they are identical on every
+machine and the exposed-binding logic is tested against them.

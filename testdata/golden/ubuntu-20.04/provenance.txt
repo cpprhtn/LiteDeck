@@ -1,0 +1,5 @@
+NAME="Ubuntu"
+VERSION="20.04.6 LTS (Focal Fossa)"
+ID=ubuntu
+---
+systemd 245 (245.4-4ubuntu3.24)

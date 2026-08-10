@@ -1,0 +1,11 @@
+      1       0 root                              0.1  0.0  9196 Ss        33 systemd         /lib/systemd/systemd
+     22       1 root                              0.0  0.0 11200 S<s       32 systemd-journal /lib/systemd/systemd-journald
+     37       1 root                              0.0  0.0  1444 Ss        32 sh              /bin/sh -c while true; do sleep 30; done
+     41       1 root                              0.0  0.0  8456 Ss        32 sshd            sshd: /usr/sbin/sshd -D [listener] 0 of 10-100 startups
+     68      37 root                              0.0  0.0  1480 S          2 sleep           sleep 30
+     83       1 root                              0.0  0.0  1152 S          1 sleep           sleep 600
+     84       1 root                              0.0  0.0  1160 S          1 sleep           very-long-process-name-that-gets-truncated 600
+     87       1 appuser                           0.0  0.0  1140 S          1 sleep           sleep 600
+     89       1 root                              0.0  0.0  1132 S          1 sleep           sleep 600
+     90      89 root                              0.0  0.0     0 Z          1 sleep <defunct> [sleep] <defunct>
+     97       0 root                              0.0  0.0  2544 Rs         0 ps              ps -eo pid,ppid,user:32,%cpu,%mem,rss,stat,etimes,comm,args --no-headers

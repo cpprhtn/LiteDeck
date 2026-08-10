@@ -1,0 +1,73 @@
+#stat
+cpu  2662 0 934 309774 543 0 477 0 0 0
+cpu0 352 0 226 38220 377 0 399 0 0 0
+cpu1 469 0 127 38621 21 0 30 0 0 0
+cpu2 399 0 115 38702 25 0 16 0 0 0
+cpu3 409 0 109 38700 28 0 13 0 0 0
+cpu4 319 0 120 38768 38 0 8 0 0 0
+cpu5 312 0 104 38797 31 0 5 0 0 0
+cpu6 400 0 131 38696 20 0 2 0 0 0
+cpu7 0 0 0 39266 0 0 0 0 0 0
+intr 179332 0 7445 48040 0 0 0 467 0 0 0 0 96809 0 17 1 23 14 18 0 0 0 12129 0 1 14163 152 51 0 0 2 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ctxt 307517
+btime 1786031623
+processes 6154
+procs_running 6
+procs_blocked 0
+softirq 72817 0 5482 154 14740 12130 0 707 24721 0 14883
+#mem
+MemTotal:       16426540 kB
+MemFree:        15753288 kB
+MemAvailable:   15815008 kB
+Buffers:             176 kB
+Cached:           244756 kB
+SwapCached:            0 kB
+Active:           333272 kB
+Inactive:          21160 kB
+Active(anon):     130580 kB
+Inactive(anon):     1760 kB
+Active(file):     202692 kB
+Inactive(file):    19400 kB
+Unevictable:           0 kB
+Mlocked:               0 kB
+SwapTotal:      17475108 kB
+SwapFree:       17475108 kB
+Dirty:              4632 kB
+Writeback:             0 kB
+AnonPages:        106860 kB
+Mapped:           120288 kB
+Shmem:             22616 kB
+KReclaimable:      70416 kB
+Slab:             120000 kB
+SReclaimable:      70416 kB
+SUnreclaim:        49584 kB
+KernelStack:        5296 kB
+PageTables:         3560 kB
+SecPageTables:         0 kB
+NFS_Unstable:          0 kB
+Bounce:                0 kB
+WritebackTmp:          0 kB
+CommitLimit:    25688376 kB
+Committed_AS:    1433080 kB
+VmallocTotal:   135288315904 kB
+VmallocUsed:       83824 kB
+VmallocChunk:          0 kB
+Percpu:             2432 kB
+AnonHugePages:         0 kB
+ShmemHugePages:        0 kB
+ShmemPmdMapped:        0 kB
+FileHugePages:         0 kB
+FilePmdMapped:         0 kB
+Balloon:               0 kB
+#load
+0.00 0.03 0.01 1/319 79
+#up
+392.68 3097.75
+#df
+Filesystem        1-blocks        Used   Available Capacity Mounted on
+overlay        82946555904 68331667456 14614888448      83% /
+tmpfs             67108864           0    67108864       0% /dev
+shm             8409579520           0  8409579520       0% /dev/shm
+/dev/vdb1      82946555904 68331667456 14614888448      83% /etc/hosts
+tmpfs           3364155392       20480  3364134912       1% /run
+tmpfs              5242880           0     5242880       0% /run/lock
