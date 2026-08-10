@@ -29,10 +29,19 @@
   <a href="CONTRIBUTING.md">기여하기</a>
 </p>
 
+<p align="center">
+  <img src="docs/media/01-edit-and-save.gif" width="880"
+       alt="LiteDeck: 서버에 접속해 설정 파일을 열고, 고치고, 저장 전 diff 를 확인한다">
+</p>
+
+<p align="center">
+  <sub>접속 · 설정 파일 열기 · 편집 · <b>저장 전 diff</b>. 서버에는 아무것도 설치하지 않았습니다.</sub>
+</p>
+
 ---
 
 > [!NOTE]
-> **v0.2.0-beta.** macOS·Windows 클라이언트와 **Windows·Linux 실제 장비**에서 검증했습니다.
+> **v1.0.0.** macOS·Windows 클라이언트와 **Windows·Linux 실제 장비**에서 검증했습니다.
 > 다만 Linux 실기에서 확인한 것은 조회 계통과 파일 읽기·쓰기까지이고, 전송·권한 상승 같은 나머지는
 > 아직 컨테이너에서만 돌렸습니다. 무엇이 확인됐고 무엇이 안 됐는지는 [지원 범위](#지원-범위)에 그대로 적어두었습니다.
 > 운영 중인 서버에 쓰신다면 삭제·프로세스 종료처럼 되돌릴 수 없는 작업은 먼저 시험용 서버에서 확인해보세요.
@@ -87,6 +96,13 @@ RDP·VNC·TeamViewer는 서버의 **화면 픽셀을 영상으로 스트리밍**
 | **언어** | 한국어·영어. 처음 열 때 OS 언어를 따르고, 사이드바 아래 `KO`/`EN` 로 바꿉니다 |
 
 ### Command Log: GUI로 CLI를 배웁니다
+
+<p align="center">
+  <img src="docs/media/02-command-log.gif" width="820" alt="Command Log">
+</p>
+
+<p align="center"><sub>재시작이 권한 부족으로 거부되자 <b>물어봅니다</b>. 실행된 명령은 그대로 보이고, 비밀번호는 stdin 으로 가서 보이지 않습니다.</sub></p>
+
 
 운영 서버를 만지는 GUI는 결국 "믿어달라"고 요구하는 셈입니다. LiteDeck은 **방금 무엇을 실행했는지 정확히 보여주는 것**으로 그 신뢰를 얻습니다.
 
@@ -346,6 +362,13 @@ systemd 246 미만(Ubuntu 20.04, RHEL 8)에는 JSON 출력이 없어 **표 파�
 
 ## MCP 연동
 
+<p align="center">
+  <img src="docs/media/03-mcp-approval.gif" width="820" alt="MCP approval">
+</p>
+
+<p align="center"><sub>MCP 클라이언트가 파일을 고치려 하자 <b>서버의 현재 내용 대비 diff</b> 가 뜹니다. 승인한 것은 되돌릴 수 있습니다.</sub></p>
+
+
 Claude Code·Claude Desktop 같은 MCP 클라이언트가 이 앱을 통해 서버를 **조회하고 바꿉니다.**
 사이드바 아래 **MCP** 버튼에서 켭니다.
 
@@ -453,7 +476,7 @@ go test ./... -race           # 통합 테스트 포함 (Docker 필요)
 
 통합 테스트는 실제 서버를 띄웁니다. `testdata/`에 sshd·systemd·Docker-in-Docker 픽스처가 있습니다. Docker가 없으면 실패가 아니라 건너뛰므로, **`-race`가 몇 초 만에 끝났다면 통합 테스트가 안 돌았다는 뜻입니다** (Docker가 켜져 있으면 1분 남짓 걸립니다).
 
-v0.2.0-beta를 만든 환경: Go 1.26.5 · Node 22.13.1 · Wails 2.13.0 · Docker 29.4.0 (macOS 26.5.2 arm64).
+v1.0.0을 만든 환경: Go 1.26.5 · Node 22.13.1 · Wails 2.13.0 · Docker 29.4.0 (macOS 26.5.2 arm64).
 
 ## 기여
 

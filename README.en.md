@@ -29,10 +29,19 @@
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
+<p align="center">
+  <img src="docs/media/01-edit-and-save.gif" width="880"
+       alt="LiteDeck: 서버에 접속해 설정 파일을 열고, 고치고, 저장 전 diff 를 확인한다">
+</p>
+
+<p align="center">
+  <sub>Connect, open a config file, edit it, and see the <b>diff before saving</b>. Nothing was installed on the server.</sub>
+</p>
+
 ---
 
 > [!NOTE]
-> **v0.2.0-beta.** Verified on macOS and Windows clients, against **real Windows and Linux machines**.
+> **v1.0.0.** Verified on macOS and Windows clients, against **real Windows and Linux machines**.
 > On Linux hardware that covers the read side and file writes; transfers and privilege escalation are
 > still container-only. Exactly what has and has not been checked is written down in
 > [What is and is not verified](#what-is-and-is-not-verified).
@@ -91,6 +100,13 @@ All the server does is **run commands it already had and hand back text**. Which
 | **Language** | English and Korean. Follows your OS on first run; switch with `KO`/`EN` at the bottom of the sidebar |
 
 ### Command Log: learn the CLI from the GUI
+
+<p align="center">
+  <img src="docs/media/02-command-log.gif" width="820" alt="Command Log">
+</p>
+
+<p align="center"><sub>A restart is refused for want of privileges, so the app <b>asks</b>. The command it ran stays visible; the password went over stdin and does not.</sub></p>
+
 
 A GUI that touches a production server is asking you to trust it. LiteDeck earns that by **showing exactly what it just ran**.
 
@@ -363,6 +379,13 @@ Connecting to an OS with no adapter still gives you **files and a terminal**: SF
 
 ## MCP integration
 
+<p align="center">
+  <img src="docs/media/03-mcp-approval.gif" width="820" alt="MCP approval">
+</p>
+
+<p align="center"><sub>An MCP client tries to change a file and the <b>diff against what is on the server</b> comes up. Anything approved can be undone.</sub></p>
+
+
 An MCP client (Claude Code, Claude Desktop) can **read and change** your servers through this
 app. Turn it on with the **MCP** button at the bottom of the sidebar.
 
@@ -471,7 +494,7 @@ go test ./... -race           # includes integration tests (needs Docker)
 
 Integration tests bring up real servers. `testdata/` holds sshd, systemd and Docker-in-Docker fixtures. Without Docker they skip rather than fail, so **if `-race` finishes in a few seconds the integration tests did not run** (with Docker up it takes about a minute).
 
-v0.2.0-beta was built with Go 1.26.5, Node 22.13.1, Wails 2.13.0, Docker 29.4.0 on macOS 26.5.2 arm64.
+v1.0.0 was built with Go 1.26.5, Node 22.13.1, Wails 2.13.0, Docker 29.4.0 on macOS 26.5.2 arm64.
 
 ## Contributing
 
