@@ -424,12 +424,12 @@ claude mcp add --transport http litedeck http://127.0.0.1:<port>/mcp \
 ```
 
 > [!NOTE]
-> **Verification status.** Claude Code 2.1.22 connecting (`✓ Connected`), the full protocol
-> path, and **reads and writes against a real Ubuntu 24.04 server** are all confirmed. The
-> approval dialog does appear; approving sends the command through to the server, and a write
-> nobody answers does not run. What remains unverified is **a model invoking the tools on its
-> own** — in the author's environment the MCP tools were never exposed to the model. One line
-> in your terminal will tell you; report back and this note gets corrected.
+> **Verification status.** Confirmed end to end from Claude Code 2.1.22 against a **real
+> Ubuntu 24.04 server**. Asked *"how is the server doing"*, the model calls `health_snapshot`
+> by itself and comes back with the metrics, the failed unit, the stopped containers and the
+> exposed ports. Writes do raise the approval dialog; approving sends the command through to
+> the server, and a write nobody answers does not run.
+> MCP against a **Windows** server has not been tried yet.
 
 ## Non-goals
 
