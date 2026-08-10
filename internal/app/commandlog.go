@@ -168,3 +168,33 @@ func (l *commandLog) AICall(hostID, line string) {
 
 	l.emit("cmd:started", e)
 }
+
+// AIWrite records a change an MCP client asked for, and what became of it.
+//
+// Logged whatever the outcome, including declined and timed out. "The AI tried
+// to restart nginx and I said no" is exactly as much a part of the record as
+// the ones that ran — more so, if the reason it asked was an instruction
+// somebody hid in a log file.
+func (l *commandLog) AIWrite(hostID, summary, outcome string) {
+	status := "ok"
+	if outcome != "approved" && outcome != "auto-approved" {
+		status = "failed"
+	}
+	l.mu.Lock()
+	l.seq++
+	e := CommandEntry{
+		Seq:    l.seq,
+		HostID: hostID,
+		Line:   summary + "  [" + outcome + "]",
+		At:     time.Now().Format(time.RFC3339),
+		Status: status,
+		Origin: "ai",
+	}
+	l.entries = append(l.entries, e)
+	if len(l.entries) > commandLogLimit {
+		l.entries = l.entries[len(l.entries)-commandLogLimit:]
+	}
+	l.mu.Unlock()
+
+	l.emit("cmd:started", e)
+}

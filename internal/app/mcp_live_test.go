@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/cpprhtn/LiteDeck/internal/config"
 	"github.com/cpprhtn/LiteDeck/internal/sshcore"
@@ -60,6 +61,17 @@ func TestLiveMCPEndpoint(t *testing.T) {
 			t.Fatalf("set port: %v", err)
 		}
 	}
+
+	// The approval wait is two minutes in the app; a live check should not have
+	// to sit through it to see the gate hold.
+	if ms := os.Getenv("LITEDECK_MCP_APPROVAL_MS"); ms != "" {
+		var n int
+		fmt.Sscanf(ms, "%d", &n)
+		defer WriteApprovalTimeoutForTest(time.Duration(n) * time.Millisecond)()
+	}
+	// A second host that is shared for reading but left at the default write
+	// mode, so the gate can be exercised without touching a real server.
+	a.SetMCPHost("demo", true)
 
 	state := a.SetMCPEnabled(true)
 	defer a.stopMCP()

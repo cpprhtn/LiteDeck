@@ -47,6 +47,23 @@ type MCPSettings struct {
 	// Hosts the AI may read, by host ID. Absent means no: registering a server
 	// in LiteDeck must not hand it to an AI as a side effect.
 	Hosts map[string]bool `json:"hosts,omitempty"`
+	// Write is the per-host approval mode for changes. Absent means "ask",
+	// which is the default and the only mode that needs no expiry.
+	Write map[string]MCPWritePolicy `json:"write,omitempty"`
+}
+
+// MCPWritePolicy is how one host handles a write an AI asks for (§4.2).
+//
+// Deliberately separate from Hosts: sharing a server to be read and letting
+// something change it are different decisions, and collapsing them into one
+// switch would make the cautious answer "share nothing".
+type MCPWritePolicy struct {
+	// Mode is "ask", "auto" or "bypass". Empty is "ask".
+	Mode string `json:"mode"`
+	// Until is when a relaxed mode reverts, in unix seconds. There is no
+	// "forever": a mode nobody remembers enabling is the one that causes the
+	// incident, and renewing it costs a click.
+	Until int64 `json:"until,omitempty"`
 }
 
 // SettingsStore is settings.json.

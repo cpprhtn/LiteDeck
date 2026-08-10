@@ -36,6 +36,7 @@ type App struct {
 	cpu       *cpuHistory
 	logs      *logRegistry
 	mcp       mcpState
+	approvals *approvalBridge
 
 	// emit sends an event to the frontend. It is a field rather than a direct
 	// call to the Wails runtime so the prompt bridge — the one piece of logic
@@ -63,6 +64,7 @@ func New() *App {
 	a.terminals = newTerminalRegistry(a)
 	a.cpu = newCPUHistory()
 	a.logs = newLogRegistry(a)
+	a.approvals = newApprovalBridge(a)
 	a.secrets = secret.Ephemeral{}
 	// Until Startup runs there is no window; dropping events is correct, and
 	// keeps every caller free of nil checks.

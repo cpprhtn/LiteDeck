@@ -192,3 +192,57 @@ func (a *App) StopLogStream(id string) error {
 	}
 	return stream.Close()
 }
+
+// ServiceLogTail reads a bounded slice of a unit's journal, once.
+//
+// The sibling of FollowServiceLog for callers that cannot hold a stream — the
+// MCP tools, where a model asks a question and needs an answer, not a pipe.
+//
+// The readability check matters more here than in the GUI. A user outside
+// systemd-journal and adm gets an *empty* journal rather than an error, and a
+// model handed nothing concludes the service never logged and stops looking.
+// Saying why is what keeps it from drawing that conclusion.
+func (a *App) ServiceLogTail(hostID, unit string, lines int, since, priority string) (string, error) {
+	if lines <= 0 || lines > 2000 {
+		lines = 200
+	}
+	info, err := a.DetectHost(hostID)
+	if err != nil {
+		return "", err
+	}
+	if !info.HasSystemd {
+		return "", i18n.Errorf("%s 에는 읽을 저널이 없습니다", hostID)
+	}
+	if !info.CanReadJournal {
+		return "", fmt.Errorf("%w: %s", ErrJournalUnreadable,
+			i18n.S("이 사용자는 systemd-journal·adm 그룹에 없어 시스템 저널이 비어 보입니다 — 서버에서 그룹에 추가하거나 앱에서 관리자 권한으로 여세요"))
+	}
+
+	conn, err := a.mgr.Conn(hostID)
+	if err != nil {
+		return "", err
+	}
+
+	// -q suppresses the "not seeing messages from other users" notice, which
+	// journalctl prints into the output itself; --no-pager stops it waiting on
+	// a pager that will never be read.
+	args := []string{"-u", unit, "-n", strconv.Itoa(lines), "--no-pager", "-q"}
+	if since != "" {
+		args = append(args, "--since", since)
+	}
+	if priority != "" {
+		args = append(args, "-p", priority)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), pollTimeout)
+	defer cancel()
+
+	res, err := conn.Exec(ctx, "journalctl", args...)
+	if err != nil {
+		return "", err
+	}
+	if !res.OK() {
+		return "", fmt.Errorf("%s: %s", res.Err(), strings.TrimSpace(string(res.Stderr)))
+	}
+	return string(res.Stdout), nil
+}

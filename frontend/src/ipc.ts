@@ -47,12 +47,32 @@ export interface BootstrapData {
 
 export type ServerPlatform = 'linux' | 'windows' | 'darwin' | 'bsd' | 'unknown'
 
+export interface MCPWritePrompt {
+  id: string
+  hostId: string
+  host: string
+  tool: string
+  summary: string
+  command?: string
+  path?: string
+  before?: string
+  after?: string
+}
+
+export interface WritePolicyView {
+  /** 'ask' | 'auto' | 'bypass' */
+  mode: string
+  /** Unix seconds when a relaxed mode reverts. */
+  until?: number
+}
+
 export interface MCPStatus {
   enabled: boolean
   running: boolean
   url?: string
   token?: string
   hosts: Record<string, boolean>
+  write: Record<string, WritePolicyView>
   /** The exact `claude mcp add` line, assembled by Go so nobody mistypes it. */
   snippet?: string
   error?: string
@@ -411,6 +431,8 @@ interface Bindings {
   SetMCPEnabled(enabled: boolean): Promise<MCPStatus>
   SetMCPHost(hostID: string, allowed: boolean): Promise<MCPStatus>
   RotateMCPToken(): Promise<MCPStatus>
+  SetMCPWritePolicy(hostID: string, mode: string, minutes: number): Promise<MCPStatus>
+  AnswerMCPWrite(id: string, approved: boolean): Promise<void>
   SetLanguage(tag: string): Promise<ActionResult>
   SaveHost(h: Host): Promise<void>
   DeleteHost(id: string): Promise<void>
@@ -610,6 +632,9 @@ export const MCPState = () => api().MCPState()
 export const SetMCPEnabled = (enabled: boolean) => api().SetMCPEnabled(enabled)
 export const SetMCPHost = (hostID: string, allowed: boolean) => api().SetMCPHost(hostID, allowed)
 export const RotateMCPToken = () => api().RotateMCPToken()
+export const SetMCPWritePolicy = (hostID: string, mode: string, minutes: number) =>
+  api().SetMCPWritePolicy(hostID, mode, minutes)
+export const AnswerMCPWrite = (id: string, approved: boolean) => api().AnswerMCPWrite(id, approved)
 export const SetLanguage = (tag: string) => api().SetLanguage(tag)
 export const SaveHost = (h: Host) => api().SaveHost(h)
 export const DeleteHost = (id: string) => api().DeleteHost(id)

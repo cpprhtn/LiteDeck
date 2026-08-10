@@ -4,6 +4,7 @@ import {
   RotateMCPToken,
   SetMCPEnabled,
   SetMCPHost,
+  SetMCPWritePolicy,
   type HostView,
   type MCPStatus,
 } from './ipc'
@@ -87,7 +88,7 @@ export function McpPanel({
             the worst case here is a file being read, not a service restarted. */}
         <p className="warn-text">
           {t(
-            '지금은 조회만 됩니다. 서버를 바꾸는 도구는 없고, 파라미터로 숨겨져 있지도 않습니다.',
+            '변경은 기본적으로 매번 물어봅니다. 다이얼로그에는 실제로 실행될 명령이나 파일 diff 가 그대로 표시됩니다. 임의 명령 실행과 삭제는 아예 제공하지 않습니다.',
           )}
         </p>
 
@@ -173,6 +174,24 @@ export function McpPanel({
               <span className="muted small mono">
                 {h.user}@{h.hostname}
               </span>
+              {/* Only meaningful once the host is shared at all, and separate
+                  from that switch because reading and changing are different
+                  decisions. */}
+              {state?.hosts?.[h.id] && (
+                <select
+                  className="mcp-mode"
+                  disabled={busy}
+                  value={state?.write?.[h.id]?.mode ?? 'ask'}
+                  onClick={(e) => e.preventDefault()}
+                  onChange={(e) =>
+                    void apply(() => SetMCPWritePolicy(h.id, e.target.value, 60))
+                  }
+                >
+                  <option value="ask">{t('변경 시 물어보기')}</option>
+                  <option value="auto">{t('1시간 자동 승인')}</option>
+                  <option value="bypass">{t('1시간 전부 통과')}</option>
+                </select>
+              )}
             </label>
           ))}
         </div>

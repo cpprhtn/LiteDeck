@@ -34,6 +34,7 @@ const (
 	maxListenRows  = 60
 	maxDirRows     = 200
 	maxFileBytes   = 64 * 1024
+	maxLogLines    = 300
 )
 
 // mcpHost resolves the hostId argument, enforcing the per-connection opt-in.
@@ -206,6 +207,78 @@ func (a *App) registerMCPTools(s *mcp.Server) {
 				"units": kept,
 				"page":  truncated(len(kept), total, "narrow with state or grep"),
 			}, nil
+		},
+	})
+
+	s.Register(mcp.Tool{
+		Name: "svc_logs",
+		Description: "Read a systemd unit's journal. This is what says *why* a service failed; " +
+			"svc_list only says that it did. Narrow with since and priority before raising lines.",
+		InputSchema: obj(map[string]any{
+			"hostId": hostArg,
+			"unit": map[string]any{
+				"type":        "string",
+				"description": "Unit name, e.g. nginx.service. Get exact names from svc_list.",
+			},
+			"lines": map[string]any{"type": "integer", "description": "Default 200, max 500."},
+			"since": map[string]any{
+				"type":        "string",
+				"description": "journalctl syntax: \"-10m\", \"1 hour ago\", \"2026-08-10 09:00\".",
+			},
+			"priority": map[string]any{
+				"type": "string", "enum": []string{"err", "warning", "info", "debug"},
+				"description": "Keep this level and worse. Start with err when diagnosing.",
+			},
+			"grep": grepArg,
+		}, "hostId", "unit"),
+		Handler: func(_ context.Context, args map[string]any) (any, error) {
+			id, err := a.mcpHost(args)
+			if err != nil {
+				return nil, err
+			}
+			unit := str(args, "unit")
+			if unit == "" {
+				return nil, fmt.Errorf("unit is required. Use svc_list to find the exact name")
+			}
+			since := str(args, "since")
+			if !safeJournalArg(since) {
+				return nil, fmt.Errorf("since %q is not a time expression journalctl accepts", since)
+			}
+			out, err := a.ServiceLogTail(id, unit, num(args, "lines", 200, 500), since, str(args, "priority"))
+			if err != nil {
+				return nil, err
+			}
+			return logResult(unit, out, str(args, "grep")), nil
+		},
+	})
+
+	s.Register(mcp.Tool{
+		Name: "container_logs",
+		Description: "Read the tail of a container's log, the container equivalent of svc_logs. " +
+			"Get IDs and names from container_list.",
+		InputSchema: obj(map[string]any{
+			"hostId": hostArg,
+			"id": map[string]any{
+				"type":        "string",
+				"description": "Container ID or name from container_list.",
+			},
+			"lines": map[string]any{"type": "integer", "description": "Default 200, max 500."},
+			"grep":  grepArg,
+		}, "hostId", "id"),
+		Handler: func(_ context.Context, args map[string]any) (any, error) {
+			hostID, err := a.mcpHost(args)
+			if err != nil {
+				return nil, err
+			}
+			id := str(args, "id")
+			if id == "" {
+				return nil, fmt.Errorf("id is required. Use container_list to find one")
+			}
+			out, err := a.ContainerLogs(hostID, id, num(args, "lines", 200, 500))
+			if err != nil {
+				return nil, err
+			}
+			return logResult(id, out, str(args, "grep")), nil
 		},
 	})
 
@@ -423,6 +496,73 @@ func (a *App) registerMCPTools(s *mcp.Server) {
 			return map[string]any{"sessions": sessions}, nil
 		},
 	})
+}
+
+// logResult trims a log to something a model can read.
+//
+// Filtering happens here rather than in journalctl's -g, whose PCRE support is
+// a build option and silently absent on some distributions — a filter that
+// quietly matches nothing is worse than no filter. The tail is kept rather than
+// the head: the last lines are the ones that explain a failure.
+func logResult(subject, out, grep string) map[string]any {
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		lines = nil
+	}
+	total := len(lines)
+
+	if grep != "" {
+		needle := strings.ToLower(grep)
+		kept := lines[:0:0]
+		for _, l := range lines {
+			if strings.Contains(strings.ToLower(l), needle) {
+				kept = append(kept, l)
+			}
+		}
+		lines = kept
+	}
+	matched := len(lines)
+	if matched > maxLogLines {
+		lines = lines[matched-maxLogLines:]
+	}
+
+	res := map[string]any{
+		"subject": subject,
+		"lines":   lines,
+		"page":    truncated(len(lines), matched, "narrow with since, priority or grep"),
+	}
+	if grep != "" {
+		res["matched"] = matched
+		res["scanned"] = total
+	}
+	// An empty journal is an answer that gets misread. Say what it means so a
+	// model does not report "the service never logged anything".
+	if len(lines) == 0 {
+		res["note"] = "No matching lines. The unit may not have logged in this window, " +
+			"the name may be wrong (check svc_list), or the filter may be too narrow."
+	}
+	return res
+}
+
+// safeJournalArg keeps a time expression to characters journalctl uses. Not a
+// shell concern — arguments are quoted before they leave — but a malformed one
+// makes journalctl fail in a way that reads to a model like the unit is broken.
+func safeJournalArg(v string) bool {
+	if v == "" {
+		return true
+	}
+	if len(v) > 40 {
+		return false
+	}
+	for _, r := range v {
+		switch {
+		case r >= '0' && r <= '9', r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z':
+		case r == '-' || r == '+' || r == ':' || r == ' ' || r == '.':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // healthSnapshot answers "is this server alright" in as few round trips as the

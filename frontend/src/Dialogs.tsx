@@ -1,12 +1,19 @@
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import {
   AnswerHostKey,
+  AnswerMCPWrite,
   AnswerSecret,
   CancelPrompt,
   type HostKeyPrompt,
+  type MCPWritePrompt,
   type SecretPrompt,
 } from './ipc'
 import { t } from './i18n'
+
+// The diff is the largest thing this dialog can show and most approvals never
+// need it, so it arrives with the first file write rather than at startup.
+const DiffView = lazy(() => import('./DiffView').then((m) => ({ default: m.DiffView })))
+
 
 /**
  * Trust on first use (§7.1).
@@ -142,6 +149,89 @@ export function SecretDialog({
           </button>
         </div>
       </form>
+    </div>
+  )
+}
+
+/**
+ * The approval a write from an MCP client waits on (§4.6).
+ *
+ * This dialog is the reason the gate lives in LiteDeck rather than being left
+ * to the MCP client. The client's own confirmation shows the arguments a model
+ * composed; this shows what the server is about to be told to do — the literal
+ * command, or a diff against the file as it stands right now. When a model has
+ * been talked into something by text it read in a log, those two are not the
+ * same picture, and only the second one gives a person a chance to notice.
+ */
+export function McpWriteDialog({
+  prompt,
+  onDone,
+}: {
+  prompt: MCPWritePrompt | null
+  onDone: () => void
+}) {
+  const ok = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    // Focus lands on Approve, but see the button order below.
+    ok.current?.focus()
+  }, [prompt])
+
+  if (!prompt) return null
+
+  const answer = (approved: boolean) => {
+    void AnswerMCPWrite(prompt.id, approved).catch(() => {})
+    onDone()
+  }
+
+  const isFileWrite = prompt.after !== undefined && prompt.path
+
+  return (
+    <div className="scrim">
+      <div
+        className="dialog mcp-approve"
+        onKeyDown={(e) => {
+          // Escape declines. A dialog dismissed without a decision must not be
+          // read as consent.
+          if (e.key === 'Escape') answer(false)
+        }}
+      >
+        <h2>{t('AI 가 서버를 바꾸려 합니다')}</h2>
+        <p className="muted">
+          {t('{host} · {tool}', { host: prompt.host, tool: prompt.tool })}
+        </p>
+
+        <p className="warn-text">{prompt.summary}</p>
+
+        {prompt.command && (
+          <>
+            <label className="muted small">{t('실행될 명령')}</label>
+            <code className="mono mcp-command selectable">{prompt.command}</code>
+          </>
+        )}
+
+        {isFileWrite && (
+          <>
+            <label className="muted small">{prompt.path}</label>
+            <Suspense fallback={<div className="placeholder">{t('차이를 계산하는 중…')}</div>}>
+              <DiffView
+                path={prompt.path!}
+                before={prompt.before ?? ''}
+                after={prompt.after ?? ''}
+              />
+            </Suspense>
+          </>
+        )}
+
+        <div className="dialog-actions">
+          {/* Decline is first and Approve is the one you reach for, but neither
+              is the default action of the window: an approval nobody read is
+              the failure this dialog exists to prevent. */}
+          <button onClick={() => answer(false)}>{t('거부')}</button>
+          <button ref={ok} className="danger" onClick={() => answer(true)}>
+            {t('실행 허용')}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

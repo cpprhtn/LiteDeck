@@ -379,8 +379,8 @@ An MCP client (Claude Code, Claude Desktop) can **query** your servers through t
 Turn it on with the **AI** button at the bottom of the sidebar.
 
 > [!IMPORTANT]
-> **Read-only.** There are no tools that change a server, and none are hidden behind a
-> parameter. Writes need an approval model first, and that is not built.
+> **Changes are confirmed one at a time by default**, and the dialog shows the literal
+> command or file diff. That policy is **owned by the app; the AI cannot turn it off.**
 
 ```
 Claude Code  ──MCP (local HTTP)──▶  LiteDeck  ──existing SSH──▶  server
@@ -391,17 +391,26 @@ same Command Log. What it asks for scrolls past tagged `AI`. And **still nothing
 on the server.** Putting an AI tool there means a runtime and a resident process, and its
 context-gathering hammers a small box's I/O. All of that load stays on the client.
 
-**Ten tools**: `hosts_list`, `health_snapshot`, `sys_stats`, `svc_list`, `proc_list`,
-`container_list`, `net_ports`, `fs_list`, `fs_read`, `sessions_list`. One `health_snapshot`
-returns CPU, memory, disk, failed units, unhealthy containers and externally reachable ports,
-which answers most of *"why is myapp returning 500s"* in a single round trip.
+**Twelve read tools**: `hosts_list`, `health_snapshot`, `sys_stats`, `svc_list`, **`svc_logs`**,
+`proc_list`, `container_list`, **`container_logs`**, `net_ports`, `fs_list`, `fs_read`,
+`sessions_list`. One `health_snapshot` returns CPU, memory, disk, failed units, unhealthy
+containers and exposed ports; `svc_logs` is what says *why* something died.
+
+**Four write tools**: `svc_control` (start/stop/restart), `container_control`, `proc_signal`
+(TERM/KILL) and `fs_write`. Every one goes through approval.
+
+**Deliberately absent**: arbitrary command execution and deletion. An arbitrary-command tool
+makes the per-tool allowlist decorative, and a restart is undone by restarting where a delete
+is not.
 
 **What holds it back**
 
 | | |
 |---|---|
 | Per-server opt-in | **Everything off by default.** Adding a host does not expose it. Only what you switch on can be read |
-| Not settable remotely | There is no tool that flips that switch. The AI can ask; only the app can change it |
+| Change approval | **Ask every time** by default. Per host you can relax it, and it **reverts on its own after an hour** |
+| Not settable remotely | No tool flips that switch and no parameter relaxes it. **A model has no way to request its own approval** |
+| Reading ≠ writing | Sharing a server to be read does not make it changeable |
 | Binding | `127.0.0.1` only. No setting exposes it on another interface |
 | Auth | Bearer token, stored in settings, changed only by the rotate button |
 | Rate limit | 1.5 calls/sec, burst of 8, so an agent loop cannot hammer a small server |
@@ -415,11 +424,12 @@ claude mcp add --transport http litedeck http://127.0.0.1:<port>/mcp \
 ```
 
 > [!NOTE]
-> **Verification status.** Claude Code 2.1.22 connecting to this endpoint (`✓ Connected`) and
-> the full protocol path (initialize, tools/list, tools/call, refusal, auth, rate limiting)
-> are confirmed working. **A model autonomously invoking the tools has not been verified by
-> the author.** That is a limitation of the checking environment, not of the code. One line in your
-> terminal will tell you. Report back and this note gets corrected.
+> **Verification status.** Claude Code 2.1.22 connecting to this endpoint (`✓ Connected`), the
+> full protocol path (initialize, tools/list, tools/call, refusal, auth, rate limiting) and
+> **that no change runs without approval** are all confirmed against the live endpoint.
+> **A model autonomously invoking the tools has not been verified by the author.** That is a
+> limitation of the checking environment, not of the code. One line in your terminal will tell
+> you; report back and this note gets corrected.
 
 ## Non-goals
 

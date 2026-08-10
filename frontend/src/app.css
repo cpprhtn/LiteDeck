@@ -1618,3 +1618,24 @@ button.danger {
   font-weight: 700;
   font-size: 10px;
 }
+
+/* 쓰기 승인. 다이얼로그가 diff 를 담을 수 있어야 하므로 넓게 잡는다. */
+.mcp-approve {
+  width: min(760px, 94vw);
+  max-height: 86vh;
+  overflow-y: auto;
+}
+.mcp-command {
+  display: block;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 8px;
+  margin: 4px 0 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.mcp-mode {
+  margin-left: auto;
+  font-size: 11px;
+}

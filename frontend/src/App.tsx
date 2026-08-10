@@ -2,7 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useState, type ReactNode } from
 import Bench from './Bench'
 import { CommandLogPanel } from './CommandLogPanel'
 import { ErrorBoundary } from './ErrorBoundary'
-import { HostKeyDialog, SecretDialog } from './Dialogs'
+import { HostKeyDialog, McpWriteDialog, SecretDialog } from './Dialogs'
 import { ContainerView } from './ContainerView'
 import { FileExplorer } from './FileExplorer'
 import { HostEditor, emptyHost } from './HostEditor'
@@ -36,6 +36,7 @@ import {
   type HostView,
   type SecretPrompt,
   type ServerInfo,
+  type MCPWritePrompt,
 } from './ipc'
 import { getLanguage, initLanguage, k, t, useT } from './i18n'
 import { McpPanel } from './McpPanel'
@@ -76,6 +77,7 @@ export default function App() {
   const t = useT() // shadows the module import; subscribing is the point
   const [benchMode, setBenchMode] = useState<boolean | null>(null)
   const [mcpOpen, setMcpOpen] = useState(false)
+  const [mcpWrite, setMcpWrite] = useState<MCPWritePrompt | null>(null)
   const [boot, setBoot] = useState<BootstrapData | null>(null)
   const [hosts, setHosts] = useState<HostView[]>([])
   const [activeID, setActiveID] = useState<string | null>(null)
@@ -131,6 +133,7 @@ export default function App() {
   useEffect(() => {
     const offKey = on<HostKeyPrompt>('prompt:hostkey', setHostKeyPrompt)
     const offSecret = on<SecretPrompt>('prompt:secret', setSecretPrompt)
+    const offWrite = on<MCPWritePrompt>('prompt:mcpwrite', setMcpWrite)
     const offState = on<ConnectionState>('conn:state', (s) => {
       setHosts((prev) =>
         prev.map((h) => (h.id === s.hostId ? { ...h, state: s.state } : h)),
@@ -140,6 +143,7 @@ export default function App() {
     return () => {
       offKey()
       offSecret()
+      offWrite()
       offState()
     }
   }, [])
@@ -352,6 +356,7 @@ export default function App() {
       {hostKeyPrompt && (
         <HostKeyDialog prompt={hostKeyPrompt} onDone={() => setHostKeyPrompt(null)} />
       )}
+      <McpWriteDialog prompt={mcpWrite} onDone={() => setMcpWrite(null)} />
       {secretPrompt && (
         <SecretDialog prompt={secretPrompt} onDone={() => setSecretPrompt(null)} />
       )}

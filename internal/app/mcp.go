@@ -13,10 +13,9 @@ import (
 
 // The MCP integration's lifecycle and its bindings to the GUI.
 //
-// Read-only for now. What that buys is that the hard question — how a write is
-// approved, and who owns that switch — does not have to be answered before
-// anything ships, and cannot be answered wrongly by accident. There is no
-// "allow writes" flag hidden here to be flipped later without design.
+// Reads need only the per-host share (§4.1). Writes additionally pass the
+// approval gate in mcp_approval.go, whose mode is per host, expires on its own,
+// and is settable from this app and nowhere else.
 
 // Rate limits. One diagnosis fans out across four to six tools, so the burst
 // covers a full turn; the refill is what a small server absorbs without the
@@ -40,9 +39,18 @@ type MCPStatus struct {
 	Token   string `json:"token,omitempty"`
 	// Hosts the AI may read, by host ID.
 	Hosts map[string]bool `json:"hosts"`
+	// Write is the approval mode per host: "ask", "auto" or "bypass", with the
+	// unix second it reverts. A host with no entry is "ask".
+	Write map[string]WritePolicyView `json:"write"`
 	// Snippet is the line to paste into an MCP client.
 	Snippet string `json:"snippet,omitempty"`
 	Error   string `json:"error,omitempty"`
+}
+
+// WritePolicyView is one host's approval mode, as the settings screen sees it.
+type WritePolicyView struct {
+	Mode  string `json:"mode"`
+	Until int64  `json:"until,omitempty"`
 }
 
 // startMCP brings the endpoint up if the user has enabled it.
@@ -79,6 +87,7 @@ func (a *App) startMCP() {
 
 	srv := mcp.New()
 	a.registerMCPTools(srv)
+	a.registerMCPWriteTools(srv)
 
 	listener, url, err := srv.Serve(mcp.Options{
 		Token:   token,
@@ -149,6 +158,13 @@ func (a *App) MCPState() MCPStatus {
 	out.Token = s.Token
 	for k, v := range s.Hosts {
 		out.Hosts[k] = v
+	}
+	out.Write = map[string]WritePolicyView{}
+	for id := range s.Hosts {
+		// Reported through policyFor so an expired window reads as "ask" here
+		// too, rather than the UI showing a mode that no longer applies.
+		p := a.policyFor(id)
+		out.Write[id] = WritePolicyView{Mode: p.Mode, Until: p.Until}
 	}
 
 	a.mcp.mu.Lock()

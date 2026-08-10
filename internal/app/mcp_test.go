@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cpprhtn/LiteDeck/internal/config"
 	"github.com/cpprhtn/LiteDeck/internal/mcp"
@@ -27,31 +29,328 @@ func appWithSettings(t *testing.T) *App {
 	return a
 }
 
+// Registers exactly what the running app registers. An earlier version of this
+// helper called only registerMCPTools, so every test that walked the tool set
+// was blind to the write tools — the tests passed by not looking, which is the
+// same failure they exist to prevent.
 func registered(t *testing.T, a *App) *mcp.Server {
 	t.Helper()
 	s := mcp.New()
 	a.registerMCPTools(s)
+	a.registerMCPWriteTools(s)
 	return s
 }
 
-// The whole reason read-only can ship without the approval model is that there
-// is nothing to approve. This fails the moment somebody adds a tool that
-// changes a server, which is exactly when the design note's §4 has to exist.
-func TestNoToolCanChangeAServer(t *testing.T) {
-	a := appWithSettings(t)
-	forbidden := []string{"write", "restart", "stop", "start", "kill", "delete",
-		"remove", "prune", "exec", "command", "push", "chmod", "rename", "mkdir",
-		"upload", "signal", "elevate", "sudo"}
+// The tool set, pinned.
+//
+// This exists because the first cut of the MCP work shipped without svc_logs
+// and container_logs — the two tools the design note's own diagnosis scenario
+// depends on. Every other test passed, because they all checked properties of
+// the tools that *were* registered. A test that only looks at what is there
+// cannot see what is missing, which is the same shape of hole the i18n coverage
+// tests had. Changing this list should be a deliberate edit, in both directions.
+func TestToolSetIsExactlyWhatWasDesigned(t *testing.T) {
+	want := map[string]bool{
+		// Discovery.
+		"hosts_list": true,
+		// Diagnosis. health_snapshot answers most questions in one round trip;
+		// the rest are the drill-down.
+		"health_snapshot": true,
+		"sys_stats":       true,
+		"svc_list":        true,
+		"svc_logs":        true,
+		"proc_list":       true,
+		"container_list":  true,
+		"container_logs":  true,
+		"net_ports":       true,
+		"sessions_list":   true,
+		// Files.
+		"fs_list": true,
+		"fs_read": true,
+		// Changes. Every one of these passes approveWrite; see
+		// TestWriteToolsCannotRunWithoutApproval.
+		"svc_control":       true,
+		"container_control": true,
+		"proc_signal":       true,
+		"fs_write":          true,
+	}
 
+	got := map[string]bool{}
+	for _, tool := range registered(t, appWithSettings(t)).Tools() {
+		got[tool.Name] = true
+	}
+
+	for name := range want {
+		if !got[name] {
+			t.Errorf("%s is missing. It is in the phase-1 set for a reason; "+
+				"removing it needs the same deliberation as adding one", name)
+		}
+	}
+	for name := range got {
+		if !want[name] {
+			t.Errorf("%s is registered but not in the reviewed set. Add it here "+
+				"once its schema and its blast radius have been looked at", name)
+		}
+	}
+}
+
+// Without logs, a diagnosis stops at "postgresql is failed" and never reaches
+// why. This pins the pairing rather than the individual tools.
+func TestEveryListingHasAMatchingLogTool(t *testing.T) {
+	got := map[string]bool{}
+	for _, tool := range registered(t, appWithSettings(t)).Tools() {
+		got[tool.Name] = true
+	}
+	for listing, logs := range map[string]string{
+		"svc_list":       "svc_logs",
+		"container_list": "container_logs",
+	} {
+		if got[listing] && !got[logs] {
+			t.Errorf("%s exists without %s: a model can see that something failed "+
+				"but never why, which is the question worth asking", listing, logs)
+		}
+	}
+}
+
+// Two things stay out on purpose, and both are easy to add by accident.
+//
+// An arbitrary-command tool makes the per-tool allowlist decorative: switching
+// svc_control off means nothing if the same thing can be typed. Deletion is
+// worse — a restart is undone by restarting, a delete is not.
+func TestNoEscapeHatchAndNoDeletion(t *testing.T) {
+	a := appWithSettings(t)
+	forbidden := map[string]string{
+		"run_command": "an arbitrary-command tool needs its own toggle (§4.5)",
+		"exec":        "an arbitrary-command tool needs its own toggle (§4.5)",
+		"shell":       "an arbitrary-command tool needs its own toggle (§4.5)",
+		"delete":      "deletion is not recoverable; it stays out while this is new",
+		"remove":      "deletion is not recoverable; it stays out while this is new",
+		"prune":       "deletion is not recoverable; it stays out while this is new",
+		"rm":          "deletion is not recoverable; it stays out while this is new",
+	}
 	for _, tool := range registered(t, a).Tools() {
-		for _, verb := range forbidden {
+		for verb, why := range forbidden {
 			if strings.Contains(strings.ToLower(tool.Name), verb) {
-				t.Errorf("%q reads like a write tool. Writes need the per-connection "+
-					"approval model first; shipping one without it cannot be undone",
-					tool.Name)
+				t.Errorf("%q: %s", tool.Name, why)
 			}
 		}
 	}
+}
+
+// The property the whole design rests on: nothing changes a server until a
+// person has said so. Run with the default mode and nobody answering, every
+// write tool must fail rather than proceed.
+func TestWriteToolsCannotRunWithoutApproval(t *testing.T) {
+	a := appWithSettings(t)
+	seedSharedHost(t, a)
+
+	// Short enough that the test is quick, long enough to be a real wait.
+	restore := WriteApprovalTimeoutForTest(150 * time.Millisecond)
+	defer restore()
+
+	writes := map[string]map[string]any{
+		"svc_control":       {"hostId": "h1", "unit": "nginx.service", "action": "restart"},
+		"container_control": {"hostId": "h1", "id": "abc123", "action": "stop"},
+		"proc_signal":       {"hostId": "h1", "pid": float64(4242), "signal": "TERM"},
+		"fs_write":          {"hostId": "h1", "path": "/etc/nginx/nginx.conf", "content": "new"},
+	}
+
+	byName := map[string]mcp.Tool{}
+	for _, tool := range registered(t, a).Tools() {
+		byName[tool.Name] = tool
+	}
+
+	for name, args := range writes {
+		tool, ok := byName[name]
+		if !ok {
+			t.Errorf("%s is not registered", name)
+			continue
+		}
+		if _, err := tool.Handler(context.Background(), args); err == nil {
+			t.Errorf("%s ran with nobody approving it", name)
+		} else if !strings.Contains(err.Error(), "nobody answered") {
+			t.Errorf("%s failed for the wrong reason: %v", name, err)
+		}
+	}
+
+	// And the refusal is in the record, whichever way it went.
+	var timeouts int
+	for _, e := range a.CommandLog() {
+		if e.Origin == "ai" && strings.Contains(e.Line, "timeout") {
+			timeouts++
+		}
+	}
+	if timeouts != len(writes) {
+		t.Errorf("logged %d timeouts, want %d — a write nobody approved still "+
+			"belongs in the record", timeouts, len(writes))
+	}
+}
+
+// A declined write must not run, and must tell the model not to retry.
+func TestDeclinedWriteDoesNotRun(t *testing.T) {
+	a := appWithSettings(t)
+	seedSharedHost(t, a)
+
+	// Answer "no" as soon as the dialog is raised.
+	a.emit = func(event string, payload any) {
+		if event != "prompt:mcpwrite" {
+			return
+		}
+		p, _ := payload.(MCPWritePrompt)
+		go func() { _ = a.AnswerMCPWrite(p.ID, false) }()
+	}
+
+	_, err := a.approveWrite(writeRequest{hostID: "h1", tool: "svc_control", summary: "restart nginx"})
+	if err == nil {
+		t.Fatal("a declined write must fail")
+	}
+	if !strings.Contains(err.Error(), "Do not retry") {
+		t.Errorf("the model should be told not to retry: %v", err)
+	}
+}
+
+// The dialog has to carry what will actually happen. It is the only place a
+// person sees the real command or the real diff — the MCP client's own
+// confirmation shows the arguments a model composed, which is a different thing.
+func TestApprovalPromptCarriesTheRealChange(t *testing.T) {
+	a := appWithSettings(t)
+	seedSharedHost(t, a)
+
+	var got MCPWritePrompt
+	a.emit = func(event string, payload any) {
+		if event != "prompt:mcpwrite" {
+			return
+		}
+		got, _ = payload.(MCPWritePrompt)
+		go func() { _ = a.AnswerMCPWrite(got.ID, true) }()
+	}
+
+	if _, err := a.approveWrite(writeRequest{
+		hostID: "h1", tool: "svc_control",
+		summary: "restart nginx.service",
+		command: "systemctl restart -- nginx.service",
+	}); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if got.Command != "systemctl restart -- nginx.service" {
+		t.Errorf("the prompt must carry the literal command, got %q", got.Command)
+	}
+	if got.Host != "prod" {
+		t.Errorf("the prompt must name the host a person recognises, got %q", got.Host)
+	}
+}
+
+// Nothing an MCP client sends may influence the mode.
+func TestApprovalModeCannotBeReachedOverTheWire(t *testing.T) {
+	a := appWithSettings(t)
+	for _, tool := range registered(t, a).Tools() {
+		name := strings.ToLower(tool.Name)
+		for _, verb := range []string{"policy", "approve", "bypass", "mode", "permission"} {
+			if strings.Contains(name, verb) {
+				t.Errorf("%q looks like it reaches the approval policy. The mode is "+
+					"set in the app and nowhere else (§4.3)", tool.Name)
+			}
+		}
+		props, _ := tool.InputSchema["properties"].(map[string]any)
+		for arg := range props {
+			switch strings.ToLower(arg) {
+			case "bypass", "approve", "approved", "force", "mode", "elevate", "sudo", "confirm":
+				t.Errorf("%s takes an argument named %q. A model that can ask for its "+
+					"own approval is the injection path this design exists to close",
+					tool.Name, arg)
+			}
+		}
+	}
+}
+
+// Relaxed modes expire on their own. A window nobody remembers opening is the
+// one that causes the incident.
+func TestRelaxedModeExpires(t *testing.T) {
+	a := appWithSettings(t)
+	seedSharedHost(t, a)
+
+	a.SetMCPWritePolicy("h1", WriteBypass, 60)
+	if got := a.policyFor("h1").Mode; got != WriteBypass {
+		t.Fatalf("mode = %q, want bypass", got)
+	}
+
+	// Reach past the stored expiry rather than waiting for it.
+	s := a.settings.Get().MCP
+	s.Write["h1"] = config.MCPWritePolicy{Mode: WriteBypass, Until: time.Now().Add(-time.Second).Unix()}
+	if err := a.settings.SetMCP(s); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if got := a.policyFor("h1").Mode; got != WriteAsk {
+		t.Errorf("an expired window must read as ask, got %q", got)
+	}
+}
+
+// A window longer than the ceiling is clamped, not honoured.
+func TestWriteWindowIsBounded(t *testing.T) {
+	a := appWithSettings(t)
+	seedSharedHost(t, a)
+
+	a.SetMCPWritePolicy("h1", WriteBypass, 60*24*365)
+	until := time.Unix(a.policyFor("h1").Until, 0)
+	if until.After(time.Now().Add(maxWriteWindow + time.Minute)) {
+		t.Errorf("window runs to %v, past the %v ceiling", until, maxWriteWindow)
+	}
+}
+
+// Bypass skips the dialog. That is the point of it, and the log still records
+// every call — with bypass on, attribution is what is left instead of defence.
+func TestBypassSkipsTheDialogButNotTheLog(t *testing.T) {
+	a := appWithSettings(t)
+	seedSharedHost(t, a)
+	a.SetMCPWritePolicy("h1", WriteBypass, 30)
+
+	raised := false
+	a.emit = func(event string, _ any) {
+		if event == "prompt:mcpwrite" {
+			raised = true
+		}
+	}
+
+	out, err := a.approveWrite(writeRequest{hostID: "h1", tool: "svc_control", summary: "restart nginx"})
+	if err != nil {
+		t.Fatalf("bypass should approve: %v", err)
+	}
+	if raised {
+		t.Error("bypass raised a dialog")
+	}
+	if out != outcomeAuto {
+		t.Errorf("outcome = %q, want auto-approved", out)
+	}
+
+	var found bool
+	for _, e := range a.CommandLog() {
+		if e.Origin == "ai" && strings.Contains(e.Line, "auto-approved") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("a bypassed write must still be in the record")
+	}
+}
+
+// Sharing a host to be read must not also let it be changed.
+func TestSharingForReadingDoesNotAllowWriting(t *testing.T) {
+	a := appWithSettings(t)
+	seedSharedHost(t, a)
+	if got := a.policyFor("h1").Mode; got != WriteAsk {
+		t.Errorf("a freshly shared host is %q; sharing to read is not sharing to write", got)
+	}
+}
+
+func seedSharedHost(t *testing.T, a *App) {
+	t.Helper()
+	if err := a.hosts.Upsert(config.Host{
+		ID: "h1", Name: "prod", Hostname: "10.0.0.5", Port: 22, User: "junwon",
+		Auth: []config.AuthMethod{config.AuthAgent},
+	}); err != nil {
+		t.Fatalf("seed host: %v", err)
+	}
+	a.SetMCPHost("h1", true)
 }
 
 // Registering a server in LiteDeck must not be what hands it to an AI.
@@ -266,5 +565,77 @@ func TestAICallsReachTheCommandLog(t *testing.T) {
 	// Arguments are sorted so the same call always reads the same way.
 	if e.Line != "svc_list(hostId=h1, state=failed)" {
 		t.Errorf("line = %q", e.Line)
+	}
+}
+
+// logResult carries the only real logic in the log tools: what to keep, what to
+// say when nothing matched.
+func TestLogResultShapesOutputForAModel(t *testing.T) {
+	body := "line one\nERROR connection refused\nline three\n"
+
+	t.Run("keeps every line when nothing filters", func(t *testing.T) {
+		got := logResult("nginx", body, "")
+		lines, _ := got["lines"].([]string)
+		if len(lines) != 3 {
+			t.Fatalf("lines = %v", lines)
+		}
+		if _, noted := got["note"]; noted {
+			t.Error("a non-empty log should not carry the empty note")
+		}
+	})
+
+	t.Run("grep is case-insensitive and reports what it scanned", func(t *testing.T) {
+		got := logResult("nginx", body, "error")
+		lines, _ := got["lines"].([]string)
+		if len(lines) != 1 || !strings.Contains(lines[0], "connection refused") {
+			t.Fatalf("lines = %v", lines)
+		}
+		if got["matched"] != 1 || got["scanned"] != 3 {
+			t.Errorf("matched/scanned = %v/%v, want 1/3", got["matched"], got["scanned"])
+		}
+	})
+
+	// An empty result is the answer most likely to be misread: a model handed
+	// nothing concludes the service never logged and stops looking.
+	t.Run("explains an empty result", func(t *testing.T) {
+		got := logResult("nginx", "", "")
+		if lines, _ := got["lines"].([]string); len(lines) != 0 {
+			t.Fatalf("lines = %v", lines)
+		}
+		note, _ := got["note"].(string)
+		if !strings.Contains(note, "svc_list") {
+			t.Errorf("the note should suggest checking the unit name: %q", note)
+		}
+	})
+
+	// The tail explains a failure; the head is start-up noise.
+	t.Run("keeps the tail when capping", func(t *testing.T) {
+		var b strings.Builder
+		for i := 0; i < maxLogLines+50; i++ {
+			fmt.Fprintf(&b, "line %d\n", i)
+		}
+		got := logResult("nginx", b.String(), "")
+		lines, _ := got["lines"].([]string)
+		if len(lines) != maxLogLines {
+			t.Fatalf("kept %d lines, want %d", len(lines), maxLogLines)
+		}
+		if lines[len(lines)-1] != fmt.Sprintf("line %d", maxLogLines+49) {
+			t.Errorf("the last line was dropped: %q", lines[len(lines)-1])
+		}
+	})
+}
+
+// A malformed time expression makes journalctl fail in a way that reads to a
+// model like the unit is broken, so it is refused before it is sent.
+func TestJournalTimeExpressionsAreValidated(t *testing.T) {
+	for _, ok := range []string{"", "-10m", "1 hour ago", "2026-08-10 09:00:00", "-1h"} {
+		if !safeJournalArg(ok) {
+			t.Errorf("%q should be accepted", ok)
+		}
+	}
+	for _, bad := range []string{"$(whoami)", "`id`", "a;b", "x|y", strings.Repeat("a", 41)} {
+		if safeJournalArg(bad) {
+			t.Errorf("%q should be refused", bad)
+		}
 	}
 }
