@@ -101,6 +101,29 @@ $ powershell -EncodedCommand ⟨utf8 prelude⟩ Restart-Service -Name 'Spooler' 
 
 Passwords go over stdin, so **the command line is safe to display verbatim**. The log stays on your machine and is never sent anywhere.
 
+### The editor: nothing installed on either end
+
+Editing a remote file usually means installing something. Either `vscode-server` goes on the
+server (hundreds of MB), or you live in the server's `vi` through a terminal. LiteDeck does
+**neither.**
+
+- **On the server.** Nothing is needed. Files are read and written over SFTP, which SSH
+  already provides. Whether the server has an editor at all makes no difference
+- **On your machine.** You do not need VS Code. The editor ships inside the app (CodeMirror,
+  24 language modes) and loads when you open the first file, so browsing a directory and
+  quitting costs nothing
+
+Typing `code .` or `vi foo.conf` in the terminal is **caught by the app before the line reaches
+the server**, and the file tab opens instead. The server never learns this feature exists. So
+neither VS Code nor vi has to be installed there, and equally **nothing opens on the server side.**
+
+Saving shows a diff against the server's current copy first, then writes to a temp file and swaps
+it in with `rename`, so an interrupted save cannot leave the original half-written.
+
+> For contrast: VS Code Remote-SSH installs a server on your server. `vscode-server` eating
+> memory on a small VPS is a well-known problem. If you want a real remote IDE, that is the right
+> tool. **If you do not want to upload hundreds of megabytes to change one config file**, this is.
+
 ## How it compares
 
 > [!NOTE]
@@ -348,6 +371,27 @@ If you run a combination that is not listed, please [open an issue](https://gith
 systemd below 246 (Ubuntu 20.04, RHEL 8) has no JSON output, so LiteDeck **falls back to parsing the table** automatically. It detects the version and picks the format; there is nothing for you to configure.
 
 Connecting to an OS with no adapter still gives you **files and a terminal**: SFTP and PTY come from SSH itself. The remaining tabs say which OS was detected and why they cannot help.
+
+## What is coming
+
+> [!IMPORTANT]
+> **Not built yet.** This section alone is a plan, and none of it is in the build you download
+> today. Everything else in this README is a working feature.
+
+**An MCP server (planned for v0.2).** LiteDeck would open an MCP endpoint on localhost so that
+Claude Code or Claude Desktop can work a server in plain language. Ask *"why is myapp returning
+500s"* and the model queries service state, logs and disk for itself.
+
+What the design already fixes:
+
+- **The AI sits where the GUI sat.** Same adapters, same SSH connection, same Command Log.
+  Commands the AI causes scroll past on screen tagged `[AI]`, like everyone else's
+- **Still nothing installed on the server.** Putting an AI tool on the server means a runtime and
+  a resident process, and its context-gathering hammers a small box's I/O. All of that load stays
+  on the well-specified client
+- **Writes go through an approval the app owns.** The AI cannot turn it off. If you want an
+  autonomous mode you enable it inside LiteDeck, and you can set it per host
+- **Read-only ships first.** Querying comes before acting
 
 ## Non-goals
 
