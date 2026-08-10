@@ -31,11 +31,12 @@
 
 <p align="center">
   <img src="docs/media/01-tour.gif" width="880"
-       alt="LiteDeck: files, services, processes, containers and network in one window">
+       alt="LiteDeck: files, editor, services, processes, containers, network, sessions and terminal in one window">
 </p>
 
 <p align="center">
-  <sub>One connection covers <b>files, services, processes, containers and the network</b>. Nothing was installed on the server.</sub>
+  <sub>One connection covers <b>files, the editor, services, processes, containers, the network, sessions and a terminal</b>.<br>
+  Nothing was installed on the server.</sub>
 </p>
 
 ---
@@ -65,14 +66,13 @@ rendering: 100% on your machine
 
 All the server does is **run commands it already had and hand back text**. Which means:
 
-- **The UI responds at local speed.** Latency only affects how fresh the data is
 - **No server load** except during the instant a command runs
-- **Nothing installed, no extra ports, no relay.** Port 22 and nothing else
+- **Nothing installed, no extra ports, no relay.** The SSH port you already have open, and nothing else
 
 ## Five principles
 
 1. **Zero server install.** No agent, no daemon, no package. What is left on the server is whatever you asked it to do[^tmp]
-2. **SSH only.** One port. No web server, no relay
+2. **SSH only.** The SSH port you already have open. No web server, no relay
 3. **Beyond files.** Processes, services, containers and health, not just a file browser
 4. **No account, no telemetry, open source.** Nothing to sign up for, nothing collected, all source public
 5. **Lightweight.** Not Electron. A 5–10 MB download, 13–16 MB installed, cold start under a second
@@ -142,8 +142,14 @@ Typing `code .` or `vi foo.conf` in the terminal is **caught by the app before t
 the server**, and the file tab opens instead. The server never learns this feature exists. So
 neither VS Code nor vi has to be installed there, and equally **nothing opens on the server side.**
 
-Saving shows a diff against the server's current copy first, then writes to a temp file and swaps
-it in with `rename`, so an interrupted save cannot leave the original half-written.
+<p align="center">
+  <img src="docs/media/05-editor.gif" width="820" alt="Open a file, edit it, see the diff before saving">
+</p>
+
+<p align="center"><sub>Opening a file from the tree puts a syntax-highlighted editor beside it. Pressing save brings up <b>a diff against what is on the server right now</b>.</sub></p>
+
+Once you accept it, the write goes to a temp file and swaps in with `rename`, so an interrupted
+save cannot leave the original half-written.
 
 > For contrast: VS Code Remote-SSH installs a server on your server. `vscode-server` eating
 > memory on a small VPS is a well-known problem. If you want a real remote IDE, that is the right

@@ -210,6 +210,15 @@ RUN set -eux; \
       '[Install]' 'WantedBy=multi-user.target' > /etc/systemd/system/certbot-renew.service; \
     systemctl enable orders-api orders-worker node-exporter
 
+# Docker inside Docker cannot stack overlay on overlay — every `docker run` in
+# here dies on "mount source: overlay ... invalid argument" with the default
+# driver. vfs is slow and wastes disk, which is the correct trade for a fixture
+# that holds six small containers. The containerd snapshotter has to go too: it
+# does its own overlay mounts and ignores storage-driver.
+RUN mkdir -p /etc/docker \
+ && printf '%s\n' '{"storage-driver":"vfs","features":{"containerd-snapshotter":false}}' \
+      > /etc/docker/daemon.json
+
 # nginx gets a second listener so the network tab has something to show beyond
 # port 80 alone.
 RUN printf '%s\n' \
