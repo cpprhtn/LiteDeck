@@ -30,12 +30,12 @@
 </p>
 
 <p align="center">
-  <img src="docs/media/01-edit-and-save.gif" width="880"
-       alt="LiteDeck: 서버에 접속해 설정 파일을 열고, 고치고, 저장 전 diff 를 확인한다">
+  <img src="docs/media/01-tour.gif" width="880"
+       alt="LiteDeck: files, services, processes, containers and network in one window">
 </p>
 
 <p align="center">
-  <sub>Connect, open a config file, edit it, and see the <b>diff before saving</b>. Nothing was installed on the server.</sub>
+  <sub>One connection covers <b>files, services, processes, containers and the network</b>. Nothing was installed on the server.</sub>
 </p>
 
 ---
@@ -102,7 +102,7 @@ All the server does is **run commands it already had and hand back text**. Which
 ### Command Log: learn the CLI from the GUI
 
 <p align="center">
-  <img src="docs/media/02-command-log.gif" width="820" alt="Command Log">
+  <img src="docs/media/03-command-log.gif" width="820" alt="Command Log">
 </p>
 
 <p align="center"><sub>A restart is refused for want of privileges, so the app <b>asks</b>. The command it ran stays visible; the password went over stdin and does not.</sub></p>
@@ -120,6 +120,13 @@ $ powershell -EncodedCommand ⟨utf8 prelude⟩ Restart-Service -Name 'Spooler' 
 Passwords go over stdin, so **the command line is safe to display verbatim**. The log stays on your machine and is never sent anywhere.
 
 ### The editor: nothing installed on either end
+
+<p align="center">
+  <img src="docs/media/02-terminal-jump.gif" width="820" alt="code . and vi in the terminal">
+</p>
+
+<p align="center"><sub>Typing <code>code .</code> is caught <b>before the line reaches the server</b> and opens the file tab instead. <code>vi</code> on a new path opens an editor tab. Neither VS Code nor vi needs to exist on the server.</sub></p>
+
 
 Editing a remote file usually means installing something. Either `vscode-server` goes on the
 server (hundreds of MB), or you live in the server's `vi` through a terminal. LiteDeck does
@@ -380,7 +387,7 @@ Connecting to an OS with no adapter still gives you **files and a terminal**: SF
 ## MCP integration
 
 <p align="center">
-  <img src="docs/media/03-mcp-approval.gif" width="820" alt="MCP approval">
+  <img src="docs/media/04-mcp-approval.gif" width="820" alt="MCP approval">
 </p>
 
 <p align="center"><sub>An MCP client tries to change a file and the <b>diff against what is on the server</b> comes up. Anything approved can be undone.</sub></p>

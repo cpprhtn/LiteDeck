@@ -237,6 +237,13 @@ export function TerminalView({
     })()
     return () => {
       cancelled = true
+      // Release the claim on the way out, or the pair of guards cancels the
+      // feature rather than the duplicate: React's development double-invoke
+      // cancels the first pass here and the second finds the host already
+      // claimed, so nothing ever opens. Releasing keeps the single-open
+      // guarantee — the cancelled pass returns before it can open anything —
+      // while letting the pass that survives do its job.
+      if (adopted.current === hostID) adopted.current = null
     }
   }, [hostID, visible, openTab, onError])
 

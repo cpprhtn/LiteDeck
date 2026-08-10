@@ -30,12 +30,12 @@
 </p>
 
 <p align="center">
-  <img src="docs/media/01-edit-and-save.gif" width="880"
-       alt="LiteDeck: 서버에 접속해 설정 파일을 열고, 고치고, 저장 전 diff 를 확인한다">
+  <img src="docs/media/01-tour.gif" width="880"
+       alt="LiteDeck: 파일·서비스·프로세스·컨테이너·네트워크를 한 창에서">
 </p>
 
 <p align="center">
-  <sub>접속 · 설정 파일 열기 · 편집 · <b>저장 전 diff</b>. 서버에는 아무것도 설치하지 않았습니다.</sub>
+  <sub>접속 한 번으로 <b>파일 · 서비스 · 프로세스 · 컨테이너 · 네트워크</b>까지. 서버에는 아무것도 설치하지 않았습니다.</sub>
 </p>
 
 ---
@@ -98,7 +98,7 @@ RDP·VNC·TeamViewer는 서버의 **화면 픽셀을 영상으로 스트리밍**
 ### Command Log: GUI로 CLI를 배웁니다
 
 <p align="center">
-  <img src="docs/media/02-command-log.gif" width="820" alt="Command Log">
+  <img src="docs/media/03-command-log.gif" width="820" alt="Command Log">
 </p>
 
 <p align="center"><sub>재시작이 권한 부족으로 거부되자 <b>물어봅니다</b>. 실행된 명령은 그대로 보이고, 비밀번호는 stdin 으로 가서 보이지 않습니다.</sub></p>
@@ -116,6 +116,13 @@ $ powershell -EncodedCommand ⟨utf8 prelude⟩ Restart-Service -Name 'Spooler' 
 비밀번호는 표준 입력으로 전달되므로 **명령줄을 그대로 보여줘도 안전합니다.** 이 기록은 로컬에만 남고 외부로 나가지 않습니다.
 
 ### 편집기: 양쪽 어디에도 설치가 없습니다
+
+<p align="center">
+  <img src="docs/media/02-terminal-jump.gif" width="820" alt="터미널에서 code . 과 vi">
+</p>
+
+<p align="center"><sub>터미널에 <code>code .</code> 을 치면 <b>그 줄이 서버로 가기 전에</b> 앱이 가로채 파일 탭으로 옵니다. <code>vi</code> 로 새 파일을 열면 편집기 탭이 열립니다. 서버에는 VS Code 도 vi 도 필요 없습니다.</sub></p>
+
 
 원격 파일을 고치려면 보통 둘 중 하나를 깝니다. 서버에 `vscode-server`(수백 MB)를 올리거나,
 서버의 `vi`·`nano`를 터미널로 쓰거나. LiteDeck은 **둘 다 안 합니다.**
@@ -363,7 +370,7 @@ systemd 246 미만(Ubuntu 20.04, RHEL 8)에는 JSON 출력이 없어 **표 파�
 ## MCP 연동
 
 <p align="center">
-  <img src="docs/media/03-mcp-approval.gif" width="820" alt="MCP approval">
+  <img src="docs/media/04-mcp-approval.gif" width="820" alt="MCP approval">
 </p>
 
 <p align="center"><sub>MCP 클라이언트가 파일을 고치려 하자 <b>서버의 현재 내용 대비 diff</b> 가 뜹니다. 승인한 것은 되돌릴 수 있습니다.</sub></p>
