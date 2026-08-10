@@ -47,6 +47,19 @@ export interface BootstrapData {
 
 export type ServerPlatform = 'linux' | 'windows' | 'darwin' | 'bsd' | 'unknown'
 
+export interface AIChange {
+  id: string
+  hostId: string
+  path: string
+  at: string
+  /** 'write' | 'delete' */
+  action: string
+  /** The change made a file that did not exist; undoing it removes the file. */
+  created: boolean
+  bytes: number
+  undoable: boolean
+}
+
 export interface MCPWritePrompt {
   id: string
   hostId: string
@@ -435,6 +448,8 @@ interface Bindings {
   RotateMCPToken(): Promise<MCPStatus>
   SetMCPWritePolicy(hostID: string, mode: string, minutes: number): Promise<MCPStatus>
   AnswerMCPWrite(id: string, approved: boolean): Promise<void>
+  AIChanges(hostID: string): Promise<AIChange[]>
+  RestoreAIChange(id: string): Promise<ActionResult>
   SetLanguage(tag: string): Promise<ActionResult>
   SaveHost(h: Host): Promise<void>
   DeleteHost(id: string): Promise<void>
@@ -637,6 +652,8 @@ export const RotateMCPToken = () => api().RotateMCPToken()
 export const SetMCPWritePolicy = (hostID: string, mode: string, minutes: number) =>
   api().SetMCPWritePolicy(hostID, mode, minutes)
 export const AnswerMCPWrite = (id: string, approved: boolean) => api().AnswerMCPWrite(id, approved)
+export const AIChanges = (hostID: string) => api().AIChanges(hostID)
+export const RestoreAIChange = (id: string) => api().RestoreAIChange(id)
 export const SetLanguage = (tag: string) => api().SetLanguage(tag)
 export const SaveHost = (h: Host) => api().SaveHost(h)
 export const DeleteHost = (id: string) => api().DeleteHost(id)

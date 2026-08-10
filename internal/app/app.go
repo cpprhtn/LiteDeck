@@ -10,6 +10,7 @@ import (
 
 	"github.com/cpprhtn/LiteDeck/internal/config"
 	"github.com/cpprhtn/LiteDeck/internal/i18n"
+	"github.com/cpprhtn/LiteDeck/internal/rollback"
 	"github.com/cpprhtn/LiteDeck/internal/secret"
 	"github.com/cpprhtn/LiteDeck/internal/sshcore"
 	wr "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -37,6 +38,7 @@ type App struct {
 	logs      *logRegistry
 	mcp       mcpState
 	approvals *approvalBridge
+	rollback  *rollback.Store
 
 	// emit sends an event to the frontend. It is a field rather than a direct
 	// call to the Wails runtime so the prompt bridge — the one piece of logic
@@ -97,6 +99,9 @@ func (a *App) Startup(ctx context.Context) {
 	// Preferences load before the host list: a corrupt hosts.json must not cost
 	// the user their language, and neither file should break the other.
 	a.settings = config.OpenSettings(dir)
+	// What an AI overwrites is kept here, because the approval dialog stops
+	// being a safety net the moment somebody turns it off and goes to bed.
+	a.rollback = rollback.Open(dir)
 	// The stored choice if there is one, the environment otherwise. The frontend
 	// refines this a moment later with what the webview reports, which is the
 	// better answer where the two disagree — but a message raised before that

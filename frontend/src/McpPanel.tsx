@@ -5,6 +5,9 @@ import {
   SetMCPEnabled,
   SetMCPHost,
   SetMCPWritePolicy,
+  AIChanges,
+  RestoreAIChange,
+  type AIChange,
   type HostView,
   type MCPStatus,
 } from './ipc'
@@ -35,6 +38,7 @@ export function McpPanel({
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
   const [reveal, setReveal] = useState(false)
+  const [changes, setChanges] = useState<AIChange[]>([])
 
   const load = useCallback(async () => {
     try {
@@ -47,6 +51,18 @@ export function McpPanel({
   useEffect(() => {
     void load()
   }, [load])
+
+  const loadChanges = useCallback(async () => {
+    try {
+      setChanges((await AIChanges('')) ?? [])
+    } catch {
+      // The list is a remedy, not the app. It failing must not close the panel.
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadChanges()
+  }, [loadChanges])
 
   const apply = async (fn: () => Promise<MCPStatus>) => {
     setBusy(true)
@@ -193,6 +209,46 @@ export function McpPanel({
                 </select>
               )}
             </label>
+          ))}
+        </div>
+
+        <h3 className="mcp-heading">
+          {t('AI 가 바꾼 파일')}
+          <span className="muted small"> {t('{n}건', { n: changes.length })}</span>
+        </h3>
+        <p className="muted small">
+          {t(
+            '변경 전 내용을 이 컴퓨터에 보관합니다. 안 묻기로 두고 자리를 비웠을 때, 방어 대신 남는 것이 이것입니다. 서버에는 아무것도 남기지 않습니다.',
+          )}
+        </p>
+        {changes.length === 0 && (
+          <div className="placeholder small">{t('아직 없습니다.')}</div>
+        )}
+        <div className="mcp-changes">
+          {changes.slice(0, 30).map((c) => (
+            <div key={c.id} className="mcp-change">
+              <span className="mono ellipsis" title={c.path}>
+                {c.path}
+              </span>
+              <span className="muted small">
+                {c.at} · {c.action === 'delete' ? t('삭제') : c.created ? t('새로 만듦') : t('덮어씀')}
+              </span>
+              <button
+                className="ghost small-btn"
+                disabled={busy || !c.undoable}
+                title={c.undoable ? undefined : t('사본을 남기기에 너무 커서 되돌릴 수 없습니다')}
+                onClick={() =>
+                  void RestoreAIChange(c.id)
+                    .then((r) => {
+                      if (!r.ok && r.error) onError(r.error)
+                      return loadChanges()
+                    })
+                    .catch((e) => onError(String(e)))
+                }
+              >
+                {t('되돌리기')}
+              </button>
+            </div>
           ))}
         </div>
 

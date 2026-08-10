@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/cpprhtn/LiteDeck/internal/mcp"
+	"github.com/cpprhtn/LiteDeck/internal/rollback"
 )
 
 // The write tools (§5.3 of the MCP design note).
@@ -174,11 +175,12 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 			// rather than a wall of new text. A file that does not exist yet is
 			// a creation, which is fine and shows as a diff against nothing.
 			var before string
+			existed := false
 			if existing, err := a.ReadTextFile(hostID, path); err == nil {
 				if existing.Binary {
 					return nil, fmt.Errorf("%s is a binary file", path)
 				}
-				before = existing.Content
+				before, existed = existing.Content, true
 			}
 			if before == content {
 				return map[string]any{
@@ -198,7 +200,74 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 			if err != nil {
 				return nil, err
 			}
+			// Recorded before the write, so an interrupted change still leaves
+			// something to go back to.
+			a.recordAIChange(hostID, path, rollback.ActionWrite, []byte(before), !existed)
 			return withOutcome(a.WriteTextFile(hostID, path, content), out), nil
+		},
+	})
+
+	s.Register(mcp.Tool{
+		Name: "fs_delete",
+		Description: "Delete a single file. Directories are not accepted — a recursive delete " +
+			"is not something to do without looking at it, and it stays in the app. The file's " +
+			"contents are kept locally first, so the user can put it back.",
+		InputSchema: obj(map[string]any{
+			"hostId": hostArg,
+			"path":   map[string]any{"type": "string", "description": "Absolute path to a file."},
+		}, "hostId", "path"),
+		Handler: func(_ context.Context, args map[string]any) (any, error) {
+			hostID, err := a.mcpHost(args)
+			if err != nil {
+				return nil, err
+			}
+			path := str(args, "path")
+			if path == "" {
+				return nil, fmt.Errorf("path is required")
+			}
+
+			// The same guard the GUI uses. A protected path needs the user to
+			// type it out, which a model can do — so it is refused outright
+			// here rather than pretending the typing meant something.
+			cleaned, err := CleanRemotePath(path)
+			if err != nil {
+				return nil, err
+			}
+			if IsProtectedPath(cleaned) || cleaned == "/" {
+				return nil, fmt.Errorf("%s is a protected path. Deleting it is done in the app, "+
+					"where a person has to type it out", cleaned)
+			}
+
+			// Read it first: without the contents this is not undoable, and the
+			// whole reason deletion is offered at all is that it is.
+			var before string
+			existing, err := a.ReadTextFile(hostID, cleaned)
+			switch {
+			case err != nil:
+				return nil, fmt.Errorf("%s: %w", cleaned, err)
+			case existing.Binary || existing.TooLarge:
+				// No copy means no undo. Say which, rather than deleting it and
+				// discovering later that it is gone for good.
+				return nil, fmt.Errorf("%s cannot be copied first (binary or too large), so it "+
+					"could not be undone. Delete it in the app or a terminal", cleaned)
+			default:
+				before = existing.Content
+			}
+
+			out, err := a.approveWrite(writeRequest{
+				hostID:  hostID,
+				tool:    "fs_delete",
+				summary: fmt.Sprintf("delete %s", cleaned),
+				command: fmt.Sprintf("rm -- %s", cleaned),
+				path:    cleaned,
+				before:  before,
+				after:   "",
+			})
+			if err != nil {
+				return nil, err
+			}
+			a.recordAIChange(hostID, cleaned, rollback.ActionDelete, []byte(before), false)
+			return withOutcome(a.DeletePaths(hostID, []string{cleaned}, false, ""), out), nil
 		},
 	})
 }

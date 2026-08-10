@@ -396,12 +396,17 @@ context-gathering hammers a small box's I/O. All of that load stays on the clien
 `sessions_list`. One `health_snapshot` returns CPU, memory, disk, failed units, unhealthy
 containers and exposed ports; `svc_logs` is what says *why* something died.
 
-**Four write tools**: `svc_control` (start/stop/restart), `container_control`, `proc_signal`
-(TERM/KILL) and `fs_write`. Every one goes through approval.
+**Five write tools**: `svc_control` (start/stop/restart), `container_control`, `proc_signal`
+(TERM/KILL), `fs_write` and `fs_delete`.
 
-**Deliberately absent**: arbitrary command execution and deletion. An arbitrary-command tool
-makes the per-tool allowlist decorative, and a restart is undone by restarting where a delete
-is not.
+**They can be undone.** Before an AI overwrites or deletes a file, the previous contents are
+kept **on this machine**, and the AI panel restores them per file. When you have told it to stop
+asking and walked away, this is what you have instead of prevention. Nothing is left on the
+server, and `fs_delete` refuses outright when no copy can be made (binary, or too large).
+
+**Deliberately absent**: arbitrary command execution, recursive directory deletion, and removing
+containers or images. An arbitrary-command tool makes the per-tool allowlist decorative; the
+other three cannot be copied first, so nothing could put them back.
 
 **What holds it back**
 

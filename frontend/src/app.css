@@ -1715,3 +1715,20 @@ button.danger {
 .mcp-approve-actions {
   flex-wrap: wrap;
 }
+
+/* AI 가 바꾼 파일. 되돌리기는 사람의 수단이라 앱에만 있다. */
+.mcp-changes {
+  display: flex;
+  flex-direction: column;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.mcp-change {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+}

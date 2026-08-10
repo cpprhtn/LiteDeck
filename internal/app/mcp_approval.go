@@ -76,7 +76,7 @@ func asksAbout(mode, tool string) bool {
 	default:
 		// Only the tools whose dialog shows something the client could not:
 		// a diff against what is on the server right now.
-		return tool == "fs_write" || tool == "fs_edit"
+		return tool == "fs_write" || tool == "fs_edit" || tool == "fs_delete"
 	}
 }
 

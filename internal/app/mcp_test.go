@@ -10,6 +10,7 @@ import (
 
 	"github.com/cpprhtn/LiteDeck/internal/config"
 	"github.com/cpprhtn/LiteDeck/internal/mcp"
+	"github.com/cpprhtn/LiteDeck/internal/rollback"
 	"github.com/cpprhtn/LiteDeck/internal/sshcore"
 )
 
@@ -18,6 +19,7 @@ func appWithSettings(t *testing.T) *App {
 	a := New()
 	a.configDir = t.TempDir()
 	a.settings = config.OpenSettings(a.configDir)
+	a.rollback = rollback.Open(a.configDir)
 	store, err := config.Open(a.configDir)
 	if err != nil {
 		t.Fatalf("open host store: %v", err)
@@ -74,6 +76,7 @@ func TestToolSetIsExactlyWhatWasDesigned(t *testing.T) {
 		"container_control": true,
 		"proc_signal":       true,
 		"fs_write":          true,
+		"fs_delete":         true,
 	}
 
 	got := map[string]bool{}
@@ -124,10 +127,12 @@ func TestNoEscapeHatchAndNoDeletion(t *testing.T) {
 		"run_command": "an arbitrary-command tool needs its own toggle (§4.5)",
 		"exec":        "an arbitrary-command tool needs its own toggle (§4.5)",
 		"shell":       "an arbitrary-command tool needs its own toggle (§4.5)",
-		"delete":      "deletion is not recoverable; it stays out while this is new",
-		"remove":      "deletion is not recoverable; it stays out while this is new",
-		"prune":       "deletion is not recoverable; it stays out while this is new",
-		"rm":          "deletion is not recoverable; it stays out while this is new",
+		// Deletion is offered now, but only for a single file whose contents
+		// were copied first. Container and image removal stay out: nothing
+		// copies those, so nothing can put them back.
+		"container_remove": "removing a container cannot be undone",
+		"image_remove":     "removing an image cannot be undone",
+		"prune":            "pruning cannot be undone",
 	}
 	for _, tool := range registered(t, a).Tools() {
 		for verb, why := range forbidden {
@@ -156,6 +161,7 @@ func TestWhichModeAsksAboutWhat(t *testing.T) {
 		{WriteAsk, "proc_signal", false},
 		{WriteAsk, "fs_write", true},
 		{WriteAsk, "fs_edit", true},
+		{WriteAsk, "fs_delete", true},
 
 		{WriteStrict, "svc_control", true},
 		{WriteStrict, "proc_signal", true},
@@ -206,6 +212,34 @@ func TestFileWritesAreNotSilentByDefault(t *testing.T) {
 	}
 	if timeouts != 1 {
 		t.Errorf("logged %d timeouts, want 1", timeouts)
+	}
+}
+
+// Deletion is only offered because it can be put back. If the copy cannot be
+// made, the delete must not happen — a tool that sometimes destroys things for
+// good, depending on the file, is worse than one that never does.
+func TestDeleteIsRefusedWhenItCannotBeUndone(t *testing.T) {
+	a := appWithSettings(t)
+	seedSharedHost(t, a)
+
+	byName := map[string]mcp.Tool{}
+	for _, tool := range registered(t, a).Tools() {
+		byName[tool.Name] = tool
+	}
+	tool, ok := byName["fs_delete"]
+	if !ok {
+		t.Fatal("fs_delete is not registered")
+	}
+
+	// Protected paths are refused outright: the GUI guard is a person typing
+	// the path out, and a model can type.
+	for _, path := range []string{"/", "/etc", "/usr"} {
+		_, err := tool.Handler(context.Background(), map[string]any{"hostId": "h1", "path": path})
+		if err == nil {
+			t.Errorf("%s should be refused", path)
+		} else if !strings.Contains(err.Error(), "protected") && !strings.Contains(err.Error(), "app") {
+			t.Errorf("%s: unclear refusal: %v", path, err)
+		}
 	}
 }
 
@@ -740,5 +774,51 @@ func TestBusyPortFallsBackAndIsRemembered(t *testing.T) {
 	}
 	if got := a.mcpSettings().Port; got == 0 || got == defaultMCPPort {
 		t.Errorf("fell back to port %d without remembering a usable one", got)
+	}
+}
+
+// A change an AI makes has to be recoverable, because the mode people want —
+// set it and go to bed — removes the dialog that would otherwise catch it.
+func TestAIChangesAreRecordedAndRestorable(t *testing.T) {
+	a := appWithSettings(t)
+	seedSharedHost(t, a)
+
+	a.recordAIChange("h1", "/etc/nginx/nginx.conf", "write", []byte("worker_processes 1;\n"), false)
+	a.recordAIChange("h1", "/tmp/new.md", "write", nil, true)
+
+	changes := a.AIChanges("h1")
+	if len(changes) != 2 {
+		t.Fatalf("want 2 changes, got %d", len(changes))
+	}
+	// Newest first: the thing you want back is usually the last thing that
+	// happened.
+	if changes[0].Path != "/tmp/new.md" {
+		t.Errorf("newest first: got %s", changes[0].Path)
+	}
+	if !changes[0].Created {
+		t.Error("a new file must be marked as created, or undoing it would write an empty file")
+	}
+	for _, c := range changes {
+		if !c.Undoable {
+			t.Errorf("%s should be undoable", c.Path)
+		}
+	}
+	if a.AIChanges("other") != nil && len(a.AIChanges("other")) != 0 {
+		t.Error("the list is per host")
+	}
+}
+
+// Restoring is a person's remedy. Handing it to the AI would let one confused
+// turn undo the fix from the previous one, and the list is the record a human
+// checks the AI against.
+func TestRestoreIsNotAnMCPTool(t *testing.T) {
+	a := appWithSettings(t)
+	for _, tool := range registered(t, a).Tools() {
+		name := strings.ToLower(tool.Name)
+		for _, verb := range []string{"restore", "undo", "revert", "rollback", "history"} {
+			if strings.Contains(name, verb) {
+				t.Errorf("%q lets the AI reach the undo history", tool.Name)
+			}
+		}
 	}
 }
