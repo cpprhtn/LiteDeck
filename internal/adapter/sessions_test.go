@@ -205,9 +205,12 @@ func TestEmptySourcesDegrade(t *testing.T) {
 		}
 	}
 
-	idle, what := ParseWIdle(sessionGolden(t, "w-empty.txt"))
-	if len(idle) != 0 || len(what) != 0 {
+	from, idle, what := ParseWIdle(sessionGolden(t, "w-empty.txt"))
+	if len(from) != 0 || len(idle) != 0 || len(what) != 0 {
 		t.Error("empty w produced entries")
+	}
+	if got := ParseWho(sessionGolden(t, "who-empty.txt")); len(got) != 0 {
+		t.Errorf("empty who produced %d entries", len(got))
 	}
 
 	// And the session list is still complete without them.
@@ -224,13 +227,70 @@ func TestParseWIdle(t *testing.T) {
 	// Shape taken from `w -h` on a machine that does write utmp. Columns are
 	// USER TTY FROM LOGIN@ IDLE JCPU PCPU WHAT.
 	sample := "deploy   pts/1    10.0.3.7         09:15    4:02m  0.04s  0.04s -bash\n" +
-		"ktj      pts/0    192.0.2.14       14:22    0.00s  0.05s  0.00s w -h\n"
-	idle, what := ParseWIdle([]byte(sample))
+		"ktj      pts/0    192.0.2.14       14:22    0.00s  0.05s  0.00s w -h\n" +
+		"root     tty1     -                08:00    2days  0.01s  0.01s -bash\n"
+	from, idle, what := ParseWIdle([]byte(sample))
 	if idle["pts/1"] != "4:02m" {
 		t.Errorf("idle[pts/1] = %q", idle["pts/1"])
 	}
 	if what["pts/0"] != "w -h" {
 		t.Errorf("what[pts/0] = %q", what["pts/0"])
+	}
+	// The origin is in this output and used to be thrown away, which left the
+	// column blank on every server LiteDeck logs into as an ordinary user.
+	if from["pts/1"] != "10.0.3.7" {
+		t.Errorf("from[pts/1] = %q, want 10.0.3.7", from["pts/1"])
+	}
+	if from["pts/0"] != "192.0.2.14" {
+		t.Errorf("from[pts/0] = %q, want 192.0.2.14", from["pts/0"])
+	}
+	// A local login has no origin. "-" is the absence of an answer, not an answer.
+	if v, ok := from["tty1"]; ok {
+		t.Errorf("from[tty1] = %q; a dash is not an origin", v)
+	}
+}
+
+// TestParseWho covers the source that kept working where w did not.
+func TestParseWho(t *testing.T) {
+	// Shape taken from `who -u` on the demo fixture, where `w -h` printed nothing
+	// at all for the same four logins. The columns before the origin move around
+	// between builds — LOGIN@ splits differently, IDLE is "." or a clock, the PID
+	// is optional — so only the parenthesised tail is anchored on.
+	sample := "deploy   pts/2        Aug 10 15:13   .          1458 (192.168.215.1)\n" +
+		"ktj      pts/3        2026-08-10 15:13 00:12      1459 (jump.example.net)\n" +
+		"root     tty1         Aug 10 09:02   old         912\n" +
+		"gdm      tty2         Aug 10 09:02   ?           940 (:0)\n"
+	got := ParseWho([]byte(sample))
+	if got["pts/2"] != "192.168.215.1" {
+		t.Errorf("pts/2 = %q, want 192.168.215.1", got["pts/2"])
+	}
+	if got["pts/3"] != "jump.example.net" {
+		t.Errorf("pts/3 = %q, want jump.example.net", got["pts/3"])
+	}
+	// No parentheses at all: a console login with nowhere to have come from.
+	if v, ok := got["tty1"]; ok {
+		t.Errorf("tty1 = %q; that line has no origin", v)
+	}
+	// ":0" is the local X display, not a remote host.
+	if v, ok := got["tty2"]; ok {
+		t.Errorf("tty2 = %q; the local display is not an origin", v)
+	}
+}
+
+// TestSSArgsUseTheHostsPort pins the defect this pass fixed: the filter named
+// port 22 outright, so on any server that moved sshd the probe matched nothing
+// and every session's origin came back blank with no error to explain it.
+func TestSSArgsUseTheHostsPort(t *testing.T) {
+	joined := strings.Join(SSArgsForPort(2222), " ")
+	if !strings.Contains(joined, "sport = :2222") {
+		t.Errorf("args = %q; want a filter on the port that was asked for", joined)
+	}
+	if strings.Contains(joined, ":22 ") || strings.HasSuffix(joined, ":22)") {
+		t.Errorf("args = %q; port 22 is still hard-coded", joined)
+	}
+	// Zero is "the host record is gone"; the default is the only sane guess.
+	if !strings.Contains(strings.Join(SSArgsForPort(0), " "), "sport = :22") {
+		t.Error("an unknown port should fall back to 22")
 	}
 }
 

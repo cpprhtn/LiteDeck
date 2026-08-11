@@ -50,8 +50,88 @@ func (c *selfCache) forget(id string) {
 	delete(c.byID, id)
 }
 
+// genCache records the connection generation each host's caches were filled
+// from, so freshen can tell a live cache from one left over by a reconnect.
+type genCache struct {
+	mu   sync.Mutex
+	byID map[string]uint64
+}
+
+func newGenCache() *genCache { return &genCache{byID: map[string]uint64{}} }
+
+// seen reports whether gen is the generation already recorded, recording it
+// when it is not. False means the connection has been replaced.
+func (c *genCache) seen(id string, gen uint64) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.byID[id] == gen {
+		return true
+	}
+	c.byID[id] = gen
+	return false
+}
+
+// portCache remembers each connection's server-side SSH port, for the same
+// reason selfCache exists: it cannot change while the connection lives.
+type portCache struct {
+	mu   sync.Mutex
+	byID map[string]int
+}
+
+func newPortCache() *portCache { return &portCache{byID: map[string]int{}} }
+
+func (c *portCache) get(id string) (int, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	v, ok := c.byID[id]
+	return v, ok
+}
+
+func (c *portCache) put(id string, port int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.byID[id] = port
+}
+
+func (c *portCache) forget(id string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.byID, id)
+}
+
+// freshen drops everything cached about a host's connection once that
+// connection has been replaced.
+//
+// The caches below are all keyed by host ID and all hold facts read from the
+// server: which sshd processes are ours, which port it answers on, what the OS
+// supports, where the CPU counters were last time. Every one of those is a
+// property of a connection, not of a host, and reconnect replaces connections
+// without telling anybody — a network blip or a server reboot is enough.
+//
+// Before this, the only thing that cleared them was the user pressing
+// Disconnect. So a host that dropped and came back kept answering with the old
+// connection's process IDs, and EndSSHSession's "this one is ours, refuse it"
+// guard was checking a set that no longer contained the connection it was
+// protecting. The guard the whole file exists for would have let you cut your
+// own line, and after a reboot it would also have refused an innocent session
+// whose PID had been recycled into the stale set.
+func (a *App) freshen(hostID string) {
+	gen := a.mgr.Generation(hostID)
+	if gen == 0 {
+		return // never connected; nothing was cached through a connection
+	}
+	if a.gens.seen(hostID, gen) {
+		return
+	}
+	a.selves.forget(hostID)
+	a.sshPorts.forget(hostID)
+	a.detected.forget(hostID)
+	a.cpu.forget(hostID)
+}
+
 // selfPIDs returns the sshd processes this connection is running underneath.
 func (a *App) selfPIDs(ctx context.Context, hostID string) (map[int]bool, error) {
+	a.freshen(hostID)
 	if v, ok := a.selves.get(hostID); ok {
 		return v, nil
 	}
@@ -112,7 +192,9 @@ func (a *App) ListSSHSessions(hostID string) ([]adapter.SSHSession, error) {
 	// Everything below is enrichment. Each source is optional and each failure is
 	// a blank column, because all three of them come back empty on a perfectly
 	// healthy container while ps lists every session.
-	if r, err := conn.Probe(ctx, "ss", adapter.SSArgs22()...); err == nil && r.OK() {
+	//
+	// Most precise first, and later sources only fill what is still blank.
+	if r, err := conn.Probe(ctx, "ss", adapter.SSArgsForPort(a.sshPort(ctx, hostID))...); err == nil && r.OK() {
 		peers := adapter.ParseSSHPeers(r.Stdout)
 		for i := range sessions {
 			if p, ok := peers[sessions[i].PID]; ok {
@@ -123,16 +205,67 @@ func (a *App) ListSSHSessions(hostID string) ([]adapter.SSHSession, error) {
 		}
 	}
 	if r, err := conn.Probe(ctx, "w", "-h"); err == nil && r.OK() {
-		idle, what := adapter.ParseWIdle(r.Stdout)
+		from, idle, what := adapter.ParseWIdle(r.Stdout)
 		for i := range sessions {
 			if sessions[i].TTY == "" {
 				continue
+			}
+			if sessions[i].From == "" {
+				sessions[i].From = from[sessions[i].TTY]
 			}
 			sessions[i].Idle = idle[sessions[i].TTY]
 			sessions[i].What = what[sessions[i].TTY]
 		}
 	}
+	// Only worth asking when something is still missing. `who` answers a strict
+	// subset of what `w` does, so a run where `w` spoke has nothing to gain here.
+	if missingOrigins(sessions) {
+		if r, err := conn.Probe(ctx, "who", adapter.WhoArgs()...); err == nil && r.OK() {
+			from := adapter.ParseWho(r.Stdout)
+			for i := range sessions {
+				if sessions[i].TTY != "" && sessions[i].From == "" {
+					sessions[i].From = from[sessions[i].TTY]
+				}
+			}
+		}
+	}
 	return sessions, nil
+}
+
+// missingOrigins reports whether any interactive login still has a blank origin.
+func missingOrigins(ss []adapter.SSHSession) bool {
+	for _, s := range ss {
+		if s.TTY != "" && s.From == "" {
+			return true
+		}
+	}
+	return false
+}
+
+// sshPort is the port this connection's sshd is listening on, asked of the
+// server and cached for the connection's life.
+//
+// Deliberately not the configured port. That is the port LiteDeck dialled, which
+// is a different number the moment anything forwards — a published container
+// port, a router, a jump host. Zero on failure, which SSArgsForPort reads as the
+// default; a filter on the wrong port silently matches nothing.
+func (a *App) sshPort(ctx context.Context, hostID string) int {
+	if p, ok := a.sshPorts.get(hostID); ok {
+		return p
+	}
+	conn, err := a.mgr.Conn(hostID)
+	if err != nil {
+		return 0
+	}
+	r, err := conn.Probe(ctx, "sh", "-c", adapter.ServerPortScript)
+	if err != nil || !r.OK() {
+		return 0
+	}
+	p := adapter.ParseServerPort(r.Stdout)
+	if p > 0 {
+		a.sshPorts.put(hostID, p)
+	}
+	return p
 }
 
 // EndSSHSession disconnects one login.

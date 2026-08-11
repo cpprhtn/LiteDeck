@@ -11,6 +11,20 @@ package adapter
 // So the list is built from ps, which is always right, and the friendlier fields
 // are folded in from the others when they happen to be available. The same shape
 // as the Windows network view: take the reliable source, enrich from the nice one.
+//
+// The enrichment reads three sources rather than one, because they do not fail
+// together and the failures are not the ones you would guess:
+//
+//   - `ss -p` is the most precise and the least available. It needs privileges to
+//     see anyone else's socket, so on the ordinary case — LiteDeck logged in as a
+//     normal user — it answers for nothing but our own connection.
+//   - `w -h` carries the origin, the idle time and the running command in one
+//     line, and is the one that most often prints nothing at all.
+//   - `who -u` carries the origin and little else, and kept working on a fixture
+//     where `w` had already given up.
+//
+// Whichever answers first wins, most precise first. A blank column is the
+// correct output when none of them can speak; a wrong one is not.
 
 import (
 	"fmt"
@@ -172,13 +186,52 @@ func SessionListenerPIDs(data []byte) map[int]bool {
 	return out
 }
 
-// SSArgs22 lists established connections to the SSH port.
+// ServerPortScript asks the server which port this connection arrived on.
+//
+// sshd sets SSH_CONNECTION in every session to "<client ip> <client port>
+// <server ip> <server port>", so the answer is authoritative, needs no
+// privileges and costs one round trip that is cached for the connection's life.
+//
+// Asking is not pedantry. The port LiteDeck dialled is the wrong answer whenever
+// anything sits in between — a published container port, a forwarded router
+// port, a jump host. The project's own demo fixture is reached on 2299 while its
+// sshd listens on 22, so the first version of this code, which used the
+// configured port, was wrong on the very machine it was written against.
+const ServerPortScript = `printf '%s\n' "$SSH_CONNECTION"`
+
+// ParseServerPort reads the listening port out of SSH_CONNECTION.
+//
+// Zero when the variable is missing or malformed, which callers read as "use the
+// default". A wrong port here is a silently empty column, so a refusal to guess
+// beats a plausible guess.
+func ParseServerPort(data []byte) int {
+	fields := strings.Fields(string(data))
+	if len(fields) < 4 {
+		return 0
+	}
+	port, err := strconv.Atoi(fields[3])
+	if err != nil || port <= 0 || port > 65535 {
+		return 0
+	}
+	return port
+}
+
+// SSArgsForPort lists established connections to the port sshd is listening on.
 //
 // -p attaches the owning process, which needs privileges for anyone else's
 // sockets; without it the addresses still come back and the column is simply
 // blank. That is the difference between a missing detail and a broken view.
-func SSArgs22() []string {
-	return []string{"-tnpH", "state", "established", "( sport = :22 )"}
+//
+// The port is a parameter and not the constant 22 it used to be. Hard-coding it
+// meant the filter matched nothing at all on any server that moved sshd — a
+// common hardening step, and one this project's own README recommends thinking
+// of as "the SSH port" rather than "port 22". Every session's origin went blank
+// and nothing said why.
+func SSArgsForPort(port int) []string {
+	if port <= 0 {
+		port = 22
+	}
+	return []string{"-tnpH", "state", "established", fmt.Sprintf("( sport = :%d )", port)}
 }
 
 var ssUsers = regexp.MustCompile(`pid=(\d+)`)
@@ -204,23 +257,68 @@ func ParseSSHPeers(data []byte) map[int]string {
 	return out
 }
 
-// wLine pulls the idle time and current command out of `w -h`.
+// ParseWIdle pulls the origin, idle time and current command out of `w -h`.
 //
-// Columns are USER TTY FROM LOGIN@ IDLE JCPU PCPU WHAT, and FROM can be a dash,
-// a hostname or an address, so the parse is positional from the left and stops
-// caring after IDLE.
-func ParseWIdle(data []byte) (idle map[string]string, what map[string]string) {
-	idle, what = map[string]string{}, map[string]string{}
+// Columns are USER TTY FROM LOGIN@ IDLE JCPU PCPU WHAT, keyed by TTY.
+//
+// FROM is read here as well, and that is the point of this pass. The origin
+// column was previously filled only from `ss -p`, which cannot see another
+// user's socket without privileges — so on every server where LiteDeck logs in
+// as an ordinary user, which is the normal case, the column was always empty
+// while `w` had the answer sitting in field 3 the whole time.
+//
+// A dash means the login is local and has no origin to report; it is dropped
+// rather than shown, because "-" reads as missing data.
+func ParseWIdle(data []byte) (from, idle, what map[string]string) {
+	from, idle, what = map[string]string{}, map[string]string{}, map[string]string{}
 	for _, line := range strings.Split(string(data), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 8 {
 			continue
 		}
 		tty := fields[1]
+		if f := fields[2]; f != "-" && f != ":0" {
+			from[tty] = f
+		}
 		idle[tty] = fields[4]
 		what[tty] = strings.Join(fields[7:], " ")
 	}
-	return idle, what
+	return from, idle, what
+}
+
+// WhoArgs asks who is logged in, with the origin.
+func WhoArgs() []string { return []string{"-u"} }
+
+// whoFrom matches the origin `who -u` puts in trailing parentheses.
+//
+// The columns before it are not fixed: LOGIN@ is two fields on some builds and
+// three on others, IDLE is "." or "old" or HH:MM, and the PID may or may not be
+// there. Anchoring on the parenthesised tail is the only part of the line whose
+// position does not move.
+var whoFrom = regexp.MustCompile(`\(([^()]+)\)\s*$`)
+
+// ParseWho reads `who -u`, keyed by TTY.
+//
+// A second source for the same column as ParseWIdle, because they do not fail
+// together: measured on the systemd fixture with four live logins, `w -h`
+// printed nothing at all while `who -u` listed every one of them with its
+// origin. Both read utmp; only one of them insists on more than that.
+func ParseWho(data []byte) map[string]string {
+	out := map[string]string{}
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		m := whoFrom.FindStringSubmatch(strings.TrimRight(line, "\r"))
+		if m == nil {
+			continue
+		}
+		if host := strings.TrimSpace(m[1]); host != "" && host != ":0" {
+			out[fields[1]] = host
+		}
+	}
+	return out
 }
 
 // KillSessionArgs returns the argv that ends one session.

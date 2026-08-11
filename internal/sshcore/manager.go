@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pkg/sftp"
@@ -81,6 +82,13 @@ type Manager struct {
 	opts    ManagerOptions
 	onState StateFunc
 
+	// genSeq numbers connections for the whole manager rather than per host.
+	// Per host would restart at 1 after a disconnect, and a caller comparing
+	// "the generation I cached from" against "the generation now" would see the
+	// same number for two different connections — the exact confusion the
+	// counter exists to remove.
+	genSeq atomic.Uint64
+
 	mu    sync.RWMutex
 	hosts map[string]*managedHost
 }
@@ -104,6 +112,13 @@ type managedHost struct {
 	mu    sync.RWMutex
 	conn  *Conn
 	state State
+	// gen is this connection's number from the manager's sequence. It exists so callers can
+	// tell "the same connection as last time" from "a replacement that happens
+	// to have the same host ID", which reconnect produces without anybody
+	// asking. Anything derived from the server — process IDs, the port sshd
+	// answers on, what the OS supports — is only true of the connection it was
+	// read through.
+	gen uint64
 }
 
 // Connect dials a host and begins watching it. Connecting an already-connected
@@ -135,6 +150,7 @@ func (m *Manager) Connect(ctx context.Context, cfg HostConfig, obs Observer) err
 
 	h.mu.Lock()
 	h.conn = conn
+	h.gen = m.genSeq.Add(1)
 	h.mu.Unlock()
 	h.setState(StateConnected, nil)
 
@@ -173,6 +189,27 @@ func (m *Manager) State(hostID string) State {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.state
+}
+
+// Generation identifies this host's current connection.
+//
+// Zero means the host is not connected. The number changes on every dial,
+// including the ones reconnect makes on its own, and that is the point: a
+// reconnect is transparent to a caller running a command, but it must not be
+// transparent to anything holding a fact it read from the old connection. PIDs
+// are the sharp case. "These processes are ours, do not kill them" is true of
+// one connection and false of its replacement, and after a reboot the same
+// numbers belong to somebody else's processes.
+func (m *Manager) Generation(hostID string) uint64 {
+	m.mu.RLock()
+	h, ok := m.hosts[hostID]
+	m.mu.RUnlock()
+	if !ok {
+		return 0
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.gen
 }
 
 // Exec runs a command on a host, resolving the connection at call time so a
@@ -331,6 +368,7 @@ func (h *managedHost) reconnect(ctx context.Context) {
 			conn.SetObserver(h.obs)
 			h.mu.Lock()
 			h.conn = conn
+			h.gen = h.mgr.genSeq.Add(1)
 			h.mu.Unlock()
 			h.setState(StateConnected, nil)
 			return

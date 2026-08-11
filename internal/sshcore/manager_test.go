@@ -269,3 +269,61 @@ func drain(ch <-chan State) {
 		}
 	}
 }
+
+// TestGenerationChangesWhenTheConnectionDoes is the half of the stale-cache fix
+// that only a real drop can show.
+//
+// Callers cache facts read from the server — process IDs above all — and those
+// are true of one connection, not of a host. Reconnect replaces the connection
+// silently, which is correct for anyone running a command and wrong for anyone
+// holding such a fact. Generation is how they tell the difference, so it has to
+// move when the connection is replaced without anybody asking.
+func TestGenerationChangesWhenTheConnectionDoes(t *testing.T) {
+	if sshdSkip != "" {
+		t.Skipf("sshd fixture unavailable: %s", sshdSkip)
+	}
+
+	proxy := newCutProxy(t, sshdAddr)
+	states := make(chan State, 64)
+	m := fastManager(states)
+	t.Cleanup(func() { m.Close() })
+
+	if got := m.Generation("h1"); got != 0 {
+		t.Fatalf("Generation before connect = %d, want 0", got)
+	}
+	if err := m.Connect(testCtx(t), testHostConfig("h1", proxy.Addr()), nil); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	first := m.Generation("h1")
+	if first == 0 {
+		t.Fatal("Generation is still 0 on a connected host")
+	}
+	// Stable while the connection lives, or every caller re-probes constantly.
+	if again := m.Generation("h1"); again != first {
+		t.Fatalf("Generation moved without a reconnect: %d then %d", first, again)
+	}
+
+	proxy.Cut()
+	waitForState(t, states, StateReconnecting, 5*time.Second)
+	proxy.Restore()
+	waitForState(t, states, StateConnected, 15*time.Second)
+
+	second := m.Generation("h1")
+	if second == first {
+		t.Fatalf("Generation is still %d after the connection was replaced; "+
+			"anything cached from the old one would go on answering for the new one", first)
+	}
+
+	// And it does not restart when the same host ID connects again, which a
+	// per-host counter would do — handing the second connection the first one's
+	// number and defeating the check entirely.
+	if err := m.Disconnect("h1"); err != nil {
+		t.Fatalf("Disconnect: %v", err)
+	}
+	if err := m.Connect(testCtx(t), testHostConfig("h1", proxy.Addr()), nil); err != nil {
+		t.Fatalf("reconnect: %v", err)
+	}
+	if third := m.Generation("h1"); third == first || third == second {
+		t.Fatalf("Generation reused %d after disconnect and connect", third)
+	}
+}

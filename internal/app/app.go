@@ -32,6 +32,8 @@ type App struct {
 	log       *commandLog
 	detected  *detectCache
 	selves    *selfCache
+	sshPorts  *portCache
+	gens      *genCache
 	transfers *transferQueue
 	terminals *terminalRegistry
 	cpu       *cpuHistory
@@ -62,6 +64,8 @@ func New() *App {
 	a.log = newCommandLog(a)
 	a.detected = newDetectCache()
 	a.selves = newSelfCache()
+	a.sshPorts = newPortCache()
+	a.gens = newGenCache()
 	a.transfers = newTransferQueue(a)
 	a.terminals = newTerminalRegistry(a)
 	a.cpu = newCPUHistory()
