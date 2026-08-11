@@ -40,5 +40,5 @@ Set-Service -Name sshd -StartupType Automatic
 
 기본 셸이 cmd.exe든 PowerShell이든 상관없습니다. LiteDeck은 명령을 `-EncodedCommand` 로 보내므로 셸의 따옴표 규칙에 영향을 받지 않습니다.
 
-**집에 있는 PC를 밖에서 다루려면** 포트포워딩 대신 Tailscale 같은 메시 VPN을 쓰는 편이 낫습니다.
+**집에 있는 PC를 외부에서 다루려면** 포트포워딩 대신 Tailscale 같은 메시 VPN을 쓰는 편이 낫습니다.
 설정 순서와, 계정 없이 가는 방법(Headscale·WireGuard)은 [docs/remote-access.md](remote-access.md)에 적어두었습니다.

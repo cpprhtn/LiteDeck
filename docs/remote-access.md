@@ -1,9 +1,9 @@
-# 집 PC를 밖에서 다루기 (Tailscale)
+# 집 PC를 외부에서 다루기 (Tailscale)
 
 > 영문판: [remote-access.en.md](remote-access.en.md)
 
 LiteDeck은 SSH가 닿는 곳이면 어디든 붙습니다. 문제는 **SSH가 닿게 만드는 일**입니다.
-집 PC나 홈랩은 보통 공유기 뒤에 있어서, 밖에서 접근하려면 포트포워딩을 열거나 DDNS를
+집 PC나 홈랩은 보통 공유기 뒤에 있어서, 외부에서 접근하려면 포트포워딩을 열거나 DDNS를
 붙이거나 VPN을 세우게 됩니다. SSH 포트를 인터넷에 그대로 여는 것은 권하지 않습니다.
 
 Tailscale을 쓰면 그 셋 다 안 해도 됩니다. 두 도구의 역할이 깔끔하게 나뉩니다.
@@ -92,7 +92,7 @@ ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
 
 Tailscale 에는 자체 SSH 기능이 있습니다. 켜면 **tailnet 으로 들어오는 22번만** tailscaled 가
 가로채고, 그 연결은 서버의 sshd 가 아니라 tailscaled 가 직접 받습니다. `sshd_config` 도
-`authorized_keys` 도 건드리지 않고, tailnet 밖에서 오는 연결은 그대로 원래 sshd 로 갑니다.
+`authorized_keys` 도 건드리지 않고, tailnet 외부에서 오는 연결은 그대로 원래 sshd 로 갑니다.
 
 LiteDeck 에게는 이게 **다른 서버에 붙는 것과 같습니다.** 인증을 tailnet 정책이 하므로 키나
 비밀번호를 묻지 않고 붙고, 호스트 키도 sshd 것이 아니라 tailscaled 것이 옵니다. 그래서:
@@ -116,7 +116,7 @@ Claude Code ──로컬 HTTP──▶ LiteDeck ──Tailscale(WireGuard)──
   (노트북)                  (노트북)                            (설치물 없음)
 ```
 
-- **MCP 엔드포인트는 tailnet 에 올라가지 않습니다.** 노트북 밖으로 나가지 않으므로, tailnet 의
+- **MCP 엔드포인트는 tailnet 에 올라가지 않습니다.** 노트북 외부로 나가지 않으므로, tailnet 의
   다른 기기가 이 엔드포인트를 통해 서버를 조회하거나 바꿀 수 없습니다
 - **서버에는 여전히 아무것도 설치하지 않습니다.** Claude Code 를 집 PC 에 깔아 tailnet 으로
   붙는 방식과 다릅니다. 그쪽은 서버에 런타임과 상주 프로세스가 생깁니다
@@ -169,15 +169,5 @@ IP 하나가 생기고, 거기에 SSH가 열려 있으면 됩니다.
 
 **이 문서의 조합은 저자가 실제로 확인하지 않았습니다.** LiteDeck은 SSH가 닿는 IP면
 동작하도록 만들어져 있어서 안 될 이유가 없지만, [지원 범위](support.md)의
-기준대로 **검증되지 않은 것은 검증되지 않았다고** 적어 둡니다.
-
-무엇이 어디서 온 말인지 나눠 두면:
-
-| | 근거 |
-|---|---|
-| LiteDeck 이 tailnet IP 로 붙는다 | 미검증. 다만 LiteDeck 에게는 IP 하나일 뿐입니다 |
-| Tailscale SSH 가 tailnet 의 22번만 가로챈다 | [Tailscale 문서](https://tailscale.com/kb/1193/tailscale-ssh). 저자가 시험하지 않았습니다 |
-| MCP 엔드포인트가 `127.0.0.1` 에만 열린다 | **코드로 확인됨** ([`internal/mcp/http.go`](../internal/mcp/http.go)) |
-| 주소와 MagicDNS 이름이 별도 항목이 된다 | **코드로 확인됨** ([`internal/sshcore/hostkey.go`](../internal/sshcore/hostkey.go)) |
-
-해보셨다면 결과를 [이슈](https://github.com/cpprhtn/LiteDeck/issues)로 알려주세요.
+기준대로 **검증되지 않은 것은 검증되지 않았다고** 적어 둡니다. 해보셨다면 결과를
+[이슈](https://github.com/cpprhtn/LiteDeck/issues)로 알려주세요.

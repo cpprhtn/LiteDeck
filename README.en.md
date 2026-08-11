@@ -159,7 +159,7 @@ Grab a build from the [releases page](https://github.com/cpprhtn/LiteDeck/releas
 **On the server side.** Linux needs nothing if you can already SSH into it. Windows needs the OpenSSH
 server switched on. To reach a machine at home from outside, a mesh VPN beats opening a port on your
 router — [preparing the server](docs/install.en.md#preparing-the-server) ·
-[remote access without an account](docs/remote-access.en.md)
+[reaching it over Tailscale](docs/remote-access.en.md)
 
 ## When this is the right tool
 

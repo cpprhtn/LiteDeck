@@ -176,16 +176,5 @@ may reach the SSH port. The default allows everything.
 **This combination has not been verified by the author.** LiteDeck is built to work
 against any address SSH can reach, so there is no reason it would not, but by the same
 standard used in [what is and is not verified](support.en.md),
-**unverified means unverified.**
-
-Where each claim above comes from:
-
-| | Basis |
-|---|---|
-| LiteDeck connects over a tailnet address | Not verified. It is one more address as far as LiteDeck is concerned |
-| Tailscale SSH claims port 22 on the tailnet only | [Tailscale's documentation](https://tailscale.com/kb/1193/tailscale-ssh). Not tried here |
-| The MCP endpoint binds to `127.0.0.1` alone | **Checked in the code** ([`internal/mcp/http.go`](../internal/mcp/http.go)) |
-| An address and a MagicDNS name are separate entries | **Checked in the code** ([`internal/sshcore/hostkey.go`](../internal/sshcore/hostkey.go)) |
-
-If you try it, please report back in an
+**unverified means unverified.** If you try it, please report back in an
 [issue](https://github.com/cpprhtn/LiteDeck/issues).
