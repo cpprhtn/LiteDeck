@@ -183,7 +183,7 @@ something else is better. Which cases those are is written down in
 | [MCP integration](docs/mcp.en.md) | 17 tools, the approval policy, undo, the safeguards |
 | [Features in detail](docs/features.en.md) | The Command Log and the editor |
 | [Install and server setup](docs/install.en.md) | Getting past the first-launch warning, enabling OpenSSH on Windows |
-| [Remote access without an account](docs/remote-access.en.md) | Tailscale, Headscale, WireGuard |
+| [Reaching a machine over Tailscale](docs/remote-access.en.md) | Your home machine without port forwarding. Tailscale SSH, MCP, subnet routers, and doing it without an account |
 | [Build from source](docs/building.en.md) | Building and testing |
 
 ## Contributing

@@ -5,7 +5,7 @@
 LiteDeck connects to anything SSH can reach. The hard part is usually **making SSH
 reachable**. A home machine or homelab sits behind a router, so getting to it from
 outside normally means port forwarding, dynamic DNS, or standing up a VPN. Exposing
-port 22 to the internet is not something to do casually.
+the SSH port to the internet is not something to do casually.
 
 Tailscale removes all three. The two tools split the work cleanly:
 
@@ -63,6 +63,10 @@ tailscale ip -4          # prints something like 100.x.y.z
 
 With MagicDNS enabled you can use a name like `mypc` instead of the address.
 
+> Pick one and stay with it. LiteDeck keys its `known_hosts` entries by the address string,
+> so connecting once by address and once by name **asks for the fingerprint twice for the
+> same machine.** Not wrong, but there is no reason to check it twice.
+
 ## 4. Add the host in LiteDeck
 
 Press **+ Add** and fill in that address.
@@ -70,7 +74,7 @@ Press **+ Add** and fill in that address.
 | Field | Value |
 |---|---|
 | Host | `100.x.y.z`, or the MagicDNS name |
-| Port | `22` |
+| Port | whatever sshd listens on. `22` by default |
 | User | the account on the home machine |
 | Auth | put ssh-agent first if you can |
 
@@ -84,6 +88,55 @@ ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
 ```
 
 That is the whole setup. The machine now appears in the sidebar from anywhere.
+
+---
+
+## If you have Tailscale SSH turned on
+
+Tailscale has an SSH feature of its own. With it enabled, tailscaled intercepts **port 22 on
+the tailnet address only** and answers those connections itself rather than handing them to
+your sshd. It leaves `sshd_config` and `authorized_keys` alone, and anything arriving from
+outside the tailnet still reaches your normal sshd.
+
+To LiteDeck this is **a different server on the other end.** The tailnet policy does the
+authentication, so it connects without asking for a key or a password, and the host key comes
+from tailscaled rather than from sshd. Which means:
+
+- **The fingerprint will not match the server's `ssh_host_ed25519_key.pub`.** The check in
+  step 4 above does not apply in this case. Nothing is wrong; the other end is a different
+  thing.
+- **Turning Tailscale SSH on or off changes the host key.** LiteDeck drops the connection when
+  a recorded key is replaced and offers no way past it. That is deliberate — remove the stored
+  entry and verify the new fingerprint.
+
+Pick one or the other. If you mean to use the server's own sshd, leave Tailscale SSH off.
+
+## Using it with Claude (MCP)
+
+This is where the combination pays. LiteDeck's MCP endpoint binds to **`127.0.0.1` and
+nothing else**, which puts the pieces in this order:
+
+```
+Claude Code ──local HTTP──▶ LiteDeck ──Tailscale (WireGuard)──▶ home machine
+  (laptop)                   (laptop)                            (nothing installed)
+```
+
+- **The MCP endpoint never reaches the tailnet.** It does not leave the laptop, so no other
+  device on the tailnet can read or change your servers through it.
+- **Still nothing installed on the server.** This is not the same as putting Claude Code on
+  the home machine and reaching it over the tailnet; that leaves a runtime and a resident
+  process there.
+- Approval dialogs appear on the laptop. If you are stepping away, read the bypass mode and
+  the undo list in the [MCP doc](mcp.en.md) first.
+
+## Several servers behind a subnet router
+
+If there are several machines at home and you would rather not install Tailscale on all of
+them, make one a [subnet router](https://tailscale.com/kb/1019/subnets) advertising that
+range. The rest go into LiteDeck under their ordinary LAN addresses. As far as those servers
+are concerned **Tailscale does not exist**, and LiteDeck cannot tell the difference either.
+
+Principle 1 survives the arrangement: the install lands on the router alone.
 
 ---
 
@@ -118,10 +171,21 @@ but file transfer speed is noticeably different.
 Neither LiteDeck nor Tailscale solves this for you.
 
 **Tailscale ACLs.** With several devices on the tailnet you can restrict which of them
-may reach port 22. The default allows everything.
+may reach the SSH port. The default allows everything.
 
 **This combination has not been verified by the author.** LiteDeck is built to work
 against any address SSH can reach, so there is no reason it would not, but by the same
 standard used in [what is and is not verified](support.en.md),
-**unverified means unverified.** If you try it, please report back in an
+**unverified means unverified.**
+
+Where each claim above comes from:
+
+| | Basis |
+|---|---|
+| LiteDeck connects over a tailnet address | Not verified. It is one more address as far as LiteDeck is concerned |
+| Tailscale SSH claims port 22 on the tailnet only | [Tailscale's documentation](https://tailscale.com/kb/1193/tailscale-ssh). Not tried here |
+| The MCP endpoint binds to `127.0.0.1` alone | **Checked in the code** ([`internal/mcp/http.go`](../internal/mcp/http.go)) |
+| An address and a MagicDNS name are separate entries | **Checked in the code** ([`internal/sshcore/hostkey.go`](../internal/sshcore/hostkey.go)) |
+
+If you try it, please report back in an
 [issue](https://github.com/cpprhtn/LiteDeck/issues).

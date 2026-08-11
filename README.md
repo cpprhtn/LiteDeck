@@ -175,7 +175,7 @@ claude mcp add --transport http litedeck http://127.0.0.1:<포트>/mcp \
 | [MCP 연동](docs/mcp.md) | 도구 17개, 결재 정책, 되돌리기, 안전장치 |
 | [기능 자세히](docs/features.md) | Command Log 와 편집기 |
 | [설치와 서버 준비](docs/install.md) | 첫 실행 경고 넘기기, Windows OpenSSH 켜기 |
-| [계정 없이 원격 접속](docs/remote-access.md) | Tailscale·Headscale·WireGuard |
+| [Tailscale 로 밖에서 쓰기](docs/remote-access.md) | 포트포워딩 없이 집 PC 에 붙기. Tailscale SSH·MCP·서브넷 라우터, 그리고 계정 없이 가는 길 |
 | [소스에서 빌드](docs/building.md) | 빌드와 테스트 |
 
 ## 기여
