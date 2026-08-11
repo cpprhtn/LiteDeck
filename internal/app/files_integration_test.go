@@ -1,6 +1,8 @@
 package app
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path"
 	"path/filepath"
@@ -569,6 +571,26 @@ func TestTransferRejectsMissingPaths(t *testing.T) {
 	waitTransfer(t, a, ids[0], TransferDone)
 	if st, err := a.StatPath("fixture", path.Join(dir, "empty")); err != nil || !st.IsDir {
 		t.Errorf("empty directory was not created remotely: %+v %v", st, err)
+	}
+}
+
+// TestRemoteWalkStopsWhenCancelled: the readdir sweep that precedes a directory
+// download is the part the server pays for. Cancelling has to reach it, not
+// only the copying that follows.
+func TestRemoteWalkStopsWhenCancelled(t *testing.T) {
+	a := connectedApp(t)
+	client, err := a.mgr.SFTP("fixture")
+	if err != nil {
+		t.Fatalf("SFTP: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	files, total, err := walkRemoteDir(ctx, client, "/usr")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("walkRemoteDir on a cancelled context = (%d files, %d bytes, %v), want context.Canceled",
+			len(files), total, err)
 	}
 }
 

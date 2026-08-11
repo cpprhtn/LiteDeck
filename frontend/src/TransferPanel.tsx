@@ -85,6 +85,11 @@ export function TransferPanel({ onError }: { onError: (msg: string) => void }) {
                     {t.currentRel ? ` · ${t.currentRel}` : ''}
                   </span>
                 ) : null}
+                {/* A tree whose walk has not finished has no total yet, so the
+                    bar would sit at zero looking stuck. */}
+                {t.dir && !t.files && t.status === 'running' ? (
+                  <span className="muted"> {t2('목록을 세는 중…')}</span>
+                ) : null}
               </span>
               <div className="progress" title={`${pct.toFixed(0)}%`}>
                 <div className="progress-bar" style={{ width: `${pct}%` }} />

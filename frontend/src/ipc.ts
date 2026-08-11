@@ -540,6 +540,7 @@ interface Bindings {
   Transfers(): Promise<Transfer[]>
   ClearFinishedTransfers(): Promise<void>
   PickLocalFiles(): Promise<string[]>
+  PickLocalUploadDir(): Promise<string>
   PickLocalDir(): Promise<string>
   ListServices(id: string): Promise<ServiceUnit[]>
   ServiceAction(
@@ -758,6 +759,7 @@ export const CancelTransfer = (transferId: string) => api().CancelTransfer(trans
 export const GetTransfers = () => api().Transfers()
 export const ClearFinishedTransfers = () => api().ClearFinishedTransfers()
 export const PickLocalFiles = () => api().PickLocalFiles()
+export const PickLocalUploadDir = () => api().PickLocalUploadDir()
 export const PickLocalDir = () => api().PickLocalDir()
 export const ListServices = (id: string) => api().ListServices(id)
 export const ServiceAction = (

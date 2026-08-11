@@ -237,24 +237,20 @@ func (a *App) StartUpload(hostID string, localPaths []string, remoteDir string) 
 			return nil, fmt.Errorf("%s: %w", local, err)
 		}
 		if fi.IsDir() {
-			// Walked up front so the progress bar has a real denominator. A
-			// bar that grows its own total as it goes tells the user nothing
-			// about how long they are waiting.
-			files, total, err := walkLocalDir(local)
-			if err != nil {
-				return nil, err
-			}
 			j := a.transfers.add(Transfer{
 				HostID:    hostID,
 				Direction: "upload",
 				Local:     local,
 				Remote:    path.Join(dir, filepath.Base(local)),
-				Size:      total,
 				Dir:       true,
-				Files:     len(files),
 			})
 			ids = append(ids, j.ID)
 			a.transfers.run(j, func(ctx context.Context, job *transferJob) error {
+				files, total, err := walkLocalDir(ctx, job.Local)
+				if err != nil {
+					return err
+				}
+				a.transfers.setTotals(job, len(files), total)
 				return a.uploadDir(ctx, job, files)
 			})
 			continue
@@ -335,21 +331,20 @@ func (a *App) StartDownload(hostID string, remotePaths []string, localDir string
 			return nil, fmt.Errorf("%s: %w", cleaned, err)
 		}
 		if fi.IsDir() {
-			files, total, err := walkRemoteDir(client, cleaned)
-			if err != nil {
-				return nil, err
-			}
 			j := a.transfers.add(Transfer{
 				HostID:    hostID,
 				Direction: "download",
 				Local:     filepath.Join(localDir, path.Base(cleaned)),
 				Remote:    cleaned,
-				Size:      total,
 				Dir:       true,
-				Files:     len(files),
 			})
 			ids = append(ids, j.ID)
 			a.transfers.run(j, func(ctx context.Context, job *transferJob) error {
+				files, total, err := walkRemoteDir(ctx, client, job.Remote)
+				if err != nil {
+					return err
+				}
+				a.transfers.setTotals(job, len(files), total)
 				return a.downloadDir(ctx, job, files)
 			})
 			continue
@@ -437,6 +432,19 @@ func (a *App) PickLocalFiles() ([]string, error) {
 	})
 }
 
+// PickLocalUploadDir opens the OS directory chooser for uploading a whole
+// folder. Separate from PickLocalFiles because no OS file chooser will select
+// files and folders in the same pass — asking for one or the other is the only
+// way to offer both.
+func (a *App) PickLocalUploadDir() (string, error) {
+	if a.ctx == nil {
+		return "", errors.New("app: no window")
+	}
+	return wr.OpenDirectoryDialog(a.ctx, wr.OpenDialogOptions{
+		Title: i18n.S("업로드할 폴더 선택"),
+	})
+}
+
 // PickLocalDir opens the OS directory chooser for downloading into.
 func (a *App) PickLocalDir() (string, error) {
 	if a.ctx == nil {
@@ -449,9 +457,16 @@ func (a *App) PickLocalDir() (string, error) {
 
 // Recursive directory transfer (v1.x).
 //
-// Walked up front rather than streamed: the queue entry needs a real total, and
-// a progress bar whose denominator grows as it goes tells the user nothing
+// The tree is walked in full before a single byte moves, so the progress bar
+// has a real denominator — one that grows as it goes tells the user nothing
 // about how much longer they are waiting.
+//
+// The walk happens inside the job rather than before it is queued. On the
+// remote side it is readdir after readdir over the server's sftp-server, and a
+// deep tree is a lot of them; running it in the job means it holds a transfer
+// slot like everything else, the Cancel button stops it, and the window is not
+// waiting on it. Nothing but SFTP is used — no find, no tar, no process on the
+// server at all.
 
 // maxWalkFiles bounds a directory transfer. Someone who drags their home
 // directory by accident should get a refusal, not a machine that spends an hour
@@ -464,12 +479,15 @@ type relFile struct {
 	Size int64
 }
 
-func walkLocalDir(root string) ([]relFile, int64, error) {
+func walkLocalDir(ctx context.Context, root string) ([]relFile, int64, error) {
 	var files []relFile
 	var total int64
 
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
 			return err
 		}
 		if d.IsDir() {
@@ -502,12 +520,18 @@ func walkLocalDir(root string) ([]relFile, int64, error) {
 	return files, total, nil
 }
 
-func walkRemoteDir(client *sftp.Client, root string) ([]relFile, int64, error) {
+func walkRemoteDir(ctx context.Context, client *sftp.Client, root string) ([]relFile, int64, error) {
 	var files []relFile
 	var total int64
 
 	walker := client.Walk(root)
 	for walker.Step() {
+		// Checked every step, not only between files: this is the part that
+		// costs the server, and a walk nobody can stop is exactly the thing
+		// the Cancel button exists for.
+		if err := ctx.Err(); err != nil {
+			return nil, 0, err
+		}
 		if err := walker.Err(); err != nil {
 			// One unreadable subdirectory must not abort the whole transfer;
 			// a permission-denied /proc entry is normal.
@@ -631,6 +655,16 @@ func (a *App) copyFromRemote(ctx context.Context, j *transferJob, client *sftp.C
 		return copyErr
 	}
 	return closeErr
+}
+
+// setTotals fills in what the walk found, turning a row that was showing
+// "reading the listing" into one with a progress bar.
+func (q *transferQueue) setTotals(j *transferJob, files int, size int64) {
+	q.mu.Lock()
+	j.Files = files
+	j.Size = size
+	q.mu.Unlock()
+	q.emit(j)
 }
 
 // progressFile records which file of the tree is in flight.

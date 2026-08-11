@@ -9,6 +9,7 @@ import {
   MakeDir,
   PickLocalDir,
   PickLocalFiles,
+  PickLocalUploadDir,
   ReadTextFile,
   RenamePath,
   StartDownload,
@@ -675,6 +676,19 @@ export function FileExplorer({
     }
   }
 
+  // Its own button because no OS file chooser picks files and folders in one
+  // pass. Dragging a folder in already worked; this is for the people who never
+  // find out that it does.
+  const uploadFolder = async () => {
+    try {
+      const dir = await PickLocalUploadDir()
+      if (!dir) return
+      await StartUpload(hostID, [dir], cwd)
+    } catch (e) {
+      onError(String(e))
+    }
+  }
+
   // Wails delivers absolute paths, not file contents — which is what makes
   // dropping a multi-gigabyte folder cost nothing until the transfer starts.
   // The drop target is the whole explorer, and the destination is whatever
@@ -813,6 +827,7 @@ export function FileExplorer({
               {t('새 폴더')}
             </button>
             <button onClick={() => void upload()}>{t('업로드…')}</button>
+            <button onClick={() => void uploadFolder()}>{t('폴더 업로드…')}</button>
             <button disabled={selectedEntries.length === 0} onClick={() => void download()}>
               {t('다운로드…')}
             </button>
