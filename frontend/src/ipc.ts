@@ -89,6 +89,10 @@ export interface MCPStatus {
   delete: Record<string, boolean>
   /** The exact `claude mcp add` line, assembled by Go so nobody mistypes it. */
   snippet?: string
+  /** The same for Codex, which wants the token as an environment variable's
+   *  name rather than a header, so it is two lines and not an edit of the one
+   *  above. */
+  codexSnippet?: string
   error?: string
 }
 

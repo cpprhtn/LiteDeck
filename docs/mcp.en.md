@@ -60,17 +60,44 @@ other three cannot be copied first, so nothing could put them back.
 | Rate limit | 1.5 calls/sec, burst of 8, so an agent loop cannot hammer a small server |
 | Audit | Every tool call lands in the Command Log. Local only, sent nowhere |
 
-**Connecting.** Press **Copy** on the MCP panel's **Connection** tab and paste:
+## Connecting
+
+Pick a client on the MCP panel's **Connection** tab and press **Copy**. The app assembles the
+line, so the port and the token never have to be copied by hand.
+
+| Client | Status | How it attaches |
+|---|---|---|
+| **Claude Code** | ✅ **verified on real hardware** | one `claude mcp add --transport http …` line |
+| **Claude Desktop** | ⬜ not verified | the same Streamable HTTP settings |
+| **Codex CLI** | ⬜ **not verified** | takes the **name** of an environment variable, not the token |
+| Any other MCP client | ⬜ not verified | Streamable HTTP with a Bearer token is all it needs |
 
 ```bash
+# Claude Code
 claude mcp add --transport http litedeck http://127.0.0.1:<port>/mcp \
   --header "Authorization: Bearer <token>"
+
+# Codex CLI — the variable's name goes in the command, the token goes in the environment
+export LITEDECK_MCP_TOKEN=<token>
+codex mcp add litedeck --url http://127.0.0.1:<port>/mcp \
+  --bearer-token-env-var LITEDECK_MCP_TOKEN
 ```
 
 > [!NOTE]
-> **Verification status.** Confirmed end to end from Claude Code 2.1.22 against a **real
-> Ubuntu 24.04 server**. Asked *"how is the server doing"*, the model calls `health_snapshot`
-> by itself and comes back with the metrics, the failed unit, the stopped containers and the
-> exposed ports. Writes do raise the approval dialog; approving sends the command through to
-> the server, and a write nobody answers does not run.
+> **The two statuses are different and are written down separately.**
+>
+> **Claude Code 2.1.22 — verified on the author's machine.** Confirmed end to end against a
+> **real Ubuntu 24.04 server**. Asked *"how is the server doing"*, the model calls
+> `health_snapshot` by itself and comes back with the metrics, the failed unit, the stopped
+> containers and the exposed ports. Writes do raise the approval dialog; approving sends the
+> command through to the server, and a write nobody answers does not run.
+>
+> **Codex CLI — not verified.** The author does not have Codex installed. The transport is the
+> same one (Streamable HTTP with a Bearer token), and the endpoint answers correctly to every
+> request Codex was observed to make: 404 on the OAuth discovery paths, which reads as "no
+> OAuth, use the token"; `401 WWW-Authenticate: Bearer` without credentials; the 405 the spec
+> prescribes for a `GET` that would open an SSE stream; 200 for a POST with no `Accept` header.
+> **Nobody has actually attached it.** Working or not, please say so in an
+> [issue](https://github.com/cpprhtn/LiteDeck/issues) and this table gets corrected.
+>
 > MCP against a **Windows** server has not been tried yet.

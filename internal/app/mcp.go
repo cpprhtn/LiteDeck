@@ -54,8 +54,12 @@ type MCPStatus struct {
 	Write map[string]WritePolicyView `json:"write"`
 	// Delete lists hosts where file deletion is offered at all.
 	Delete map[string]bool `json:"delete"`
-	// Snippet is the line to paste into an MCP client.
+	// Snippet is the line to paste into Claude Code.
 	Snippet string `json:"snippet,omitempty"`
+	// CodexSnippet is the same thing for Codex CLI, which takes the token as the
+	// *name* of an environment variable rather than as a header, so it is two
+	// lines rather than one and cannot be produced by editing the first.
+	CodexSnippet string `json:"codexSnippet,omitempty"`
 	Error   string `json:"error,omitempty"`
 }
 
@@ -227,6 +231,12 @@ func (a *App) MCPState() MCPStatus {
 		out.Snippet = fmt.Sprintf(
 			"claude mcp add --transport http litedeck %s --header \"Authorization: Bearer %s\"",
 			out.URL, out.Token)
+		// Codex reads the token from the environment and wants the variable's
+		// name, not its value. Handing it the header form produces a server that
+		// registers and then fails to authenticate, which reads as our bug.
+		out.CodexSnippet = fmt.Sprintf(
+			"export LITEDECK_MCP_TOKEN=%s\ncodex mcp add litedeck --url %s --bearer-token-env-var LITEDECK_MCP_TOKEN",
+			out.Token, out.URL)
 	}
 	return out
 }

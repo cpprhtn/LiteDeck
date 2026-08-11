@@ -1760,6 +1760,32 @@ button.danger {
 .mcp-tabbody {
   min-height: 220px;
 }
+/* Which client the paste line is written for. Segmented rather than tabbed:
+   these are two spellings of one thing, not two places to be. */
+.mcp-clients {
+  display: flex;
+  gap: 2px;
+  margin-bottom: var(--sp-1);
+}
+.mcp-clients button {
+  height: auto;
+  padding: 3px var(--sp-2);
+  font-size: 12px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg-muted);
+}
+.mcp-clients button:first-child {
+  border-radius: 4px 0 0 4px;
+}
+.mcp-clients button:last-child {
+  border-radius: 0 4px 4px 0;
+}
+.mcp-clients button[data-on] {
+  color: var(--fg);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
 .mcp-host {
   padding: var(--sp-2) 0;
   border-bottom: 1px solid var(--border);

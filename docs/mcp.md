@@ -60,16 +60,40 @@ MCP 패널의 **바뀐 파일** 탭에서 파일별로 되돌립니다. 안 묻�
 | 레이트 리밋 | 초당 1.5회, 순간 8회. 에이전트 루프가 서버를 때리지 못하게 |
 | 감사 | 모든 도구 호출이 Command Log 에 남습니다. 로컬에만, 어디로도 안 갑니다 |
 
-**연결하기.** MCP 패널의 **연결** 탭에서 **복사** 를 누르고 붙여넣으면 끝입니다.
+## 연결하기
+
+MCP 패널의 **연결** 탭에서 클라이언트를 고르고 **복사** 를 누르면 됩니다. 붙여넣을 줄을 앱이 조립하므로 포트·토큰을 손으로 옮길 일이 없습니다.
+
+| 클라이언트 | 상태 | 붙이는 법 |
+|---|---|---|
+| **Claude Code** | ✅ **실기 검증** | `claude mcp add --transport http …` 한 줄 |
+| **Claude Desktop** | ⬜ 미검증 | 같은 Streamable HTTP 설정 |
+| **Codex CLI** | ⬜ **미검증** | 토큰을 환경변수 **이름**으로 받습니다 (아래) |
+| 그 밖의 MCP 클라이언트 | ⬜ 미검증 | Streamable HTTP + Bearer 를 지원하면 됩니다 |
 
 ```bash
+# Claude Code
 claude mcp add --transport http litedeck http://127.0.0.1:<포트>/mcp \
   --header "Authorization: Bearer <토큰>"
+
+# Codex CLI — 토큰 값이 아니라 환경변수 이름을 넘깁니다
+export LITEDECK_MCP_TOKEN=<토큰>
+codex mcp add litedeck --url http://127.0.0.1:<포트>/mcp \
+  --bearer-token-env-var LITEDECK_MCP_TOKEN
 ```
 
 > [!NOTE]
-> **검증 상태.** Claude Code 2.1.22 가 이 엔드포인트에 붙는 것(`✓ Connected`)과,
-> 프로토콜 전 구간(initialize·tools/list·tools/call·거부·인증·레이트 리밋)이
-> 실제로 동작하는 것까지 확인했습니다. **모델이 스스로 도구를 호출하는 것은
-> 저자가 확인하지 못했습니다.** 확인 환경의 제약이었고, 여러분 터미널에서는
-> 위 한 줄이면 됩니다. 결과를 알려주시면 이 문구를 고치겠습니다.
+> **검증 상태를 구분해서 적습니다.**
+>
+> **Claude Code 2.1.22 — 저자 PC 에서 검증됨.** 엔드포인트에 붙는 것(`✓ Connected`),
+> 프로토콜 전 구간(initialize·tools/list·tools/call·거부·인증·레이트 리밋), 그리고
+> 실제 Ubuntu 24.04.4 서버를 상대로 모델이 스스로 도구를 호출해 조회하고 파일을
+> 읽고 쓰는 것까지 왕복했습니다.
+>
+> **Codex CLI — 검증하지 못했습니다.** 저자 환경에 Codex 가 없습니다. 전송 방식이
+> 같고(Streamable HTTP + Bearer), Codex 가 하는 요청을 흉내 내 확인한 범위에서는
+> 엔드포인트가 전부 올바르게 답합니다 — OAuth 탐색에 404(= OAuth 없음, Bearer 로
+> 폴백), 무인증에 `401 WWW-Authenticate: Bearer`, SSE 를 여는 `GET` 에 명세가
+> 지정한 405, `Accept` 헤더가 없어도 200. 그래도 **붙여서 확인한 사람은 없습니다.**
+> 되든 안 되든 [이슈](https://github.com/cpprhtn/LiteDeck/issues)로 알려주시면
+> 이 표를 고치겠습니다.
