@@ -225,12 +225,10 @@ export function McpPanel({
 
         {tab === 'permissions' && (
           <div className="mcp-tabbody">
-            <p className="muted small">
-              {t(
-                '기본은 전부 꺼짐입니다. 호스트를 등록했다고 MCP 가 볼 수 있게 되지는 않습니다. 변경은 파일만 물어보고 재시작 등은 그냥 실행합니다 — 승인창이 서버 현재 내용 대비 diff 를 보여주는데, 그건 클라이언트가 가질 수 없는 정보이기 때문입니다.',
-              )}
-            </p>
-
+            {/* No preamble. Every toggle below starts off, and the dropdown
+                says what each mode does — a paragraph restating that is read
+                once, believed, and then in the way forever. Why the modes are
+                shaped the way they are belongs in docs/mcp.md. */}
             {hosts.length === 0 && (
               <div className="placeholder small">{t('등록된 호스트가 없습니다.')}</div>
             )}
@@ -295,10 +293,11 @@ export function McpPanel({
 
         {tab === 'changes' && (
           <div className="mcp-tabbody">
+            {/* The two facts somebody looking at this list acts on: how long
+                they have, and that nothing of this is on the server. Why the
+                feature exists is not one of them. */}
             <p className="muted small">
-              {t(
-                '변경 전 내용을 이 컴퓨터에 보관합니다. 안 묻기로 두고 자리를 비웠을 때 방어 대신 남는 것이 이것입니다. 24시간이 지나면 알아서 지워지고, 서버에는 아무것도 남기지 않습니다.',
-              )}
+              {t('변경 전 내용을 이 컴퓨터에 24시간 보관합니다. 서버에는 아무것도 남기지 않습니다.')}
             </p>
             {changes.length === 0 && (
               <div className="placeholder small">{t('아직 없습니다.')}</div>

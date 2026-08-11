@@ -109,7 +109,7 @@ in — and it needs root, and a read-only view that demands a password before it
 a view nobody opens. Instead the files are **read over the SFTP that is already open**: they are
 world-readable everywhere they ship, and not a single command runs.
 
-The cost of that trade is on screen rather than hidden. **It knows what the files declare.** Where
+The cost of that trade is this. **It knows what the files declare.** Where
 they are silent, sshd's built-in default applies, and that differs between distributions (Debian's
 `PermitRootLogin` is not upstream's), so nothing is guessed.
 

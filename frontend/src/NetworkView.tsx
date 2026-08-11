@@ -213,7 +213,15 @@ function SSHDSection({ hostID, visible }: { hostID: string; visible: boolean }) 
 
   return (
     <section>
-      <h3 className="net-heading">
+      {/* The caveat lives on hover, not in the layout. It is true and worth
+          having somewhere — this reads the files, so it knows nothing about the
+          defaults that apply where they are silent — but a paragraph of it above
+          the findings is read once by everybody and needed by almost nobody.
+          The long form is in docs/security.md. */}
+      <h3
+        className="net-heading"
+        title={t('설정 파일에 적힌 값만 읽습니다. 파일이 정하지 않은 항목에는 sshd 기본값이 적용되며, 그 값은 배포판마다 다릅니다.')}
+      >
         {t('SSH 설정')}
         {warns.length > 0 && <span className="badge warn">{t('{n}건', { n: warns.length })}</span>}
         <span className="spacer" />
@@ -229,12 +237,8 @@ function SSHDSection({ hostID, visible }: { hostID: string; visible: boolean }) 
 
       {report && (
         <>
-          <p className="muted small">
-            {t('설정 파일에 적힌 값만 읽습니다 — 파일이 정하지 않은 항목은 sshd 기본값이 적용되고, 그 값은 배포판마다 달라 여기서 추측하지 않습니다.')}
-          </p>
-
           {notes.length === 0 && (
-            <div className="placeholder small">{t('짚을 만한 설정이 없습니다.')}</div>
+            <div className="placeholder small">{t('설정 파일에서 짚을 것이 없습니다.')}</div>
           )}
           <div className="sshd-notes">
             {notes.map((n, i) => (

@@ -49,7 +49,7 @@ The network tab reads `/etc/ssh/sshd_config` and its `Include` targets **over SF
 ([`internal/app/sshdconfig.go`](../internal/app/sshdconfig.go)). It reads, runs no command, and needs
 no root. **It changes nothing** — there is no editing feature.
 
-Its limit is on screen too: **it knows only what the files declare.** sshd's compiled-in defaults
+Its limit: **it knows only what the files declare.** sshd's compiled-in defaults
 differ between distributions, so they are not guessed, and any file this account could not read is
 named as a gap.
 
