@@ -88,6 +88,9 @@ type transferJob struct {
 	srcModTime int64
 }
 
+// snapshot copies the row for the UI. The caller must hold q.mu: this reads
+// every field of the embedded Transfer, and ResumeTransfer writes some of them
+// from whichever goroutine the user clicked on.
 func (j *transferJob) snapshot() Transfer {
 	t := j.Transfer
 	t.Done = j.done.Load()
@@ -190,7 +193,21 @@ func (q *transferQueue) setStatus(j *transferJob, status string, err error) {
 }
 
 func (q *transferQueue) emit(j *transferJob) {
-	q.app.emit("transfer:progress", j.snapshot())
+	// Snapshot under the lock, publish outside it. Emitting while holding the
+	// queue would put an event-bus call in front of every other caller, and
+	// reading the row without it races the resume that just re-queued this job.
+	q.mu.Lock()
+	t := j.snapshot()
+	q.mu.Unlock()
+	q.app.emit("transfer:progress", t)
+}
+
+// resumable reads the flag the transfer goroutine needs but does not own —
+// keepPartial and dropPartial write it from elsewhere.
+func (q *transferQueue) resumable(j *transferJob) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return j.Resumable
 }
 
 // run executes one transfer, respecting the concurrency limit.
@@ -322,7 +339,7 @@ func (a *App) uploadOne(ctx context.Context, j *transferJob) error {
 		dst *sftp.File
 		at  int64
 	)
-	if fi, statErr := client.Stat(tmp); statErr == nil && j.Resumable {
+	if fi, statErr := client.Stat(tmp); statErr == nil && a.transfers.resumable(j) {
 		at = resumeOffset(fi.Size(), j.Size)
 	}
 	if at > 0 {
@@ -446,7 +463,7 @@ func (a *App) downloadOne(ctx context.Context, j *transferJob) error {
 		dst *os.File
 		at  int64
 	)
-	if fi, statErr := os.Stat(tmp); statErr == nil && j.Resumable {
+	if fi, statErr := os.Stat(tmp); statErr == nil && a.transfers.resumable(j) {
 		at = resumeOffset(fi.Size(), j.Size)
 	}
 	if at > 0 {

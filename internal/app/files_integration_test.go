@@ -726,36 +726,9 @@ func TestTransferResumesWhereItStopped(t *testing.T) {
 	}
 	id := ids[0]
 
-	deadline := time.Now().Add(30 * time.Second)
-	for {
-		tr := findTransfer(t, a, id)
-		if tr.Done > 0 && tr.Done < tr.Size {
-			break
-		}
-		if tr.Status == TransferDone {
-			t.Skip("the transfer finished before it could be interrupted; too fast to test here")
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("transfer never reached a cancellable point: %+v", tr)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	if err := a.CancelTransfer(id); err != nil {
-		t.Fatalf("CancelTransfer: %v", err)
-	}
+	cutPartway(t, a, id)
 
-	deadline = time.Now().Add(30 * time.Second)
-	var stopped Transfer
-	for {
-		stopped = findTransfer(t, a, id)
-		if stopped.Status == TransferCancelled {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("transfer never settled after cancel: %+v", stopped)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	stopped := findTransfer(t, a, id)
 	if !stopped.Resumable {
 		t.Fatalf("a cancelled transfer with %d bytes on disk was not marked resumable", stopped.Done)
 	}
@@ -821,27 +794,7 @@ func TestResumeRefusesWhenTheSourceChanged(t *testing.T) {
 		t.Fatalf("StartDownload: %v", err)
 	}
 	id := ids[0]
-	deadline := time.Now().Add(30 * time.Second)
-	for {
-		tr := findTransfer(t, a, id)
-		if tr.Done > 0 && tr.Done < tr.Size {
-			break
-		}
-		if tr.Status == TransferDone {
-			t.Skip("finished before it could be interrupted")
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("never reached a cancellable point: %+v", tr)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	_ = a.CancelTransfer(id)
-	for time.Now().Before(deadline) {
-		if findTransfer(t, a, id).Status == TransferCancelled {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	cutPartway(t, a, id)
 
 	// Somebody rebuilds the artefact. Same length, different bytes — the case
 	// a size check alone would wave through.
@@ -867,7 +820,7 @@ func TestResumeRefusesWhenTheSourceChanged(t *testing.T) {
 	if err := a.ResumeTransfer(id); err != nil {
 		t.Fatalf("ResumeTransfer returned early: %v", err)
 	}
-	deadline = time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	var final Transfer
 	for {
 		final = findTransfer(t, a, id)
@@ -887,6 +840,46 @@ func TestResumeRefusesWhenTheSourceChanged(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(downDir, "src.bin")); err == nil {
 		t.Error("a file was produced from two different versions of the source")
+	}
+}
+
+// cutPartway cancels a running transfer once some but not all of it has
+// arrived, and reports the size of what survived.
+//
+// Interrupting is a race with the transfer itself, and on a fast machine a
+// small file lands before the cancel does. That is not a failure of anything
+// under test, so it skips — the alternative is a test that fails on whichever
+// runner happens to be quick that day.
+func cutPartway(t *testing.T, a *App, id string) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		tr := findTransfer(t, a, id)
+		if tr.Status == TransferDone {
+			t.Skip("the transfer finished before it could be interrupted; too fast to test here")
+		}
+		if tr.Done > 0 && tr.Done < tr.Size {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("transfer never reached a cancellable point: %+v", tr)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if err := a.CancelTransfer(id); err != nil {
+		t.Fatalf("CancelTransfer: %v", err)
+	}
+	for {
+		switch findTransfer(t, a, id).Status {
+		case TransferCancelled:
+			return
+		case TransferDone:
+			t.Skip("the transfer completed while the cancel was in flight")
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("transfer never settled after cancel: %+v", findTransfer(t, a, id))
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 
