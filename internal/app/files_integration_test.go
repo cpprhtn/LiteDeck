@@ -697,3 +697,206 @@ func TestDirectoryTransferRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// TestTransferResumesWhereItStopped: a cancelled download keeps its bytes and
+// picks up from them. Proven by the offset it starts at, not by the result —
+// a transfer that silently restarted from zero would also end up correct.
+func TestTransferResumesWhereItStopped(t *testing.T) {
+	a := connectedApp(t)
+	dir := scratchDir(t, a, "litedeck-resume")
+
+	// Big enough that cancelling lands in the middle of it.
+	payload := strings.Repeat("litedeck resume payload 0123456789\n", 300000) // ~10 MB
+	local := filepath.Join(t.TempDir(), "big.bin")
+	if err := os.WriteFile(local, []byte(payload), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ids, err := a.StartUpload("fixture", []string{local}, dir)
+	if err != nil {
+		t.Fatalf("StartUpload: %v", err)
+	}
+	waitTransfer(t, a, ids[0], TransferDone)
+	remote := path.Join(dir, "big.bin")
+
+	// Pull it back down and cut the transfer partway through.
+	downDir := t.TempDir()
+	ids, err = a.StartDownload("fixture", []string{remote}, downDir)
+	if err != nil {
+		t.Fatalf("StartDownload: %v", err)
+	}
+	id := ids[0]
+
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		tr := findTransfer(t, a, id)
+		if tr.Done > 0 && tr.Done < tr.Size {
+			break
+		}
+		if tr.Status == TransferDone {
+			t.Skip("the transfer finished before it could be interrupted; too fast to test here")
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("transfer never reached a cancellable point: %+v", tr)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if err := a.CancelTransfer(id); err != nil {
+		t.Fatalf("CancelTransfer: %v", err)
+	}
+
+	deadline = time.Now().Add(30 * time.Second)
+	var stopped Transfer
+	for {
+		stopped = findTransfer(t, a, id)
+		if stopped.Status == TransferCancelled {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("transfer never settled after cancel: %+v", stopped)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !stopped.Resumable {
+		t.Fatalf("a cancelled transfer with %d bytes on disk was not marked resumable", stopped.Done)
+	}
+
+	// The bytes are still there, under a name that says what they are.
+	partial := filepath.Join(downDir, "big.bin"+partialSuffix)
+	fi, err := os.Stat(partial)
+	if err != nil {
+		t.Fatalf("the partial file was thrown away: %v", err)
+	}
+	if fi.Size() == 0 {
+		t.Fatal("the partial file is empty")
+	}
+
+	if err := a.ResumeTransfer(id); err != nil {
+		t.Fatalf("ResumeTransfer: %v", err)
+	}
+	waitTransfer(t, a, id, TransferDone)
+
+	// This is the assertion that matters: it began where it left off.
+	done := findTransfer(t, a, id)
+	if done.Resumed == 0 {
+		t.Error("the resumed transfer started from zero — it re-sent bytes it already had")
+	}
+	if done.Resumed != fi.Size() {
+		t.Errorf("resumed at %d, want the partial's %d bytes", done.Resumed, fi.Size())
+	}
+
+	got, err := os.ReadFile(filepath.Join(downDir, "big.bin"))
+	if err != nil {
+		t.Fatalf("read the finished file: %v", err)
+	}
+	if string(got) != payload {
+		t.Errorf("the resumed file differs (%d vs %d bytes)", len(got), len(payload))
+	}
+	if _, err := os.Stat(partial); !os.IsNotExist(err) {
+		t.Error("the partial file survived a successful resume")
+	}
+}
+
+// TestResumeRefusesWhenTheSourceChanged: appending to bytes that came from a
+// different version produces a file of exactly the right length and entirely
+// wrong content. Nothing downstream would notice, so this has to.
+func TestResumeRefusesWhenTheSourceChanged(t *testing.T) {
+	a := connectedApp(t)
+	dir := scratchDir(t, a, "litedeck-resume-changed")
+
+	payload := strings.Repeat("original\n", 400000) // ~3.6 MB
+	local := filepath.Join(t.TempDir(), "src.bin")
+	if err := os.WriteFile(local, []byte(payload), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ids, err := a.StartUpload("fixture", []string{local}, dir)
+	if err != nil {
+		t.Fatalf("StartUpload: %v", err)
+	}
+	waitTransfer(t, a, ids[0], TransferDone)
+	remote := path.Join(dir, "src.bin")
+
+	downDir := t.TempDir()
+	ids, err = a.StartDownload("fixture", []string{remote}, downDir)
+	if err != nil {
+		t.Fatalf("StartDownload: %v", err)
+	}
+	id := ids[0]
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		tr := findTransfer(t, a, id)
+		if tr.Done > 0 && tr.Done < tr.Size {
+			break
+		}
+		if tr.Status == TransferDone {
+			t.Skip("finished before it could be interrupted")
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("never reached a cancellable point: %+v", tr)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	_ = a.CancelTransfer(id)
+	for time.Now().Before(deadline) {
+		if findTransfer(t, a, id).Status == TransferCancelled {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	// Somebody rebuilds the artefact. Same length, different bytes — the case
+	// a size check alone would wave through.
+	replacement := strings.Repeat("REPLACED\n", 400000)
+	if len(replacement) != len(payload) {
+		t.Fatalf("the replacement must be the same length to test this: %d vs %d", len(replacement), len(payload))
+	}
+	up := filepath.Join(t.TempDir(), "src.bin")
+	if err := os.WriteFile(up, []byte(replacement), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ids2, err := a.StartUpload("fixture", []string{up}, dir)
+	if err != nil {
+		t.Fatalf("StartUpload(replacement): %v", err)
+	}
+	waitTransfer(t, a, ids2[0], TransferDone)
+
+	partial := filepath.Join(downDir, "src.bin"+partialSuffix)
+	if _, err := os.Stat(partial); err != nil {
+		t.Fatalf("no partial to resume from: %v", err)
+	}
+
+	if err := a.ResumeTransfer(id); err != nil {
+		t.Fatalf("ResumeTransfer returned early: %v", err)
+	}
+	deadline = time.Now().Add(30 * time.Second)
+	var final Transfer
+	for {
+		final = findTransfer(t, a, id)
+		if final.Status == TransferFailed || final.Status == TransferDone {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("resume never settled: %+v", final)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if final.Status != TransferFailed {
+		t.Fatalf("resuming onto a changed source ended as %s, want a refusal", final.Status)
+	}
+	if _, err := os.Stat(partial); !os.IsNotExist(err) {
+		t.Error("the stale partial was left behind for another attempt to append to")
+	}
+	if _, err := os.Stat(filepath.Join(downDir, "src.bin")); err == nil {
+		t.Error("a file was produced from two different versions of the source")
+	}
+}
+
+func findTransfer(t *testing.T, a *App, id string) Transfer {
+	t.Helper()
+	for _, tr := range a.Transfers() {
+		if tr.ID == id {
+			return tr
+		}
+	}
+	t.Fatalf("no transfer %s in the queue", id)
+	return Transfer{}
+}

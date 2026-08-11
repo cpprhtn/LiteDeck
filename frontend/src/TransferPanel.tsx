@@ -3,6 +3,7 @@ import {
   CancelTransfer,
   ClearFinishedTransfers,
   GetTransfers,
+  ResumeTransfer,
   on,
   type Transfer,
 } from './ipc'
@@ -104,6 +105,19 @@ export function TransferPanel({ onError }: { onError: (msg: string) => void }) {
                   onClick={() => void CancelTransfer(t.id).catch((e) => onError(String(e)))}
                 >
                   {t2('취소')}
+                </button>
+              )}
+              {/* Only when the bytes are still there. A stopped transfer whose
+                  partial has been cleaned up has nothing to continue from, and
+                  offering the button anyway would promise a shortcut that turns
+                  into a full re-send. */}
+              {t.resumable && t.status !== 'queued' && t.status !== 'running' && (
+                <button
+                  className="ghost small-btn"
+                  title={t2('{n} 부터 이어받습니다', { n: fmtBytes(t.done) })}
+                  onClick={() => void ResumeTransfer(t.id).catch((e) => onError(String(e)))}
+                >
+                  {t2('이어받기')}
                 </button>
               )}
               {t.error && <div className="transfer-error mono">{t.error}</div>}

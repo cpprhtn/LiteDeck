@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -66,12 +67,25 @@ type Transfer struct {
 	Files      int    `json:"files,omitempty"`
 	FilesDone  int    `json:"filesDone,omitempty"`
 	CurrentRel string `json:"currentRel,omitempty"`
+
+	// Resumable means the bytes already moved are still on disk under the
+	// temporary name, so this can pick up where it stopped rather than start
+	// over. Only single files: see resumeOffset.
+	Resumable bool `json:"resumable,omitempty"`
+	// Resumed is the offset this attempt began at, so a bar that is 90% along
+	// does not appear to restart at zero.
+	Resumed int64 `json:"resumed,omitempty"`
 }
 
 type transferJob struct {
 	Transfer
 	cancel context.CancelFunc
 	done   atomic.Int64
+	// srcModTime is what the source's timestamp was when this was queued.
+	// Resuming appends to a file, so it has to be the same file — a source
+	// edited between the two attempts would otherwise produce a result that is
+	// half one version and half another, and nothing about it would look wrong.
+	srcModTime int64
 }
 
 func (j *transferJob) snapshot() Transfer {
@@ -133,10 +147,14 @@ func (q *transferQueue) list() []Transfer {
 
 // clearFinished drops completed rows so a long session does not accumulate
 // them without bound.
+//
+// Clearing a row that could have been resumed also deletes the bytes it was
+// holding. Otherwise dismissing a failed transfer would silently leave a
+// half-file on the server named after something the user no longer sees.
 func (q *transferQueue) clearFinished() {
 	q.mu.Lock()
-	defer q.mu.Unlock()
 	kept := q.order[:0]
+	var abandoned []*transferJob
 	for _, id := range q.order {
 		j := q.jobs[id]
 		if j == nil {
@@ -146,9 +164,19 @@ func (q *transferQueue) clearFinished() {
 			kept = append(kept, id)
 			continue
 		}
+		if j.Resumable {
+			abandoned = append(abandoned, j)
+		}
 		delete(q.jobs, id)
 	}
 	q.order = kept
+	q.mu.Unlock()
+
+	// Outside the lock: dropPartial takes it, and an SFTP round trip has no
+	// business holding the queue while the panel wants to render.
+	for _, j := range abandoned {
+		q.dropPartial(j)
+	}
 }
 
 func (q *transferQueue) setStatus(j *transferJob, status string, err error) {
@@ -263,6 +291,7 @@ func (a *App) StartUpload(hostID string, localPaths []string, remoteDir string) 
 			Remote:    path.Join(dir, filepath.Base(local)),
 			Size:      fi.Size(),
 		})
+		j.srcModTime = fi.ModTime().Unix()
 		ids = append(ids, j.ID)
 		a.transfers.run(j, a.uploadOne)
 	}
@@ -279,25 +308,57 @@ func (a *App) uploadOne(ctx context.Context, j *transferJob) error {
 		return err
 	}
 	defer src.Close()
+	size, modTime := statOf(src)
+	if err := a.transfers.checkSourceUnchanged(j, size, modTime); err != nil {
+		return err
+	}
 
 	// Write to a temporary name and rename on success, so an interrupted
-	// upload never leaves a half-written file wearing the real name.
-	tmp := j.Remote + ".litedeck-partial"
-	dst, err := client.Create(tmp)
+	// upload never leaves a half-written file wearing the real name. The same
+	// file is what a later attempt resumes into.
+	tmp := j.Remote + partialSuffix
+
+	var (
+		dst *sftp.File
+		at  int64
+	)
+	if fi, statErr := client.Stat(tmp); statErr == nil && j.Resumable {
+		at = resumeOffset(fi.Size(), j.Size)
+	}
+	if at > 0 {
+		// O_RDWR, not O_WRONLY: the seam has to be read back before anything is
+		// written past it.
+		dst, err = client.OpenFile(tmp, os.O_RDWR)
+		if err == nil {
+			err = a.transfers.checkSeam(j, src, dst, at)
+		}
+		if err == nil {
+			_, err = dst.Seek(at, io.SeekStart)
+		}
+		if err == nil {
+			_, err = src.Seek(at, io.SeekStart)
+		}
+		if err != nil && dst != nil {
+			_ = dst.Close()
+		}
+	} else {
+		dst, err = client.Create(tmp)
+	}
 	if err != nil {
 		return err
 	}
+	a.transfers.beginAt(j, at)
 
 	pw := &progressWriter{q: a.transfers, j: j, ctx: ctx}
 	_, copyErr := io.Copy(io.MultiWriter(dst, pw), src)
 	closeErr := dst.Close()
 
 	if copyErr != nil {
-		_ = client.Remove(tmp)
+		a.transfers.keepPartial(j)
 		return copyErr
 	}
 	if closeErr != nil {
-		_ = client.Remove(tmp)
+		a.transfers.keepPartial(j)
 		return closeErr
 	}
 	if err := client.PosixRename(tmp, j.Remote); err != nil {
@@ -357,6 +418,7 @@ func (a *App) StartDownload(hostID string, remotePaths []string, localDir string
 			Remote:    cleaned,
 			Size:      fi.Size(),
 		})
+		j.srcModTime = fi.ModTime().Unix()
 		ids = append(ids, j.ID)
 		a.transfers.run(j, a.downloadOne)
 	}
@@ -373,23 +435,52 @@ func (a *App) downloadOne(ctx context.Context, j *transferJob) error {
 		return err
 	}
 	defer src.Close()
+	size, modTime := statOf(src)
+	if err := a.transfers.checkSourceUnchanged(j, size, modTime); err != nil {
+		return err
+	}
 
-	tmp := j.Local + ".litedeck-partial"
-	dst, err := os.Create(tmp)
+	tmp := j.Local + partialSuffix
+
+	var (
+		dst *os.File
+		at  int64
+	)
+	if fi, statErr := os.Stat(tmp); statErr == nil && j.Resumable {
+		at = resumeOffset(fi.Size(), j.Size)
+	}
+	if at > 0 {
+		dst, err = os.OpenFile(tmp, os.O_RDWR, 0o644)
+		if err == nil {
+			err = a.transfers.checkSeam(j, src, dst, at)
+		}
+		if err == nil {
+			_, err = dst.Seek(at, io.SeekStart)
+		}
+		if err == nil {
+			_, err = src.Seek(at, io.SeekStart)
+		}
+		if err != nil && dst != nil {
+			_ = dst.Close()
+		}
+	} else {
+		dst, err = os.Create(tmp)
+	}
 	if err != nil {
 		return err
 	}
+	a.transfers.beginAt(j, at)
 
 	pw := &progressWriter{q: a.transfers, j: j, ctx: ctx}
 	_, copyErr := io.Copy(io.MultiWriter(dst, pw), src)
 	closeErr := dst.Close()
 
 	if copyErr != nil {
-		_ = os.Remove(tmp)
+		a.transfers.keepPartial(j)
 		return copyErr
 	}
 	if closeErr != nil {
-		_ = os.Remove(tmp)
+		a.transfers.keepPartial(j)
 		return closeErr
 	}
 	if err := os.Rename(tmp, j.Local); err != nil {
@@ -397,6 +488,190 @@ func (a *App) downloadOne(ctx context.Context, j *transferJob) error {
 		return err
 	}
 	a.transfers.emit(j)
+	return nil
+}
+
+// Resuming an interrupted transfer (§4.2).
+//
+// SFTP makes the mechanics trivial and the safety the whole job. Every read and
+// write on the wire already carries an absolute offset — SSH_FXP_READ and
+// SSH_FXP_WRITE are addressed, not streamed — so continuing is a seek, with no
+// Range header to negotiate and nothing for the server to opt into.
+//
+// What SFTP will not tell you is whether the bytes already on disk came from
+// the file you are about to append to. Nothing prevents appending the second
+// half of a rebuilt archive to the first half of the old one; the result is the
+// right length, the transfer reports success, and the corruption surfaces
+// somewhere else entirely. So the source's size and timestamp are recorded when
+// the transfer is queued and checked again before a single byte is appended.
+
+// partialSuffix names the in-progress file. Visible on purpose: a transfer that
+// dies with the app leaves this behind, and a name that says what it is beats a
+// hidden file nobody can account for.
+const partialSuffix = ".litedeck-partial"
+
+// resumeOffset decides where to pick up, or 0 to start over. A partial at least
+// as large as the source is not a resume point — it is evidence that something
+// else has been writing there.
+func resumeOffset(partial, total int64) int64 {
+	if partial <= 0 || total <= 0 || partial >= total {
+		return 0
+	}
+	return partial
+}
+
+type statter interface{ Stat() (os.FileInfo, error) }
+
+func statOf(f statter) (int64, int64) {
+	fi, err := f.Stat()
+	if err != nil {
+		return 0, 0
+	}
+	return fi.Size(), fi.ModTime().Unix()
+}
+
+// overlapWindow is how much of the already-transferred region is read back and
+// compared before anything is appended to it.
+//
+// Size and timestamp alone are not enough, and the gap is not theoretical: SFTP
+// carries mtime in whole seconds, so a file rebuilt to the same length within
+// the same second as the one already half-transferred looks identical by every
+// cheap measure. Comparing the bytes on both sides of the seam catches it.
+//
+// This checks the seam, not the whole prefix. Verifying every byte already
+// transferred would mean reading the source in full, which is the download this
+// exists to avoid. A source edited only in a region further back than this
+// window, to exactly the same length, would still get through — stated here
+// because a guard whose limits are unwritten gets trusted past them.
+const overlapWindow = 64 << 10
+
+type readerAt interface {
+	ReadAt(p []byte, off int64) (int, error)
+}
+
+// sameSeam reports whether the bytes just before `at` agree on both sides.
+func sameSeam(src, partial readerAt, at int64) (bool, error) {
+	n := int64(overlapWindow)
+	if at < n {
+		n = at
+	}
+	if n <= 0 {
+		return true, nil
+	}
+	off := at - n
+	a, b := make([]byte, n), make([]byte, n)
+	if _, err := src.ReadAt(a, off); err != nil && !errors.Is(err, io.EOF) {
+		return false, err
+	}
+	if _, err := partial.ReadAt(b, off); err != nil && !errors.Is(err, io.EOF) {
+		return false, err
+	}
+	return bytes.Equal(a, b), nil
+}
+
+// checkSourceUnchanged is the cheap half: a source of a different length, or
+// with a different timestamp, is a different file and there is nothing to
+// compare. Only bites on a resume — a fresh transfer overwrites from zero and
+// is correct whatever the source now says.
+func (q *transferQueue) checkSourceUnchanged(j *transferJob, size, modTime int64) error {
+	q.mu.Lock()
+	resumable, want, wantMod := j.Resumable, j.Size, j.srcModTime
+	q.mu.Unlock()
+	if !resumable {
+		return nil
+	}
+	if size == want && (wantMod == 0 || modTime == wantMod) {
+		return nil
+	}
+	q.dropPartial(j)
+	return errSourceChanged
+}
+
+var errSourceChanged = i18n.Errorf("전송을 시작한 뒤 원본이 바뀌었습니다 — 이어받을 수 없어 받다 만 파일을 지웠습니다. 처음부터 다시 전송하세요")
+
+// checkSeam is the half that costs a read: the bytes leading up to the resume
+// point have to be the same bytes on both sides.
+func (q *transferQueue) checkSeam(j *transferJob, src, partial readerAt, at int64) error {
+	if at <= 0 {
+		return nil
+	}
+	same, err := sameSeam(src, partial, at)
+	if err != nil {
+		return err
+	}
+	if same {
+		return nil
+	}
+	q.dropPartial(j)
+	return errSourceChanged
+}
+
+// beginAt records where this attempt starts so the progress bar counts from
+// there rather than from zero.
+func (q *transferQueue) beginAt(j *transferJob, at int64) {
+	q.mu.Lock()
+	j.Resumed = at
+	q.mu.Unlock()
+	j.done.Store(at)
+	q.emit(j)
+}
+
+// keepPartial marks a stopped transfer as one that can be picked up. The bytes
+// are left where they are; that is the whole point.
+func (q *transferQueue) keepPartial(j *transferJob) {
+	q.mu.Lock()
+	j.Resumable = !j.Dir && j.done.Load() > 0
+	q.mu.Unlock()
+}
+
+// dropPartial deletes the in-progress file and forgets it.
+func (q *transferQueue) dropPartial(j *transferJob) {
+	q.mu.Lock()
+	j.Resumable = false
+	dir, direction, local, remote, host := j.Dir, j.Direction, j.Local, j.Remote, j.HostID
+	q.mu.Unlock()
+	if dir {
+		return
+	}
+	if direction == "download" {
+		_ = os.Remove(local + partialSuffix)
+		return
+	}
+	if client, err := q.app.mgr.SFTP(host); err == nil {
+		_ = client.Remove(remote + partialSuffix)
+	}
+}
+
+// ResumeTransfer restarts a stopped transfer from where it got to.
+func (a *App) ResumeTransfer(id string) error {
+	j, ok := a.transfers.get(id)
+	if !ok {
+		return fmt.Errorf("app: no transfer %q", id)
+	}
+	a.transfers.mu.Lock()
+	status, resumable, direction := j.Status, j.Resumable, j.Direction
+	a.transfers.mu.Unlock()
+
+	if status == TransferQueued || status == TransferRunning {
+		return i18n.Errorf("이미 진행 중입니다")
+	}
+	if !resumable {
+		return i18n.Errorf("이어받을 수 있는 전송이 아닙니다")
+	}
+
+	a.transfers.mu.Lock()
+	j.Error = ""
+	// Synchronously, before the goroutine starts: leaving the row reading
+	// "cancelled" until the worker gets scheduled makes a resume that is about
+	// to run look like one that failed instantly.
+	j.Status = TransferQueued
+	a.transfers.mu.Unlock()
+
+	if direction == "upload" {
+		a.transfers.run(j, a.uploadOne)
+	} else {
+		a.transfers.run(j, a.downloadOne)
+	}
 	return nil
 }
 

@@ -229,6 +229,10 @@ export interface Transfer {
   files?: number
   filesDone?: number
   currentRel?: string
+  /** The bytes already moved are still on disk, so this can be picked up. */
+  resumable?: boolean
+  /** Where the current attempt began, so the bar does not restart at zero. */
+  resumed?: number
 }
 
 /** The outcome of an action that may require root (§7.2). */
@@ -562,6 +566,7 @@ interface Bindings {
   StartUpload(id: string, localPaths: string[], remoteDir: string): Promise<string[]>
   StartDownload(id: string, remotePaths: string[], localDir: string): Promise<string[]>
   CancelTransfer(transferId: string): Promise<void>
+  ResumeTransfer(transferId: string): Promise<void>
   Transfers(): Promise<Transfer[]>
   ClearFinishedTransfers(): Promise<void>
   PickLocalFiles(): Promise<string[]>
@@ -782,6 +787,7 @@ export const StartUpload = (id: string, localPaths: string[], remoteDir: string)
 export const StartDownload = (id: string, remotePaths: string[], localDir: string) =>
   api().StartDownload(id, remotePaths, localDir)
 export const CancelTransfer = (transferId: string) => api().CancelTransfer(transferId)
+export const ResumeTransfer = (transferId: string) => api().ResumeTransfer(transferId)
 export const GetTransfers = () => api().Transfers()
 export const ClearFinishedTransfers = () => api().ClearFinishedTransfers()
 export const PickLocalFiles = () => api().PickLocalFiles()
