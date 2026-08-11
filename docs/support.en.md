@@ -35,7 +35,7 @@ The Linux client is **link-verified only**. Ubuntu 22.04 resolves `libwebkit2gtk
 | **Debian, RHEL/Rocky 8** | Share the systemd 245 table-parsing path, so they should work, but untested |
 | **Podman** | Docker-compatible CLI, so the parser is shared, but never run |
 | **Windows containers** | The test machine had no Docker |
-| **ProxyJump / multi-hop SSH** | Not implemented |
+| **ProxyJump on real hardware** | Verified against two containers (bastion + target). Never tried against an actual bastion. Multi-hop is not implemented and is refused |
 | **macOS and BSD servers** | No adapter. Connecting works and **files and terminal do too**; the other tabs explain themselves |
 | **Remote → local drag** | Wails v2 has no drag-out API. Use the download button |
 

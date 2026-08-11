@@ -30,6 +30,29 @@ ssh-agent, private key file (with passphrase), password, and keyboard-interactiv
 - **Put ssh-agent first if you can.** The key never enters this process
 - OTP and 2FA answers are **never stored.** A one-time code is worthless the second time
 
+## Bastions (ProxyJump)
+
+A bastion is treated as **a login of its own** ([`internal/sshcore/conn.go`](../internal/sshcore/conn.go)).
+
+- Its **host key is verified exactly as the target's is.** A separate fingerprint, a separate prompt
+- Its password is stored under its own entry and never overwrites the target's
+- **The target's host key check is unchanged.** Tunnelling does not weaken it — the bastion forwards
+  bytes and vouches for nobody
+- Closing the session closes the bastion connection with it. Leaving it open is an idle login sitting
+  on somebody else's jump host
+
+A chain of hops is **refused.** Doing quietly what has never been verified is worse.
+
+## Reading the server's sshd configuration
+
+The network tab reads `/etc/ssh/sshd_config` and its `Include` targets **over SFTP**
+([`internal/app/sshdconfig.go`](../internal/app/sshdconfig.go)). It reads, runs no command, and needs
+no root. **It changes nothing** — there is no editing feature.
+
+Its limit is on screen too: **it knows only what the files declare.** sshd's compiled-in defaults
+differ between distributions, so they are not guessed, and any file this account could not read is
+named as a gap.
+
 ## Credential storage
 
 If a secret is stored, it goes **only into the OS credential store**: macOS Keychain, Windows
@@ -98,6 +121,10 @@ safe ([`internal/mcp/http.go`](../internal/mcp/http.go)).
   `x/crypto/ssh` takes passwords as strings too. It becomes garbage immediately and is freed at the
   next collection, but **there is no zero-on-use implemented.** A core or heap dump could show it
 - **Release binaries are unsigned.** A SHA256 checksum is not a signature
+- **The integrity check on a resumed transfer looks at the seam**, not at everything already
+  transferred — the 64KB before the resume point. A source edited to exactly the same length,
+  outside that window, could get through
+  ([features in detail](features.en.md#transfers-whole-folders-and-resuming-after-an-interruption))
 - **On real Linux hardware only the read side and file writes have been exercised**; transfers, completing a sudo escalation, the terminal PTY and log tailing are still container-only. See
   [what is and is not verified](support.en.md)
 - There is no audit log. The Command Log stays on your machine and goes nowhere.
