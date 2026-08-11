@@ -1519,10 +1519,30 @@ button.danger {
   flex-direction: column;
   gap: 2px;
 }
-.net-table .trow,
-.net-table .thead {
+/* These tables are laid out in the flow, not by the virtualiser: .trow is
+   absolutely positioned because the file listing moves rows with a transform,
+   and without this reset every row in a plain table stacks at the top. */
+.net-table .thead,
+.net-table .trow {
   position: static;
   transform: none;
+}
+
+.sshd-notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin-bottom: var(--sp-3);
+}
+.sshd-note {
+  display: grid;
+  grid-template-columns: 84px 1fr auto;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: var(--text-sm);
+}
+.sshd-note > .badge {
+  justify-self: start;
 }
 .net-row {
   height: 28px;

@@ -430,6 +430,30 @@ export interface SecretPrompt {
   echo: boolean
 }
 
+export interface SSHDDirective {
+  keyword: string
+  value: string
+  file: string
+  line: number
+  conditional?: boolean
+}
+
+export interface SSHDNote {
+  code: string
+  level: 'warn' | 'info'
+  value: string
+  file: string
+  line: number
+}
+
+export interface SSHDReport {
+  files: string[]
+  declared: SSHDDirective[]
+  matches?: SSHDDirective[]
+  notes?: SSHDNote[]
+  unreadable?: string[]
+}
+
 export interface ImportResult {
   path: string
   imported: number
@@ -482,6 +506,7 @@ interface Bindings {
 
   HostMetrics(id: string): Promise<MetricsView>
   HostNetwork(id: string): Promise<NetworkView>
+  SSHDConfig(id: string): Promise<SSHDReport>
   FollowServiceLog(
     id: string,
     unit: string,
@@ -687,6 +712,7 @@ export const ProcessExists = (id: string, pid: number) =>
 
 export const HostMetrics = (id: string) => api().HostMetrics(id)
 export const HostNetwork = (id: string) => api().HostNetwork(id)
+export const SSHDConfig = (id: string) => api().SSHDConfig(id)
 export const FollowServiceLog = (
   id: string,
   unit: string,
