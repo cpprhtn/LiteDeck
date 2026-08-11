@@ -160,6 +160,30 @@ address with SSH listening on it.
 
 ---
 
+## No VPN at all: when one machine is already reachable
+
+If **one machine at home or at work already takes SSH from outside**, there is no VPN to set up.
+Use it as the way in to everything else on that network: put it in the host editor's **ProxyJump**
+field.
+
+```
+Host        192.168.0.20        ← the machine inside, invisible from outside
+ProxyJump   me@myserver.com     ← the one that is reachable
+```
+
+The bastion is treated as **a server you log in to**: its fingerprint is confirmed separately and
+its password asked for separately. The target's host key check is unchanged — the bastion forwards
+bytes and vouches for nobody.
+
+Its sshd needs `AllowTcpForwarding yes`. One hop only; a chain is refused rather than quietly
+truncated to its first host.
+
+**Against Tailscale** — nothing to install and no account, but it needs a machine that is already
+reachable, with that port open to the internet. If avoiding exactly that is why you are reading
+this page, Tailscale is the better answer.
+
+---
+
 ## Worth knowing
 
 **Speed.** Tailscale makes a direct WireGuard connection when it can. If both ends are

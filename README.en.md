@@ -44,7 +44,7 @@
 ---
 
 > [!NOTE]
-> **v1.0.0.** Verified on macOS and Windows clients, against **real Windows and Linux machines**.
+> **v1.1.0.** Verified on macOS and Windows clients, against **real Windows and Linux machines**.
 > On Linux hardware that covers the read side and file writes; transfers and privilege escalation are
 > still container-only. Exactly what has and has not been checked is written down in
 > [What is and is not verified](docs/support.en.md).

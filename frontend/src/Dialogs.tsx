@@ -251,8 +251,11 @@ export function McpWriteDialog({
             {t('이번만 허용')}
           </button>
         </div>
+        {/* Stays because this is the moment of the decision, not a preamble.
+            It has to be true, though: undo landed after this line was written
+            and said for a while that it did not exist. */}
         <p className="muted small">
-          {t('안 묻기는 이 호스트에만 적용되고 시간이 지나면 스스로 돌아옵니다. 되돌리기는 아직 없습니다 — 지금은 Command Log 가 유일한 기록입니다.')}
+          {t('안 묻기는 이 호스트에만 적용되고 시간이 지나면 스스로 돌아옵니다. 파일 변경은 MCP 패널의 바뀐 파일 탭에서 되돌릴 수 있습니다.')}
         </p>
       </div>
     </div>

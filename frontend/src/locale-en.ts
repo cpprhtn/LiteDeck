@@ -248,7 +248,7 @@ export const en: Record<string, string> = {
   '실행될 명령': 'The command that will run',
   '아직 없습니다.': 'Nothing yet.',
   '아직 직접 실행한 명령이 없습니다 — 위에서 백그라운드 조회를 펼쳐볼 수 있습니다.': 'No commands run by hand yet — you can expand the background queries above.',
-  '안 묻기는 이 호스트에만 적용되고 시간이 지나면 스스로 돌아옵니다. 되돌리기는 아직 없습니다 — 지금은 Command Log 가 유일한 기록입니다.': 'Not asking applies to this host only and reverts on its own. There is no undo yet — for now the Command Log is the only record.',
+  '안 묻기는 이 호스트에만 적용되고 시간이 지나면 스스로 돌아옵니다. 파일 변경은 MCP 패널의 바뀐 파일 탭에서 되돌릴 수 있습니다.': 'Not asking applies to this host only and reverts on its own. File changes can be undone from the Changed files tab in the MCP panel.',
   '알 수 없는 OS': 'Unknown OS',
   '업로드…': 'Upload…',
   '없음': 'none',
