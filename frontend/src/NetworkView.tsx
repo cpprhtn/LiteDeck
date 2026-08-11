@@ -59,11 +59,7 @@ export function NetworkView({
           <button data-on={!onlyExposed || undefined} onClick={() => setOnlyExposed(false)}>
             {t('전체 {n}', { n: net?.listeners.length ?? 0 })}
           </button>
-          <button
-            data-on={onlyExposed || undefined}
-            data-danger={exposedCount > 0 || undefined}
-            onClick={() => setOnlyExposed(true)}
-          >
+          <button data-on={onlyExposed || undefined} onClick={() => setOnlyExposed(true)}>
             {t('외부 노출 {n}', { n: exposedCount })}
           </button>
         </div>
@@ -120,13 +116,12 @@ export function NetworkView({
         </section>
 
         <section>
-          <h3 className="net-heading">
-            {t('열린 포트')}
-            <span className="muted small">
-              {' '}
-              — <strong>{t('외부 노출')}</strong>{t('은 0.0.0.0/[::]에 바인딩되어 다른 기기에서 닿을 수 있다는 뜻입니다')}
-            </span>
-          </h3>
+          {/* No explanation, and no warning colour. Binding to 0.0.0.0 is a
+              thing people do on purpose, and a GUI that editorialises about it
+              is talking down to the person who typed it. The amber badge is
+              enough: it makes the wildcard binds scannable, and the BIND column
+              beside it already says which address that is. */}
+          <h3 className="net-heading">{t('열린 포트')}</h3>
           {listeners.length === 0 && (
             <div className="placeholder small">
               {onlyExposed ? t('외부에 노출된 포트가 없습니다.') : t('열린 포트가 없습니다.')}
@@ -134,22 +129,26 @@ export function NetworkView({
           )}
           {listeners.length > 0 && (
             <div className="table net-table">
-              <div className="thead" style={{ gridTemplateColumns: '64px 80px 1fr 1fr 90px' }}>
+              <div className="thead" style={{ gridTemplateColumns: '64px 80px 1fr 1fr' }}>
                 <div>PROTO</div>
                 <div className="num">PORT</div>
                 <div>BIND</div>
                 <div>PROCESS</div>
-                <div>{t('노출')}</div>
               </div>
               {listeners.map((l, i) => (
                 <div
                   key={`${l.protocol}-${l.address}-${l.port}-${i}`}
                   className="trow net-row"
-                  style={{ gridTemplateColumns: '64px 80px 1fr 1fr 90px' }}
+                  style={{ gridTemplateColumns: '64px 80px 1fr 1fr' }}
                 >
                   <div className="mono">{l.protocol}</div>
                   <div className="num mono">{l.port}</div>
-                  <div className="mono ellipsis muted">
+                  {/* The colour sits on the address rather than in a column of
+                      its own at the far edge: scanning the list, that is where
+                      the eye already is. It marks a wildcard bind and says
+                      nothing about it — 0.0.0.0 is a thing people type on
+                      purpose. */}
+                  <div className="mono ellipsis muted" data-wildcard={l.exposed || undefined}>
                     {l.address}
                     {l.ipv6 && <span className="badge">v6</span>}
                   </div>
@@ -161,13 +160,6 @@ export function NetworkView({
                       </>
                     ) : (
                       <span className="muted">—</span>
-                    )}
-                  </div>
-                  <div>
-                    {l.exposed ? (
-                      <span className="badge warn">{t('외부')}</span>
-                    ) : (
-                      <span className="muted small">{t('로컬만')}</span>
                     )}
                   </div>
                 </div>

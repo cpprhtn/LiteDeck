@@ -1548,6 +1548,12 @@ button.danger {
   height: 28px;
   padding: 0 var(--sp-2);
 }
+/* A wildcard bind, marked and not judged. Loud enough to find while scrolling,
+   quiet enough that it does not read as a mistake — binding to 0.0.0.0 is
+   usually deliberate. */
+.net-row [data-wildcard] {
+  color: var(--warn);
+}
 .net-warnings {
   padding: var(--sp-2) var(--sp-4);
   background: color-mix(in srgb, var(--warn) 10%, transparent);
