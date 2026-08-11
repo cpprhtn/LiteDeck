@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/cpprhtn/LiteDeck/internal/config"
@@ -107,9 +108,22 @@ func (a *App) ConnectHost(hostID string) error {
 		return err
 	}
 
+	// The bastion is a login of its own: its own fingerprint to accept and its
+	// own password to type, both asked for before the target's. Reusing the
+	// same two builders is what keeps it that way — a shortcut here would be a
+	// bastion whose host key nobody checks (§7.1).
+	jumpCfg, err := a.jumpConfig(h)
+	if err != nil {
+		return err
+	}
+
 	// The dial is bounded, but generously: the budget has to cover a human
-	// reading a fingerprint and typing a password.
-	ctx, cancel := context.WithTimeout(context.Background(), PromptTimeout+30*time.Second)
+	// reading a fingerprint and typing a password. Twice, through a bastion.
+	budget := PromptTimeout + 30*time.Second
+	if jumpCfg != nil {
+		budget += PromptTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
 	defer cancel()
 
 	err = a.mgr.Connect(ctx, sshcore.HostConfig{
@@ -118,6 +132,7 @@ func (a *App) ConnectHost(hostID string) error {
 		User:            h.User,
 		Auth:            auth,
 		HostKeyCallback: known,
+		Jump:            jumpCfg,
 	}, a.log)
 	if err != nil {
 		return a.explainConnectError(h, err)
@@ -143,6 +158,35 @@ func (a *App) DisconnectHost(hostID string) error {
 // HostState reports one host's connection state.
 func (a *App) HostState(hostID string) string {
 	return a.mgr.State(hostID).String()
+}
+
+// jumpConfig builds the bastion leg, or nil when the host is dialled directly.
+func (a *App) jumpConfig(h config.Host) (*sshcore.HostConfig, error) {
+	jump, ok, err := h.JumpHost()
+	if err != nil || !ok {
+		return nil, err
+	}
+	auth, err := a.authMethods(jump)
+	if err != nil {
+		return nil, err
+	}
+	// Keyed on the bastion's own ID, so its password lands under its own entry
+	// in the keychain rather than overwriting the target's.
+	known, err := a.knownHosts(jump.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &sshcore.HostConfig{
+		ID:              jump.ID,
+		Addr:            jump.Addr(),
+		User:            jump.User,
+		Auth:            auth,
+		HostKeyCallback: known,
+		// The bastion carries one channel — the forwarded connection — so it
+		// needs none of the session budget the target does.
+		MaxSessions:  1,
+		MaxLongLived: 1,
+	}, nil
 }
 
 // knownHosts builds the §7.1 verifier, wired to the GUI dialog.
@@ -219,6 +263,13 @@ func (a *App) explainConnectError(h config.Host, err error) error {
 		return i18n.Errorf("%s: 호스트 키를 신뢰하지 않아 연결을 중단했습니다", h.Label())
 	case errors.Is(err, ErrPromptCancelled):
 		return i18n.Errorf("%s: 사용자가 연결을 취소했습니다", h.Label())
+	case strings.Contains(err.Error(), "administratively prohibited"):
+		// What sshd says when AllowTcpForwarding is off. Verbatim it reads as a
+		// permission problem with the account, and people go looking in the
+		// wrong place — it is one line in the bastion's sshd_config.
+		return i18n.Errorf(
+			"%s: 경유 서버 %s 가 TCP 포워딩을 허용하지 않습니다 — 그 서버의 sshd_config 에서 AllowTcpForwarding 을 켜야 합니다",
+			h.Label(), h.ProxyJump)
 	default:
 		return fmt.Errorf("%s (%s): %w", h.Label(), h.Addr(), err)
 	}

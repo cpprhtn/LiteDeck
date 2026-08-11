@@ -41,6 +41,18 @@ type HostConfig struct {
 	// MaxLongLived bounds channels that stay open for as long as the user keeps
 	// them: terminal tabs and live log follows. 0 means DefaultMaxLongLived.
 	MaxLongLived int
+
+	// Jump is the bastion to reach Addr through (§4.1). Nil means dial directly.
+	//
+	// The bastion is a full HostConfig, not a bare address, because it is a
+	// server being logged in to: it has its own user, its own credentials and —
+	// the part that matters — **its own host key to verify**. A ProxyJump that
+	// skips that check hands the whole session to whoever answers on the
+	// bastion's port, which is the one thing the hop was supposed to prevent.
+	//
+	// One hop. Chains would be a linked list and the same code, but nothing
+	// verifies them, so the config layer refuses to build one.
+	Jump *HostConfig
 }
 
 // The channel budget.
@@ -180,8 +192,12 @@ type Observer interface {
 type Conn struct {
 	cfg    HostConfig
 	client *ssh.Client
-	obs    Observer
-	sem    chan struct{} // transient Exec channels
+	// jump is the bastion this connection is tunnelled through, if any. Held
+	// only so it dies with the session it carries — an orphaned bastion
+	// connection is an idle login sitting on someone's jump host.
+	jump *Conn
+	obs  Observer
+	sem  chan struct{} // transient Exec channels
 	// longLived bounds the SFTP subsystem and terminal tabs, which hold their
 	// channel until closed.
 	longLived chan struct{}
@@ -222,26 +238,63 @@ func Dial(ctx context.Context, cfg HostConfig) (*Conn, error) {
 		timeout = 15 * time.Second
 	}
 
-	d := net.Dialer{Timeout: timeout}
-	tcp, err := d.DialContext(ctx, "tcp", cfg.Addr)
-	if err != nil {
-		return nil, fmt.Errorf("sshcore: dial %s: %w", cfg.Addr, err)
+	// Through a bastion, the transport is a channel on that first connection
+	// rather than a socket of our own (§4.1). Everything after this point is
+	// identical either way: the target's host key is checked the same, the
+	// credentials are the target's, and the bastion never sees the session —
+	// it only forwards bytes it cannot read.
+	var (
+		jump *Conn
+		tcp  net.Conn
+		err  error
+	)
+	if cfg.Jump != nil {
+		jump, err = Dial(ctx, *cfg.Jump)
+		if err != nil {
+			return nil, fmt.Errorf("sshcore: bastion: %w", err)
+		}
+		tcp, err = jump.client.DialContext(ctx, "tcp", cfg.Addr)
+		if err != nil {
+			_ = jump.Close()
+			return nil, fmt.Errorf("sshcore: %s via %s: %w", cfg.Addr, cfg.Jump.Addr, err)
+		}
+	} else {
+		d := net.Dialer{Timeout: timeout}
+		tcp, err = d.DialContext(ctx, "tcp", cfg.Addr)
+		if err != nil {
+			return nil, fmt.Errorf("sshcore: dial %s: %w", cfg.Addr, err)
+		}
 	}
 
-	// The handshake has no context-aware form, so bound it with a deadline and
-	// clear that deadline once the connection is up.
-	_ = tcp.SetDeadline(time.Now().Add(timeout))
+	// The handshake has no context-aware form, so a watchdog closes the
+	// transport out from under it instead. A deadline would have done for a
+	// socket, but a forwarded channel does not carry one — and this way the
+	// caller's cancellation reaches the handshake too, which it never did.
+	handshake := make(chan struct{})
+	go func() {
+		select {
+		case <-handshake:
+		case <-ctx.Done():
+			_ = tcp.Close()
+		case <-time.After(timeout):
+			_ = tcp.Close()
+		}
+	}()
+
 	sshConn, chans, reqs, err := ssh.NewClientConn(tcp, cfg.Addr, &ssh.ClientConfig{
 		User:            cfg.User,
 		Auth:            cfg.Auth,
 		HostKeyCallback: cfg.HostKeyCallback,
 		Timeout:         timeout,
 	})
+	close(handshake)
 	if err != nil {
 		tcp.Close()
+		if jump != nil {
+			_ = jump.Close()
+		}
 		return nil, fmt.Errorf("sshcore: handshake with %s: %w", cfg.Addr, err)
 	}
-	_ = tcp.SetDeadline(time.Time{})
 
 	maxSessions := cfg.MaxSessions
 	if maxSessions <= 0 {
@@ -254,6 +307,7 @@ func Dial(ctx context.Context, cfg HostConfig) (*Conn, error) {
 	return &Conn{
 		cfg:       cfg,
 		client:    ssh.NewClient(sshConn, chans, reqs),
+		jump:      jump,
 		sem:       make(chan struct{}, maxSessions),
 		longLived: make(chan struct{}, maxLongLived),
 	}, nil
@@ -417,5 +471,9 @@ func (c *Conn) Close() error {
 		c.sftp = nil
 	}
 	c.mu.Unlock()
-	return c.client.Close()
+	err := c.client.Close()
+	if c.jump != nil {
+		_ = c.jump.Close()
+	}
+	return err
 }

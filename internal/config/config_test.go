@@ -188,3 +188,65 @@ func TestHostDefaults(t *testing.T) {
 		t.Errorf("Label with no name = %q", h.Label())
 	}
 }
+
+func TestJumpHost(t *testing.T) {
+	base := Host{
+		ID: "h1", User: "deploy", Hostname: "10.0.0.9", Port: 22,
+		Auth: []AuthMethod{AuthKey}, IdentityFile: "~/.ssh/id_ed25519",
+	}
+
+	t.Run("none", func(t *testing.T) {
+		if _, ok, err := base.JumpHost(); ok || err != nil {
+			t.Errorf("no ProxyJump gave (%v, %v), want (false, nil)", ok, err)
+		}
+	})
+
+	for _, tc := range []struct {
+		spec, user, host string
+		port             int
+	}{
+		{"bastion", "deploy", "bastion", 22},
+		{"jump@bastion", "jump", "bastion", 22},
+		{"jump@bastion:2222", "jump", "bastion", 2222},
+		{"bastion:2222", "deploy", "bastion", 2222},
+		{"  jump@bastion  ", "jump", "bastion", 22},
+		{"jump@[2001:db8::1]:2222", "jump", "2001:db8::1", 2222},
+		{"[2001:db8::1]", "deploy", "2001:db8::1", 22},
+	} {
+		t.Run(tc.spec, func(t *testing.T) {
+			h := base
+			h.ProxyJump = tc.spec
+			got, ok, err := h.JumpHost()
+			if err != nil || !ok {
+				t.Fatalf("JumpHost() = (%+v, %v, %v)", got, ok, err)
+			}
+			if got.User != tc.user || got.Hostname != tc.host || got.Port != tc.port {
+				t.Errorf("= %s@%s:%d, want %s@%s:%d",
+					got.User, got.Hostname, got.Port, tc.user, tc.host, tc.port)
+			}
+			// The bastion is a login of its own, so it must not share the
+			// target's ID — that is what keeps their passwords apart in the
+			// keychain and their host keys on separate prompts.
+			if got.ID == h.ID {
+				t.Error("the bastion reuses the target's ID")
+			}
+			// Nowhere in `user@host:port` says how to log in, so it inherits.
+			if len(got.Auth) != len(h.Auth) || got.IdentityFile != h.IdentityFile {
+				t.Errorf("auth = %v/%q, want the target's %v/%q",
+					got.Auth, got.IdentityFile, h.Auth, h.IdentityFile)
+			}
+		})
+	}
+
+	// A chain is refused rather than truncated: connecting somewhere other
+	// than what was written is worse than not connecting.
+	for _, bad := range []string{"a,b", "jump@a,b:22", "@bastion", "jump@", "bastion:0", "bastion:notaport", "[2001:db8::1"} {
+		t.Run("bad/"+bad, func(t *testing.T) {
+			h := base
+			h.ProxyJump = bad
+			if got, ok, err := h.JumpHost(); err == nil {
+				t.Errorf("JumpHost(%q) = (%+v, %v, nil), want an error", bad, got, ok)
+			}
+		})
+	}
+}

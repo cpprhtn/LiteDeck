@@ -179,9 +179,9 @@ export function HostEditor({
           <label>ProxyJump</label>
           <input
             value={draft.proxyJump ?? ''}
-            placeholder={t('(선택) bastion — 아직 미구현')}
+            placeholder={t('(선택) jump@bastion:22 — 한 단계만')}
+            title={t('이 서버로 가는 길에 먼저 로그인할 경유 서버입니다. 경유 서버의 지문과 비밀번호도 따로 물어봅니다.')}
             spellCheck={false}
-            disabled
             onChange={(e) => set('proxyJump', e.target.value)}
           />
         </div>

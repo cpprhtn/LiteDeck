@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -56,6 +57,81 @@ func (h Host) Addr() string {
 		port = 22
 	}
 	return fmt.Sprintf("%s:%d", h.Hostname, port)
+}
+
+// JumpHost resolves ProxyJump into the bastion to dial first (§4.1).
+//
+// The returned Host borrows this host's auth methods and identity file. There
+// is nowhere in `user@host:port` to say how to log in to the bastion, and
+// OpenSSH's answer — apply the same defaults — is both what people expect and
+// the only one that does not invent a second credential UI.
+//
+// A chain (`a,b,c`) is refused rather than silently truncated to its first hop:
+// dialling somewhere other than what the user wrote is worse than not dialling.
+func (h Host) JumpHost() (Host, bool, error) {
+	spec := strings.TrimSpace(h.ProxyJump)
+	if spec == "" {
+		return Host{}, false, nil
+	}
+	if strings.Contains(spec, ",") {
+		return Host{}, false, fmt.Errorf(
+			"config: ProxyJump %q chains several hosts — only one hop is supported", spec)
+	}
+
+	jump := Host{
+		ID:           h.ID + "/jump",
+		User:         h.User,
+		Port:         22,
+		Auth:         h.Auth,
+		IdentityFile: h.IdentityFile,
+	}
+	if user, rest, ok := strings.Cut(spec, "@"); ok {
+		if user == "" {
+			return Host{}, false, fmt.Errorf("config: ProxyJump %q has an empty user", spec)
+		}
+		jump.User = user
+		spec = rest
+	}
+	// Brackets are how an IPv6 literal carries a port, and the only way to tell
+	// the port's colon from the address's own.
+	if strings.HasPrefix(spec, "[") {
+		end := strings.Index(spec, "]")
+		if end < 0 {
+			return Host{}, false, fmt.Errorf("config: ProxyJump %q has an unclosed [", spec)
+		}
+		jump.Hostname = spec[1:end]
+		spec = spec[end+1:]
+		if port, ok := strings.CutPrefix(spec, ":"); ok {
+			if err := jump.setPort(port); err != nil {
+				return Host{}, false, err
+			}
+		}
+	} else if host, port, ok := strings.Cut(spec, ":"); ok {
+		jump.Hostname = host
+		if err := jump.setPort(port); err != nil {
+			return Host{}, false, err
+		}
+	} else {
+		jump.Hostname = spec
+	}
+
+	if jump.Hostname == "" {
+		return Host{}, false, fmt.Errorf("config: ProxyJump %q has no host", h.ProxyJump)
+	}
+	if jump.User == "" {
+		return Host{}, false, fmt.Errorf("config: ProxyJump %q has no user, and neither does the host", h.ProxyJump)
+	}
+	jump.Name = jump.User + "@" + jump.Addr()
+	return jump, true, nil
+}
+
+func (h *Host) setPort(s string) error {
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 || n > 65535 {
+		return fmt.Errorf("config: ProxyJump port %q is not a port number", s)
+	}
+	h.Port = n
+	return nil
 }
 
 // Label is what the sidebar shows.
