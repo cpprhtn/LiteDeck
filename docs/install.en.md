@@ -20,7 +20,10 @@ xattr -d com.apple.quarantine /Applications/litedeck.app
 
 If it disappears, **Windows Security → Virus & threat protection → Protection history** has the entry; **Actions → Allow** restores it. To pre-empt it, add the unzipped folder under **Manage settings → Add or remove exclusions**.
 
-**Linux.** Nothing special: unpack and make it executable.
+**Linux.** Nothing special: unpack and make it executable — but the released binary links
+against **`libwebkit2gtk-4.1`**, so it needs **Ubuntu 24.04 or newer**; that is the package the
+CI runner has. On a distribution that only ships `libwebkit2gtk-4.0`, such as 22.04, it will not
+start — [build from source](building.en.md) instead.
 
 ```bash
 tar xzf litedeck-linux-amd64.tar.gz && chmod +x litedeck && ./litedeck

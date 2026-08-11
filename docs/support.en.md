@@ -12,31 +12,38 @@ This section separates **what has actually been run** from what merely ought to 
 |---|---|---|
 | **Client** | macOS 26.5.2 (arm64) | Development, daily use, every feature. Release binary launch confirmed |
 | **Client** | Windows | Release `litedeck.exe` launch confirmed |
-| **Server** | **Windows 10 Pro / PowerShell 5.1 (real hardware)** | Services, processes, network, monitoring. The only target that is not a container |
-| **Server** | **Ubuntu 24.04.4 (real machine)** | The whole read side (metrics, services and failed detection, containers, exposed ports, journal) plus reading, writing and deleting files, including the permission-denied path |
+| **Client** | **Ubuntu 24.04.3 (Proxmox VM)** | Release `litedeck-linux-amd64.tar.gz` launch confirmed: the window opens, connects to a real server, and shows monitoring and a file listing. No keychain there, so the **credential-storage fallback** was exercised too |
+| **Server** | **Windows 10 Pro / PowerShell 5.1 (a real SSH server)** | Services, processes, network, monitoring. Not a container |
+| **Server** | **Ubuntu 24.04.4 (a real SSH server)** | The whole read side (metrics, services and failed detection, containers, exposed ports, journal) plus reading, writing and deleting files, including the permission-denied path |
 | **Server** | Ubuntu 22.04.5 / systemd 249 | Full flow: services (JSON path), files, processes, timers, log tailing, privilege escalation |
 | **Server** | Ubuntu 20.04.6 / systemd 245 | Service **table-parsing fallback** (the version with no JSON output) |
 | **Server** | Alpine 3.20 + OpenSSH | Transport: SFTP, reconnect, injection defence, concurrent sessions |
 | **Jumping** | Two Alpine containers (bastion + target) | ProxyJump, with the target publishing no port so it is **genuinely unreachable directly** |
 | **Containers** | docker 28 (dind) | Containers, images, volumes |
 
-**The one real Linux machine is the row above.** An Ubuntu 24.04.4 server was driven through the
+**The one real Linux SSH server is the row above.** An Ubuntu 24.04.4 server was driven through the
 MCP integration, covering the read side and reading, writing and deleting files. **The paths the
 GUI writes through** — file transfers, completing a sudo escalation, the terminal PTY, live log
 tailing — **are still container fixtures only** (`testdata/`).
 
-The Linux client is **link-verified only**. Ubuntu 22.04 resolves `libwebkit2gtk-4.0.so.37` and 24.04 resolves `libwebkit2gtk-4.1.so.0`. Nobody has opened the window.
+The Linux client has been **opened, connected and read from**. Transfers, the terminal and the GTK
+file chooser have not.
+
+> [!IMPORTANT]
+> **The released Linux binary links against `libwebkit2gtk-4.1`**, because the CI runner is Ubuntu
+> 24.04 and that is the package it has. **It will not start on 22.04** — on a distribution that
+> only ships 4.0, [build from source](building.en.md).
 
 ## Not verified
 
 | | Status |
 |---|---|
 | **Write paths on real Linux hardware** | Transfers (whole folders and resuming included), completing a sudo escalation, the terminal PTY and log tailing were only exercised in containers |
-| **Linux client at runtime** | Links correctly; window never opened |
+| **The rest of the Linux client** | Window, connecting and the read side are confirmed. Transfers, the terminal, the GTK file chooser and keychain storage are not |
 | **Debian, RHEL/Rocky 8** | Share the systemd 245 table-parsing path, so they should work, but untested |
 | **Podman** | Docker-compatible CLI, so the parser is shared, but never run |
 | **Windows containers** | The test machine had no Docker |
-| **ProxyJump on real hardware** | Verified against two containers (bastion + target). Never tried against an actual bastion. Multi-hop is not implemented and is refused |
+| **ProxyJump against a real bastion** | Verified against two containers (bastion + target). Never tried against an actual bastion. Multi-hop is not implemented and is refused |
 | **macOS and BSD servers** | No adapter. Connecting works and **files and terminal do too**; the other tabs explain themselves |
 | **Remote → local drag** | Wails v2 has no drag-out API. Use the download button |
 

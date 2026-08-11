@@ -44,12 +44,9 @@
 ---
 
 > [!NOTE]
-> **v1.1.0.** Verified on macOS and Windows clients, against **real Windows and Linux machines**.
-> On Linux hardware that covers the read side and file writes; transfers and privilege escalation are
-> still container-only. Exactly what has and has not been checked is written down in
-> [What is and is not verified](docs/support.en.md).
-> If you point this at a production server, try the irreversible actions — deleting files, killing processes — on a
-> throwaway box first.
+> **Runs on macOS, Windows and Ubuntu** — all three confirmed by opening it there. What was tested
+> where is written down in [What is and is not verified](docs/support.en.md).
+> Try the irreversible actions — deleting files, killing processes — on a throwaway server first.
 >
 > The documentation is primarily maintained in Korean; this file is kept in step with it.
 
@@ -147,7 +144,7 @@ Grab a build from the [releases page](https://github.com/cpprhtn/LiteDeck/releas
 |---|---|
 | `litedeck-macos.zip` | macOS (universal, Intel and Apple Silicon) |
 | `litedeck-windows-amd64.zip` | Windows 10/11 (amd64). Unzip to a single `litedeck.exe`, no installer |
-| `litedeck-linux-amd64.tar.gz` | Linux (amd64) |
+| `litedeck-linux-amd64.tar.gz` | Linux (amd64). **Ubuntu 24.04 or newer** — it needs `libwebkit2gtk-4.1`. On 22.04, [build from source](docs/building.en.md) |
 
 > [!WARNING]
 > **These builds are not code-signed.** Signing and notarisation both cost money, so early releases ship unsigned, and
