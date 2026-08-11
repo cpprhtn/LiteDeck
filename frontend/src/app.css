@@ -761,6 +761,30 @@ button.danger {
   min-width: 140px;
 }
 
+/* The filter sits beside the address bar rather than on a row of its own: two
+   inputs fit side by side in a full-width tree, and the toolbar's wrapping
+   drops the filter to its own line once the editor squeezes the tree. */
+.tree-filter {
+  position: relative;
+  display: flex;
+  flex: 0 1 190px;
+  min-width: 120px;
+}
+.tree-filter .search {
+  max-width: none;
+  padding-right: 22px;
+}
+.tree-filter-clear {
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 26px;
+  width: 22px;
+  padding: 0;
+  font-size: var(--text-xs);
+  line-height: 1;
+}
+
 /* One visible pixel, nine grabbable ones: a divider you can hit without a bar
    down the middle of the window. */
 .split-handle {

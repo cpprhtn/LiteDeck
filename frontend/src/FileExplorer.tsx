@@ -283,6 +283,16 @@ export function FileExplorer({
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [children, setChildren] = useState<Map<string, FileEntry[]>>(new Map())
   const [expanding, setExpanding] = useState<Set<string>>(new Set())
+  // Filtering by name, over what has already been read (§4.7-3).
+  //
+  // Deliberately not a server-side find: this narrows the listings the app is
+  // already holding, so typing costs nothing on the server no matter how fast.
+  // The trade is that it cannot see into folders nobody has opened, which the
+  // placeholder says out loud rather than leaving the user to wonder why a file
+  // they know exists is missing.
+  const [filter, setFilter] = useState('')
+  const filterRef = useRef<HTMLInputElement>(null)
+  const needle = filter.trim().toLowerCase()
   // Read by refresh, which must not be rebuilt every time a folder opens.
   const expandedRef = useRef(expanded)
   expandedRef.current = expanded
@@ -341,6 +351,9 @@ export function FileExplorer({
         setSelected(new Set())
         setExpanded(new Set())
         setChildren(new Map())
+        // The filter narrowed a tree that no longer exists. Keeping it would
+        // land the user in a new directory that looks empty.
+        setFilter('')
       } catch (e) {
         onError(String(e))
       } finally {
@@ -496,21 +509,61 @@ export function FileExplorer({
 
   /** The open parts of the tree, flattened — one array the virtualiser can size. */
   const rows = useMemo(() => {
-    const out: { entry: FileEntry; depth: number }[] = []
+    const out: { entry: FileEntry; depth: number; open: boolean }[] = []
     const visible = (list: FileEntry[]) =>
       showHidden ? list : list.filter((e) => !e.name.startsWith('.'))
-    const walk = (list: FileEntry[], depth: number) => {
-      for (const entry of visible(list)) {
-        out.push({ entry, depth })
-        if (entry.isDir && expanded.has(entry.path)) {
-          const kids = children.get(entry.path)
-          if (kids) walk(kids, depth + 1)
+
+    if (!needle) {
+      const walk = (list: FileEntry[], depth: number) => {
+        for (const entry of visible(list)) {
+          const open = entry.isDir && expanded.has(entry.path)
+          out.push({ entry, depth, open })
+          if (open) {
+            const kids = children.get(entry.path)
+            if (kids) walk(kids, depth + 1)
+          }
         }
       }
+      walk(listing?.entries ?? [], 0)
+      return out
+    }
+
+    // Filtering descends into every directory that has been read, open or not:
+    // a filter exists to find what is *not* on screen, and closed-but-read
+    // folders are already in memory. A row survives if its own name matches or
+    // if something under it did — otherwise the match would appear with no
+    // path leading to it.
+    const walk = (list: FileEntry[], depth: number): boolean => {
+      let kept = false
+      for (const entry of visible(list)) {
+        const at = out.length
+        const hit = entry.name.toLowerCase().includes(needle)
+        const row = { entry, depth, open: false }
+        out.push(row)
+        if (entry.isDir) {
+          const kids = children.get(entry.path)
+          if (kids) row.open = walk(kids, depth + 1)
+        }
+        if (hit || row.open) kept = true
+        // Nothing under it was kept either, so this truncation drops exactly
+        // this one row.
+        else out.length = at
+      }
+      return kept
     }
     walk(listing?.entries ?? [], 0)
     return out
-  }, [listing, showHidden, expanded, children])
+  }, [listing, showHidden, expanded, children, needle])
+
+  // Only the rows that matched, not the parents dragged along to show where
+  // they live — "3 matches" has to mean three files.
+  const matchCount = useMemo(
+    () =>
+      needle === ''
+        ? 0
+        : rows.filter((r) => r.entry.name.toLowerCase().includes(needle)).length,
+    [rows, needle],
+  )
 
   const virtualizer = useVirtualizer({
     count: rows.length,
@@ -575,7 +628,12 @@ export function FileExplorer({
       // on whatever happens to be selected in the tree.
       if (dialog || isTyping(ev)) return
       const one = selectedEntries[0]
-      if (matches(ev, 'refresh')) {
+      if (matches(ev, 'find')) {
+        // isTyping already gave the editor first claim on this: CodeMirror's
+        // document is a contenteditable, so ⌘F there never reaches this handler.
+        ev.preventDefault()
+        filterRef.current?.select()
+      } else if (matches(ev, 'refresh')) {
         ev.preventDefault()
         void refresh()
       } else if (matches(ev, 'parentDir') && listing) {
@@ -700,6 +758,38 @@ export function FileExplorer({
                 spellCheck={false}
               />
             </form>
+            <div className="tree-filter">
+              <input
+                ref={filterRef}
+                className="search"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder={t('연 폴더에서 이름 거르기 ({key})', {
+                  key: shortcutLabel('find'),
+                })}
+                title={t('이미 읽어 온 목록에서만 거릅니다 — 서버에 아무것도 묻지 않습니다.')}
+                spellCheck={false}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.preventDefault()
+                    setFilter('')
+                    e.currentTarget.blur()
+                  }
+                }}
+              />
+              {needle !== '' && (
+                <button
+                  className="ghost tree-filter-clear"
+                  onClick={() => setFilter('')}
+                  title={t('지우기')}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            {needle !== '' && (
+              <span className="badge">{t('{n}개 일치', { n: matchCount })}</span>
+            )}
             <label className="checkbox" style={{ margin: 0 }}>
               <input
                 type="checkbox"
@@ -773,12 +863,15 @@ export function FileExplorer({
             <div className="tbody" ref={scrollRef}>
               {busy && !listing && <div className="placeholder">{t('읽는 중…')}</div>}
               {listing && rows.length === 0 && (
-                <div className="placeholder">{t('비어 있는 디렉터리입니다.')}</div>
+                <div className="placeholder">
+                  {needle === ''
+                    ? t('비어 있는 디렉터리입니다.')
+                    : t('일치하는 항목이 없습니다. 아직 열어 보지 않은 폴더는 검색 대상이 아닙니다.')}
+                </div>
               )}
               <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
                 {virtualizer.getVirtualItems().map((item) => {
-                  const { entry: e, depth } = rows[item.index]
-                  const isOpen = expanded.has(e.path)
+                  const { entry: e, depth, open: isOpen } = rows[item.index]
                   return (
                     <div
                       key={e.path}
