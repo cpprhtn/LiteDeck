@@ -60,7 +60,7 @@ type MCPStatus struct {
 	// *name* of an environment variable rather than as a header, so it is two
 	// lines rather than one and cannot be produced by editing the first.
 	CodexSnippet string `json:"codexSnippet,omitempty"`
-	Error   string `json:"error,omitempty"`
+	Error        string `json:"error,omitempty"`
 }
 
 // WritePolicyView is one host's approval mode, as the settings screen sees it.
