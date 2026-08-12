@@ -242,6 +242,9 @@ export function FileExplorer({
   const [perm, setPerm] = useState(0o644)
   const [busy, setBusy] = useState(false)
   const [history, setHistory] = useState<string[]>([])
+  // Where "back" came from, so it can be undone. Cleared by any fresh
+  // navigation, which is what every browser and file manager does.
+  const [forward, setForward] = useState<string[]>([])
   const [dropping, setDropping] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const tableRef = useRef<HTMLDivElement>(null)
@@ -403,6 +406,7 @@ export function FileExplorer({
       landed.current = hostID
       const from = cwdRef.current
       if (from) setHistory((h) => [...h.slice(-30), from])
+      setForward([])
       void load(dir)
     },
     [load, hostID],
@@ -481,8 +485,20 @@ export function FileExplorer({
   const back = () => {
     setHistory((h) => {
       if (h.length === 0) return h
+      if (cwdRef.current) setForward((f) => [...f.slice(-30), cwdRef.current])
       void load(h[h.length - 1])
       return h.slice(0, -1)
+    })
+  }
+
+  const forth = () => {
+    setForward((f) => {
+      if (f.length === 0) return f
+      // Straight to load, not navigate: navigate clears the forward stack, and
+      // going forward is the one move that must not.
+      if (cwdRef.current) setHistory((h) => [...h.slice(-30), cwdRef.current])
+      void load(f[f.length - 1])
+      return f.slice(0, -1)
     })
   }
 
@@ -740,14 +756,40 @@ export function FileExplorer({
         </div>
       )}
 
-      <div className="file-split">
+      {/* The mouse's side buttons, where a browser puts back and forward.
+          mousedown rather than auxclick: Chromium fires auxclick for buttons 3
+          and 4 but WebKit does not, and mousedown is the one both deliver.
+          preventDefault matters on WebView2, which otherwise takes them as
+          webview history navigation and leaves the SPA. */}
+      <div
+        className="file-split"
+        onMouseDown={(e) => {
+          if (e.button !== 3 && e.button !== 4) return
+          e.preventDefault()
+          if (e.button === 3) back()
+          else forth()
+        }}
+      >
         <div
           className="file-tree"
           style={editing ? { flex: `0 0 ${treeWidth}px`, width: treeWidth } : undefined}
         >
           <div className="view-toolbar wrap">
-            <button className="ghost" disabled={history.length === 0} onClick={back}>
+            <button
+              className="ghost"
+              disabled={history.length === 0}
+              onClick={back}
+              title={t('뒤로')}
+            >
               ←
+            </button>
+            <button
+              className="ghost"
+              disabled={forward.length === 0}
+              onClick={forth}
+              title={t('앞으로')}
+            >
+              →
             </button>
             <button
               className="ghost"
