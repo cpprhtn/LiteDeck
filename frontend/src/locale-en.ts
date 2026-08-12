@@ -157,6 +157,7 @@ export const en: Record<string, string> = {
   '단말': 'TTY',
   '닫기': 'Close',
   '대기': 'Queued',
+  '다시 연결': 'Reconnect',
   '대상': 'Affects',
   '대기 {n}ms': 'queued {n}ms',
   '덮어쓰기': 'Overwrite',

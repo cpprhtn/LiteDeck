@@ -62,7 +62,12 @@ export function ServiceView({
   } | null>(null)
   const [loading, setLoading] = useState(true)
   const [pane, setPane] = useState<'services' | 'timers'>('services')
-  const [log, setLog] = useState<LogStream | null>(null)
+  /** The open follow, with what it was opened on so it can be reopened. */
+  const [log, setLog] = useState<{
+    stream: LogStream
+    unit: string
+    elevated: boolean
+  } | null>(null)
   const [logNeedsRoot, setLogNeedsRoot] = useState<{ unit: string; message: string } | null>(
     null,
   )
@@ -116,8 +121,8 @@ export function ServiceView({
   const openLog = async (unit: string, elevate: boolean) => {
     try {
       // One follow at a time: each holds a channel from the long-lived budget.
-      if (log) await StopLogStream(log.id)
-      setLog(await FollowServiceLog(hostID, unit, 200, elevate))
+      if (log) await StopLogStream(log.stream.id)
+      setLog({ stream: await FollowServiceLog(hostID, unit, 200, elevate), unit, elevated: elevate })
       setLogNeedsRoot(null)
     } catch (e) {
       const msg = String(e)
@@ -260,7 +265,13 @@ export function ServiceView({
         </div>
       )}
 
-      {log && <LogPanel stream={log} onClose={() => setLog(null)} />}
+      {log && (
+        <LogPanel
+          stream={log.stream}
+          onClose={() => setLog(null)}
+          onReopen={() => void openLog(log.unit, log.elevated)}
+        />
+      )}
 
       {chosen && (
         <div className="detail">

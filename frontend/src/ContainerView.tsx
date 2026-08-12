@@ -105,7 +105,10 @@ export function ContainerView({
   const [pane, setPane] = useState<'containers' | 'storage'>('containers')
   const [pending, setPending] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [log, setLog] = useState<LogStream | null>(null)
+  /** The open log, with the container it came from so it can be reopened. */
+  const [log, setLog] = useState<{ stream: LogStream; container: Container } | null>(
+    null,
+  )
   const [confirmRemove, setConfirmRemove] = useState<Container | null>(null)
   const [confirmProject, setConfirmProject] = useState<{
     project: string
@@ -167,9 +170,9 @@ export function ContainerView({
   // because something is happening right now.
   const showLogs = async (c: Container) => {
     try {
-      if (log) await StopLogStream(log.id)
+      if (log) await StopLogStream(log.stream.id)
       const stream = await FollowContainerLog(hostID, c.id, 200)
-      setLog({ ...stream, title: c.name })
+      setLog({ stream: { ...stream, title: c.name }, container: c })
     } catch (e) {
       onError(String(e))
     }
@@ -388,7 +391,13 @@ export function ContainerView({
         </div>
       )}
 
-      {log && <LogPanel stream={log} onClose={() => setLog(null)} />}
+      {log && (
+        <LogPanel
+          stream={log.stream}
+          onClose={() => setLog(null)}
+          onReopen={() => void showLogs(log.container)}
+        />
+      )}
 
       {/* A card button is the user's own container coming back. A header
           button takes the others with it, and the list of which is already on
