@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { StopLogStream, on, type LogLine, type LogStream } from './ipc'
+import { ResizeHandle } from './ResizeHandle'
+import { usePref } from './prefs'
 import { t } from './i18n'
 
 // Live log output (§4.3, §4.5).
@@ -20,6 +22,9 @@ export function LogPanel({
   const [ended, setEnded] = useState<string | null>(null)
   const [follow, setFollow] = useState(true)
   const [filter, setFilter] = useState('')
+  // Shared across services and containers: it is one slot in the window, and a
+  // height set while reading a unit's log should hold when the next one opens.
+  const height = usePref('liveLogHeight')
   const bodyRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -57,7 +62,8 @@ export function LogPanel({
     : lines
 
   return (
-    <div className="logpanel">
+    <div className="logpanel" style={{ height }}>
+      <ResizeHandle pref="liveLogHeight" label={t('로그 창 높이')} />
       <div className="logpanel-head">
         <strong className="mono ellipsis">{stream.title}</strong>
         <span className="muted small">{t('{n}줄', { n: lines.length })}</span>

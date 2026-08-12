@@ -171,6 +171,7 @@ export const en: Record<string, string> = {
   '디스크 {mount}': 'Disk {mount}',
   '로그': 'Logs',
   '로그 보기': 'View logs',
+  '로그 창 높이': 'Log panel height',
   '로그를 기다리는 중…': 'Waiting for logs…',
   '로드': 'Load',
   '로컬 MCP 엔드포인트 열기': 'Open a local MCP endpoint',

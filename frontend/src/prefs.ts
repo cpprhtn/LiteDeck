@@ -14,15 +14,22 @@ const KEY = 'litedeck.prefs'
 
 export interface Prefs {
   /** Height of the Command Log body when open, in px. */
-  logHeight: number
+  commandLogHeight: number
+  /** Height of the live log panel — service and container output. */
+  liveLogHeight: number
   /** Editor font size in px. */
   editorFontSize: number
 }
 
-export const DEFAULTS: Prefs = { logHeight: 200, editorFontSize: 13 }
+export const DEFAULTS: Prefs = {
+  commandLogHeight: 200,
+  liveLogHeight: 260,
+  editorFontSize: 13,
+}
 
 const LIMITS: Record<keyof Prefs, [number, number]> = {
-  logHeight: [80, 700],
+  commandLogHeight: [80, 700],
+  liveLogHeight: [100, 900],
   editorFontSize: [9, 32],
 }
 
@@ -37,10 +44,14 @@ function load(): Prefs {
     const raw = window.localStorage.getItem(KEY)
     if (!raw) return { ...DEFAULTS }
     const got = JSON.parse(raw) as Partial<Prefs>
-    return {
-      logHeight: clamp('logHeight', got.logHeight),
-      editorFontSize: clamp('editorFontSize', got.editorFontSize),
+    // Driven off DEFAULTS rather than listed again: a new preference should be
+    // one line in one place, and a key missing from the stored object — which
+    // is every key, the first time a new one ships — falls back through clamp.
+    const out = { ...DEFAULTS }
+    for (const key of Object.keys(DEFAULTS) as (keyof Prefs)[]) {
+      out[key] = clamp(key, got[key])
     }
+    return out
   } catch {
     // Unparseable, or storage disabled entirely. Defaults are a fine answer and
     // there is nothing here worth telling the user about.

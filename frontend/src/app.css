@@ -381,10 +381,9 @@
   grid-template-rows: auto 200px;
 }
 
-/* Out of flow on purpose: the grid has exactly two rows, and a third child in
-   flow would take one of them. It straddles the top border so the target is
-   6px tall while the line stays 1px. */
-.cmdlog-handle {
+/* Out of flow on purpose — see ResizeHandle.tsx. The panels it sits on have a
+   fixed set of children, and a handle in flow would take a row of its own. */
+.resize-handle {
   position: absolute;
   top: -3px;
   left: 0;
@@ -393,8 +392,8 @@
   cursor: row-resize;
   z-index: 1;
 }
-.cmdlog-handle:hover,
-.cmdlog-handle:active {
+.resize-handle:hover,
+.resize-handle:active {
   background: var(--accent);
 }
 
@@ -1494,9 +1493,17 @@ button.danger {
 /* Live log panel --------------------------------------------------------- */
 
 .logpanel {
+  position: relative;
   display: flex;
   flex-direction: column;
+  /* Overridden inline by the stored height; this is the first-paint fallback
+     and the value the handle's double-click returns to. */
   height: 260px;
+  /* flex:none so the list above cannot squash it, and a viewport cap so a
+     height dragged out on a large screen does not swallow that list whole when
+     the window is later made short. */
+  flex: none;
+  max-height: 70vh;
   border-top: 1px solid var(--border);
   background: var(--bg-sunken);
 }
@@ -1779,9 +1786,6 @@ button.danger {
 
 .mcp-badge-menu,
 .pop-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
   z-index: 40;
   min-width: 230px;
   display: flex;
@@ -1792,6 +1796,20 @@ button.danger {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   overflow: hidden;
 }
+/* The badge sits at the top right of the window with nothing that clips it, so
+   it can stay anchored to its own trigger. */
+.mcp-badge-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+}
+/* The restart menu is portalled to the body and given viewport coordinates by
+   PopMenu.tsx — the card list scrolls, and anything inside it gets clipped on
+   both axes. */
+.pop-menu {
+  position: fixed;
+}
+
 /* The global button is a fixed 28px, which clips a two-line entry into the one
    below it. These are menu rows, not buttons in a toolbar. */
 .mcp-badge-menu button,

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePoll } from './usePoll'
 import { ImagesVolumes } from './ImagesVolumes'
 import { LogPanel } from './LogPanel'
+import { PopMenu } from './PopMenu'
 import {
   ComposeAction,
   ContainerAction,
@@ -54,24 +55,8 @@ function RestartButton({
   onProject: (project: string) => void
 }) {
   const [open, setOpen] = useState(false)
-  const wrap = useRef<HTMLSpanElement>(null)
+  const caret = useRef<HTMLButtonElement>(null)
   const compose = container.compose
-
-  useEffect(() => {
-    if (!open) return
-    const close = (e: MouseEvent) => {
-      if (!wrap.current?.contains(e.target as Node)) setOpen(false)
-    }
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
-    // Capture, so a click on another card's caret closes this one before that
-    // one opens rather than leaving two menus on screen.
-    document.addEventListener('mousedown', close, true)
-    document.addEventListener('keydown', esc)
-    return () => {
-      document.removeEventListener('mousedown', close, true)
-      document.removeEventListener('keydown', esc)
-    }
-  }, [open])
 
   if (!compose || compose.oneOff) {
     return (
@@ -85,11 +70,12 @@ function RestartButton({
   const inService = inProject.filter((c) => c.compose?.service === compose.service)
 
   return (
-    <span className="pop-wrap" ref={wrap}>
+    <span className="pop-wrap">
       <button disabled={busy} onClick={onContainer}>
         {t('재시작')}
       </button>
       <button
+        ref={caret}
         className="pop-caret"
         disabled={busy}
         aria-label={t('재시작 범위')}
@@ -100,7 +86,7 @@ function RestartButton({
         ▾
       </button>
       {open && (
-        <div className="pop-menu">
+        <PopMenu anchor={caret.current} onClose={() => setOpen(false)}>
           <button
             onClick={() => {
               setOpen(false)
@@ -140,7 +126,7 @@ function RestartButton({
               })}
             </span>
           </button>
-        </div>
+        </PopMenu>
       )}
     </span>
   )
