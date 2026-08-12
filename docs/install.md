@@ -22,7 +22,7 @@ xattr -d com.apple.quarantine /Applications/litedeck.app
 
 **Linux.** 별도 절차 없이 압축을 풀고 실행 권한만 주면 됩니다. 다만 릴리스 바이너리는
 **`libwebkit2gtk-4.1`** 에 링크돼 있어 **Ubuntu 24.04 이상**이 필요합니다 — 빌드가 도는 CI
-러너가 24.04 라서입니다. 22.04 처럼 `libwebkit2gtk-4.0` 만 있는 배포판에서는 실행되지 않으니
+러너가 24.04 라서입니다. 22.04처럼 `libwebkit2gtk-4.0` 만 있는 배포판에서는 실행되지 않으니
 [직접 빌드](building.md)하세요.
 
 ```bash

@@ -29,6 +29,10 @@ about each other is theirs.
 If you want that part too, see "Going without an account" below. LiteDeck cannot tell
 the difference either way. To LiteDeck it is just an address with SSH on it.
 
+It does not cost anything. One person connecting their own machines fits inside the free
+plan ([pricing](https://tailscale.com/pricing) — the terms change, so take the numbers
+from there rather than from here).
+
 ---
 
 ## 1. Enable SSH on the home machine
@@ -191,8 +195,11 @@ behind awkward NAT it falls back to a DERP relay and latency goes up. `tailscale
 tells you which you got. LiteDeck does not stream a screen, so a relay is still usable,
 but file transfer speed is noticeably different.
 
-**A sleeping machine is an unreachable machine.** Disable sleep or set up Wake-on-LAN.
-Neither LiteDeck nor Tailscale solves this for you.
+**A sleeping machine is an unreachable machine.** Disabling sleep is the reliable answer.
+Wake-on-LAN sends its magic packet **from inside the same LAN**, so it cannot wake the
+machine over the tailnet from outside. It does work if something else on that LAN stays
+awake and has Tailscale on it — you reach that, and send the packet from there. Neither
+LiteDeck nor Tailscale solves this for you.
 
 **Tailscale ACLs.** With several devices on the tailnet you can restrict which of them
 may reach the SSH port. The default allows everything.

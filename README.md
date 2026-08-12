@@ -44,7 +44,7 @@
 ---
 
 > [!NOTE]
-> **macOS · Windows · Ubuntu 에서 실행을 확인했습니다.** 어느 환경에서 무엇까지 확인했는지는
+> **macOS · Windows · Ubuntu에서 실행을 확인했습니다.** 어느 환경에서 무엇까지 확인했는지는
 > [지원 범위](docs/support.md)에 적어두었습니다.
 > 삭제·프로세스 종료처럼 되돌릴 수 없는 작업은 시험용 서버에서 먼저 확인해보세요.
 
@@ -91,10 +91,10 @@ RDP·VNC·TeamViewer는 서버의 **화면 픽셀을 영상으로 스트리밍**
 | **네트워크** | 인터페이스와 열린 포트. **외부에 노출된 포트를 구분해서 표시**. sshd 설정 점검 |
 | **세션** | 이 서버에 누가 붙어 있는지. 접속별로 끊기 |
 | **스케줄** | systemd 타이머. 다음·마지막 실행 시각 |
-| **터미널** | xterm.js PTY, 탭 여러 개. `code .` · `vi foo.conf` 를 **앱이 가로채** 파일 탭에서 엽니다. 서버로 보내지 않으므로 VS Code 나 vi 가 없어도 됩니다 |
+| **터미널** | xterm.js PTY, 탭 여러 개. `code .` · `vi foo.conf` 를 **앱이 가로채** 파일 탭에서 엽니다. 서버로 보내지 않으므로 VS Code나 vi가 없어도 됩니다 |
 | **모니터링** | CPU·메모리·디스크 요약 바 + 그래프 |
 | **Command Log** | GUI가 실행한 **모든 명령을 실시간으로 표시**. 클릭하면 복사됩니다 |
-| **MCP** | Claude Code·Claude Desktop 이 이 앱을 통해 서버를 조회하고 바꿉니다. 서버별 opt-in, 변경은 승인, **되돌리기 가능** |
+| **MCP** | Claude Code·Claude Desktop이 이 앱을 통해 서버를 조회하고 바꿉니다. 서버별 opt-in, 변경은 승인, **되돌리기 가능** |
 | **접속** | 비밀번호·키·에이전트·2FA. `~/.ssh/config` 가져오기. **ProxyJump** 로 경유 서버 한 단계 |
 | **언어** | 한국어·영어. 처음 열 때 OS 언어를 따르고, 사이드바 아래 `KO`/`EN` 로 바꿉니다 |
 
@@ -104,7 +104,7 @@ RDP·VNC·TeamViewer는 서버의 **화면 픽셀을 영상으로 스트리밍**
   <img src="docs/media/03-command-log.gif" width="820" alt="Command Log">
 </p>
 
-<p align="center"><sub>재시작이 권한 부족으로 거부되자 <b>물어봅니다</b>. 실행된 명령은 그대로 보이고, 비밀번호는 stdin 으로 가서 보이지 않습니다.</sub></p>
+<p align="center"><sub>재시작이 권한 부족으로 거부되자 <b>물어봅니다</b>. 실행된 명령은 그대로 보이고, 비밀번호는 stdin으로 가서 보이지 않습니다.</sub></p>
 
 운영 서버를 만지는 GUI는 결국 "믿어달라"고 요구하는 셈입니다. LiteDeck은 **방금 무엇을 실행했는지
 정확히 보여주는 것**으로 그 신뢰를 얻습니다. 비밀번호는 표준 입력으로만 가므로 명령줄을 그대로
@@ -119,12 +119,12 @@ RDP·VNC·TeamViewer는 서버의 **화면 픽셀을 영상으로 스트리밍**
 
 → [기능 자세히](docs/features.md)
 
-### Claude 가 이 앱을 거쳐 서버를 다룹니다
+### Claude가 이 앱을 거쳐 서버를 다룹니다
 
-Claude Code·Claude Desktop 같은 MCP 클라이언트가 **GUI 가 앉던 자리에 앉습니다.** 같은 어댑터,
-이미 인증된 같은 SSH 연결, 같은 Command Log 를 씁니다. 조회 12개와 변경 5개를 주고, **변경은
+Claude Code·Claude Desktop 같은 MCP 클라이언트가 **GUI가 앉던 자리에 앉습니다.** 같은 어댑터,
+이미 인증된 같은 SSH 연결, 같은 Command Log를 씁니다. 조회 12개와 변경 5개를 주고, **변경은
 기본적으로 매번 물어봅니다.** 그 결재 정책은 앱이 소유하며 클라이언트 쪽에서는 끌 수 없습니다.
-MCP 가 바꾼 파일은 되돌릴 수 있고, 서버에는 여전히 아무것도 설치하지 않습니다.
+MCP가 바꾼 파일은 되돌릴 수 있고, 서버에는 여전히 아무것도 설치하지 않습니다.
 
 ```bash
 claude mcp add --transport http litedeck http://127.0.0.1:<포트>/mcp \
@@ -148,18 +148,18 @@ claude mcp add --transport http litedeck http://127.0.0.1:<포트>/mcp \
 > 함께 올리는 SHA256 체크섬은 **서명을 대신하지 못합니다.** 신뢰가 필요하면
 > [직접 빌드](docs/building.md)하세요.
 >
-> 그래서 첫 실행에 macOS Gatekeeper 와 Windows SmartScreen 경고가 뜹니다. 넘어가는 방법은
+> 그래서 첫 실행에 macOS Gatekeeper와 Windows SmartScreen 경고가 뜹니다. 넘어가는 방법은
 > [설치와 서버 준비](docs/install.md)에 적어두었습니다.
 
 **서버 쪽 준비.** Linux는 이미 SSH로 접속하고 계시면 끝입니다. Windows는 OpenSSH 서버만 켜면 됩니다.
 집에 있는 PC를 외부에서 다루려면 포트포워딩 대신 메시 VPN을 권합니다 —
-[서버 준비](docs/install.md#서버-준비) · [Tailscale 로 외부에서 쓰기](docs/remote-access.md)
+[서버 준비](docs/install.md#서버-준비) · [Tailscale로 외부에서 쓰기](docs/remote-access.md)
 
 ## 이 도구가 맞는 경우
 
 - **서버 두세 대에서 대여섯 대**를 직접 돌본다. 로그를 보고, 서비스를 재시작하고, 설정 파일을 고친다
-- 그 서버에 **뭔가를 더 깔고 싶지 않다.** SSH 는 이미 열려 있고, 그것으로 끝내고 싶다
-- GUI 는 원하지만 **무엇이 실행됐는지는 보고 싶다**
+- 그 서버에 **뭔가를 더 깔고 싶지 않다.** SSH는 이미 열려 있고, 그것으로 끝내고 싶다
+- GUI는 원하지만 **무엇이 실행됐는지는 보고 싶다**
 - 터미널을 버릴 생각은 없다. 자주 하는 일만 클릭으로 하고 싶을 뿐이다
 
 서버 수십 대를 한꺼번에, 선언적으로, 또는 본격적인 원격 개발이 필요하시다면 다른 도구가 낫습니다.
@@ -172,9 +172,9 @@ claude mcp add --transport http litedeck http://127.0.0.1:<포트>/mcp \
 | [보안](docs/security.md) | 호스트 키 검증·인증·자격증명 저장·sudo·MCP 엔드포인트. **못 하는 것을 먼저** 적었습니다 |
 | [지원 범위](docs/support.md) | 무엇을 어디서 검증했고 무엇이 미검증인지. 안 맞는 경우와 하지 않는 것 |
 | [MCP 연동](docs/mcp.md) | 도구 17개, 결재 정책, 되돌리기, 안전장치 |
-| [기능 자세히](docs/features.md) | Command Log 와 편집기 |
+| [기능 자세히](docs/features.md) | Command Log와 편집기 |
 | [설치와 서버 준비](docs/install.md) | 첫 실행 경고 넘기기, Windows OpenSSH 켜기 |
-| [Tailscale 로 외부에서 쓰기](docs/remote-access.md) | 포트포워딩 없이 집 PC 에 붙기. Tailscale SSH·MCP·서브넷 라우터, 그리고 계정 없이 가는 길 |
+| [Tailscale로 외부에서 쓰기](docs/remote-access.md) | 포트포워딩 없이 집 PC에 붙기. Tailscale SSH·MCP·서브넷 라우터, 그리고 계정 없이 가는 길 |
 | [소스에서 빌드](docs/building.md) | 빌드와 테스트 |
 
 ## 기여
