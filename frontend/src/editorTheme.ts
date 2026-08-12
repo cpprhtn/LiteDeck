@@ -15,7 +15,9 @@ const theme = EditorView.theme({
     height: '100%',
     color: 'var(--fg)',
     backgroundColor: 'var(--bg)',
-    fontSize: 'var(--text-md)',
+    // No fontSize here: it is adjustable, so it lives in its own compartment in
+    // CodeEditor.tsx. Setting it in both places makes whichever theme
+    // CodeMirror injects last the winner, which is not a thing to leave to luck.
   },
   '.cm-scroller': {
     fontFamily: 'var(--font-mono)',

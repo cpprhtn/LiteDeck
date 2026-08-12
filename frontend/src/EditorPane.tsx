@@ -13,7 +13,12 @@ import {
   useOpenFiles,
   type OpenFile,
 } from './openFiles'
+import { getPlatform } from './platform'
+import { DEFAULTS, setPref, usePref } from './prefs'
 import { t } from './i18n'
+
+/** "⌘+" or "Ctrl++", so the tooltips read the way the user's keyboard does. */
+const mod = (key: string) => (getPlatform().isMac ? `⌘${key}` : `Ctrl+${key}`)
 
 // The editor half of the file view (§4.7-3): tabs across the top, one document
 // below, and a save that shows its work first.
@@ -48,6 +53,7 @@ export function EditorPane({
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [cursor, setCursor] = useState({ line: 1, col: 1 })
+  const fontSize = usePref('editorFontSize')
 
   const file = files.find((f) => f.path === active) ?? files[0] ?? null
 
@@ -185,6 +191,34 @@ export function EditorPane({
         </span>
         <span className="grow" />
         {notice && <span className="muted small ellipsis">{notice}</span>}
+        {/* The keyboard already does this; these are here because a shortcut
+            nobody knows about is not a feature. Double-click the number to go
+            back to the default, as everywhere else in the app. */}
+        <span className="editor-zoom">
+          <button
+            className="ghost"
+            aria-label={t('글자 작게')}
+            title={t('글자 작게 ({key})', { key: mod('−') })}
+            onClick={() => setPref('editorFontSize', fontSize - 1)}
+          >
+            −
+          </button>
+          <span
+            className="muted small mono"
+            title={t('기본 크기로 ({key})', { key: mod('0') })}
+            onDoubleClick={() => setPref('editorFontSize', DEFAULTS.editorFontSize)}
+          >
+            {fontSize}
+          </span>
+          <button
+            className="ghost"
+            aria-label={t('글자 크게')}
+            title={t('글자 크게 ({key})', { key: mod('+') })}
+            onClick={() => setPref('editorFontSize', fontSize + 1)}
+          >
+            +
+          </button>
+        </span>
         <button disabled={busy || !isDirty(file)} onClick={() => requestSave(file)}>
           {t('저장')}
           {isDirty(file) ? ' •' : ''}

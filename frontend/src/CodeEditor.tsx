@@ -30,6 +30,7 @@ import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search'
 import { detectLanguage } from './editorLanguage'
 import { editorTheme } from './editorTheme'
+import { DEFAULTS, getPref, setPref, usePref } from './prefs'
 
 // The code editor (§4.7-3).
 //
@@ -43,8 +44,20 @@ import { editorTheme } from './editorTheme'
 // only reached by opening a file, and a session that never opens one should not
 // pay for it. Same treatment as the terminal.
 
+/** The one adjustable piece of the theme (§4.7-3). */
+const fontTheme = (px: number) => EditorView.theme({ '&': { fontSize: `${px}px` } })
+
+const zoom = (by: number) => () => {
+  setPref('editorFontSize', getPref('editorFontSize') + by)
+  return true
+}
+
 /** Extensions that never change. Built once; a fresh EditorState reuses it. */
-function baseExtensions(onSave: () => void, language: Compartment): Extension[] {
+function baseExtensions(
+  onSave: () => void,
+  language: Compartment,
+  fontSize: Compartment,
+): Extension[] {
   return [
     lineNumbers(),
     highlightActiveLineGutter(),
@@ -73,6 +86,20 @@ function baseExtensions(onSave: () => void, language: Compartment): Extension[] 
           return true
         },
       },
+      // Zoom, on the keys every editor and browser uses. Before the default
+      // keymap so Mod-0 is not taken by anything else, and preventDefault so
+      // the webview does not zoom the whole window underneath us.
+      { key: 'Mod-=', preventDefault: true, run: zoom(1) },
+      { key: 'Mod-+', preventDefault: true, run: zoom(1) },
+      { key: 'Mod--', preventDefault: true, run: zoom(-1) },
+      {
+        key: 'Mod-0',
+        preventDefault: true,
+        run: () => {
+          setPref('editorFontSize', DEFAULTS.editorFontSize)
+          return true
+        },
+      },
       ...closeBracketsKeymap,
       ...searchKeymap,
       ...historyKeymap,
@@ -84,6 +111,9 @@ function baseExtensions(onSave: () => void, language: Compartment): Extension[] 
     EditorView.lineWrapping,
     language.of([]),
     editorTheme,
+    // Last, so this fontSize is the one that wins over anything the base theme
+    // or a language extension might set.
+    fontSize.of(fontTheme(getPref('editorFontSize'))),
   ]
 }
 
@@ -103,6 +133,8 @@ export function CodeEditor({
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
   const language = useRef(new Compartment())
+  const fontSize = useRef(new Compartment())
+  const size = usePref('editorFontSize')
   // One EditorState per open file. Recreating the view on every tab switch
   // would work, and would throw away the undo history and cursor position of
   // the tab being left — which is exactly what tabs are for.
@@ -130,7 +162,11 @@ export function CodeEditor({
       EditorState.create({
         doc,
         extensions: [
-          ...baseExtensions(() => cb.current.onSave(), language.current),
+          ...baseExtensions(
+            () => cb.current.onSave(),
+            language.current,
+            fontSize.current,
+          ),
           listen,
         ],
       })
@@ -180,6 +216,16 @@ export function CodeEditor({
       selection: { anchor: Math.min(v.state.selection.main.anchor, value.length) },
     })
   }, [value, path])
+
+  // Zoom. Reconfiguring a compartment keeps the document, history and cursor,
+  // and the dispatch is what makes CodeMirror remeasure the character grid —
+  // without which the cursor lands a few columns off from the glyphs.
+  useEffect(() => {
+    const v = view.current
+    if (!v) return
+    v.dispatch({ effects: fontSize.current.reconfigure(fontTheme(size)) })
+    v.requestMeasure()
+  }, [size])
 
   // The grammar arrives after the file does: the editor opens as plain text and
   // gains highlighting a moment later, rather than the file waiting on a chunk

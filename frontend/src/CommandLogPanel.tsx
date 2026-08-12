@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ClearCommandLog, GetCommandLog, on, type CommandEntry } from './ipc'
+import { DEFAULTS, getPref, setPref, usePref } from './prefs'
 import { t } from './i18n'
 
 // The Command Log (§4.6) — every command the GUI ran, as it ran, copyable.
@@ -23,6 +24,7 @@ export function CommandLogPanel({
   // otherwise be buried in them. The log exists to answer "what did the GUI do
   // on my behalf", and that answer has to stay legible (§4.6).
   const [showBackground, setShowBackground] = useState(false)
+  const height = usePref('logHeight')
   const endRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -65,7 +67,37 @@ export function CommandLogPanel({
   const shown = showBackground ? entries : entries.filter((e) => !e.kind)
 
   return (
-    <div className="cmdlog" data-open={open || undefined}>
+    <div
+      className="cmdlog"
+      data-open={open || undefined}
+      style={open ? { gridTemplateRows: `auto ${height}px` } : undefined}
+    >
+      {/* Dragged upward the panel grows, so the delta is negated. Same pointer
+          capture as the file view's split, for the same reason: the cursor
+          outruns a 6px target the moment the drag gets going. */}
+      {open && (
+        <div
+          className="cmdlog-handle"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label={t('Command Log 높이')}
+          onPointerDown={(e) => {
+            e.currentTarget.setPointerCapture(e.pointerId)
+            const startY = e.clientY
+            const startH = getPref('logHeight')
+            const move = (ev: PointerEvent) =>
+              setPref('logHeight', startH + startY - ev.clientY)
+            const up = () => {
+              window.removeEventListener('pointermove', move)
+              window.removeEventListener('pointerup', up)
+            }
+            window.addEventListener('pointermove', move)
+            window.addEventListener('pointerup', up)
+          }}
+          onDoubleClick={() => setPref('logHeight', DEFAULTS.logHeight)}
+        />
+      )}
+
       <button className="cmdlog-head" onClick={onToggle}>
         <span className="chevron">{open ? '▾' : '▸'}</span>
         <strong>Command Log</strong>

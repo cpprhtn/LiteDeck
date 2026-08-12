@@ -368,14 +368,34 @@
 /* Command Log ------------------------------------------------------------ */
 
 .cmdlog {
+  position: relative;
   grid-area: cmdlog;
   border-top: 1px solid var(--border);
   background: var(--bg-sunken);
   display: grid;
   grid-template-rows: auto 0fr;
 }
+/* The inline style overrides the row height when open; this is the fallback
+   for a first paint before the preference is read. */
 .cmdlog[data-open] {
   grid-template-rows: auto 200px;
+}
+
+/* Out of flow on purpose: the grid has exactly two rows, and a third child in
+   flow would take one of them. It straddles the top border so the target is
+   6px tall while the line stays 1px. */
+.cmdlog-handle {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: row-resize;
+  z-index: 1;
+}
+.cmdlog-handle:hover,
+.cmdlog-handle:active {
+  background: var(--accent);
 }
 
 .cmdlog-head {
@@ -891,6 +911,25 @@ button.danger {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.editor-zoom {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: none;
+}
+.editor-zoom button {
+  padding: 0 var(--sp-2);
+  line-height: 1.4;
+}
+/* Fixed width so the row does not shift as the number goes 9 → 10. */
+.editor-zoom .mono {
+  flex: none;
+  min-width: 2ch;
+  text-align: center;
+  cursor: default;
+  user-select: none;
 }
 
 /* Tree rows. The twisty sits inside the name cell so indentation moves the name
