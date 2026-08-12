@@ -481,6 +481,7 @@ interface Bindings {
   EndSSHSession(hostID: string, pid: number): Promise<ActionResult>
   Bootstrap(): Promise<BootstrapData>
   Platform(): Promise<Platform>
+  ReadClipboard(): Promise<string>
   ColdStartMs(): Promise<number>
 
   ListHosts(): Promise<HostView[]>
@@ -695,6 +696,9 @@ export const ListSSHSessions = (h: string) => api().ListSSHSessions(h)
 export const EndSSHSession = (h: string, pid: number) => api().EndSSHSession(h, pid)
 export const Bootstrap = () => api().Bootstrap()
 export const GetPlatform = () => api().Platform()
+/** Reads the system clipboard through Go — WebKit refuses to let the page do
+ *  it. See App.ReadClipboard. */
+export const ReadClipboard = () => api().ReadClipboard()
 export const ColdStartMs = () => api().ColdStartMs()
 
 export const ListHosts = () => api().ListHosts()

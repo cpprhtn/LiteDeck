@@ -239,6 +239,24 @@ func (a *App) Platform() PlatformInfo {
 	return info
 }
 
+// ReadClipboard returns the system clipboard as text.
+//
+// The frontend cannot read it for itself. WebKit refuses
+// navigator.clipboard.readText() outright — "NotAllowedError: The request is
+// not allowed by the user agent" — with no permission prompt to grant and no
+// user gesture that satisfies it. Measured in a real build, not assumed:
+// writeText is allowed in the same webview, so only the read side needs this.
+//
+// The terminal's paste is what needs it (§4.6). Everything else in the window
+// gets paste from the OS through the Edit menu, which delivers a native paste
+// event that the focused field handles itself.
+//
+// Bound to the frontend only. MCP tools are an explicit list in mcp_tools.go
+// and this is not on it — an AI client cannot read the user's clipboard.
+func (a *App) ReadClipboard() (string, error) {
+	return wr.ClipboardGetText(a.ctx)
+}
+
 // ColdStartMs reports milliseconds from process start to this call. The
 // frontend calls it once on first paint, which makes the number the thing the
 // user actually waits for rather than a synthetic timer.

@@ -6,6 +6,7 @@ import {
   CloseTerminal,
   ListTerminals,
   OpenTerminal,
+  ReadClipboard,
   ResizeTerminal,
   RevealFromTerminal,
   WriteTerminal,
@@ -130,8 +131,10 @@ function TerminalPane({
         if (sel) void navigator.clipboard.writeText(sel).catch(() => {})
         return false
       }
-      navigator.clipboard
-        .readText()
+      // Through Go, not navigator.clipboard.readText(): WebKit refuses that
+      // call outright, so on macOS the paste would silently do nothing. Writing
+      // is allowed in the same webview, which is why only this half detours.
+      ReadClipboard()
         // term.paste rather than WriteTerminal: it wraps the text in the
         // bracketed-paste markers when the far side asked for them, which is
         // what stops a pasted block from being run a line at a time, and
