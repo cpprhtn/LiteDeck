@@ -77,6 +77,33 @@ func (a *App) ContainerAction(hostID, id, action string, elevate bool) ActionRes
 	return a.runContainerCommand(hostID, elevate, action, "--", id)
 }
 
+// ComposeAction runs one lifecycle verb against a compose project, or against a
+// single service inside it (§4.5).
+//
+// Restarting one container of a Compose project restarts one container. The
+// project usually wants restarting as a unit — a config change that touches two
+// services, a database that its clients have to reconnect to. Both are offered
+// because both are right some of the time, and only the user knows which.
+//
+// The same allowlist as ContainerAction: this is a bigger hammer, not a
+// different one, and `down`, `up` and `run` stay out of reach.
+func (a *App) ComposeAction(hostID, project, service, action string, elevate bool) ActionResult {
+	if !containerActions[action] {
+		return failResult(fmt.Errorf("app: unsupported compose action %q", action))
+	}
+	if project == "" {
+		return failResult(fmt.Errorf("app: compose action needs a project"))
+	}
+	info, err := a.DetectHost(hostID)
+	if err != nil {
+		return failResult(err)
+	}
+	if !info.HasCompose {
+		return failResult(i18n.Errorf("이 서버에 Compose 가 없습니다"))
+	}
+	return a.runContainerCommand(hostID, elevate, adapter.ComposeArgs(project, service, action)...)
+}
+
 // RemoveContainer deletes a container. Separate from ContainerAction because it
 // is destructive and the UI has to confirm it (§7.4).
 //

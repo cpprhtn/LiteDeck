@@ -99,6 +99,39 @@ bytes at the seam disagree, the resume is refused and the half-finished file is 
 Folder transfers are not resumable. Skipping already-copied files on size alone would keep a stale
 copy of anything that changed without changing length.
 
+## Compose: restart the project, not one container
+
+A container Compose started carries its project name on the card, and the ▾ beside
+**Restart** chooses the scope.
+
+| Scope | What runs |
+|---|---|
+| Only this container | `docker restart <id>` — the default, and what the button always did |
+| The whole service | `docker compose --project-name <p> restart -- <service>` |
+| The whole project | `docker compose --project-name <p> restart` |
+
+The service entry appears only when that service has more than one container. With one,
+it does the same thing as "only this container", and offering both leaves the reader to
+work out that they are identical.
+
+Restarting the project takes the other services down with it, so the containers it will
+touch are listed first and confirmed — **from what is already on screen, so the
+confirmation costs the server nothing.**
+
+**Working out which project a container belongs to costs no extra command.** Compose
+writes the answer into labels, and those labels are already in the `docker ps` output the
+card list is built from. Finding the project by searching the filesystem, or by calling
+`docker inspect` per container, would turn one listing into twenty round trips on a
+server running twenty containers.
+
+**The compose file is never read.** The project is addressed by name alone, and Compose
+recovers the rest from the labels on the running containers. So this still works when the
+file sits somewhere this account cannot read, or is no longer there at all — which is the
+ordinary case for something deployed to a server from a source tree kept elsewhere.
+
+There is no `down`, `up` or `run`. Those do a different kind of thing than restart, and
+do not belong beside it.
+
 ## Reviewing the sshd configuration
 
 Below the network tab, LiteDeck reads the server's sshd configuration and says what is worth

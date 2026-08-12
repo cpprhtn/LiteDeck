@@ -77,6 +77,9 @@ type ServerInfo struct {
 	// Container runtimes.
 	HasDocker bool `json:"hasDocker"`
 	HasPodman bool `json:"hasPodman"`
+	// HasCompose reports that `<runtime> compose` answers — the v2 plugin.
+	// Probed here, once per host, rather than before each action.
+	HasCompose bool `json:"hasCompose"`
 
 	// Privilege escalation (§7.2).
 	HasSudo      bool `json:"hasSudo"`
@@ -232,6 +235,19 @@ func Detect(ctx context.Context, r Runner) (ServerInfo, error) {
 	info.HasDocker = commandExists(ctx, r, "docker")
 	info.HasPodman = commandExists(ctx, r, "podman")
 	info.HasSudo = commandExists(ctx, r, "sudo")
+
+	// Compose v2 is a CLI plugin, not a binary, so `command -v` cannot see it —
+	// the subcommand has to be asked directly. It answers from the client alone
+	// and never contacts the daemon, which keeps this as cheap as the probes
+	// above. Only one runtime is asked, the one that will be used.
+	if runtime := "docker"; info.HasDocker || info.HasPodman {
+		if !info.HasDocker {
+			runtime = "podman"
+		}
+		if res, err := r.Probe(ctx, runtime, "compose", "version"); err == nil {
+			info.HasCompose = res.OK()
+		}
+	}
 
 	if info.HasSudo {
 		// -n never prompts; a zero exit means sudo is already authorised, so

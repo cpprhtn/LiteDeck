@@ -20,6 +20,7 @@ This section separates **what has actually been run** from what merely ought to 
 | **Server** | Alpine 3.20 + OpenSSH | Transport: SFTP, reconnect, injection defence, concurrent sessions |
 | **Jumping** | Two Alpine containers (bastion + target) | ProxyJump, with the target publishing no port so it is **genuinely unreachable directly** |
 | **Containers** | docker 28 (dind) | Containers, images, volumes |
+| **Compose** | docker 28 (dind) + Compose v2.40.3 | Reading the project labels, and restarting per service and per project — including after the compose file was deleted |
 
 **The one real Linux SSH server is the row above.** An Ubuntu 24.04.4 server was driven through the
 MCP integration, covering the read side and reading, writing and deleting files. **The paths the
@@ -43,6 +44,7 @@ file chooser have not.
 | **Debian, RHEL/Rocky 8** | Share the systemd 245 table-parsing path, so they should work, but untested |
 | **Podman** | Docker-compatible CLI, so the parser is shared, but never run |
 | **Windows containers** | The test machine had no Docker |
+| **Compose v1 and `podman compose`** | Only the Compose v2 plugin was tried. The standalone `docker-compose` (v1) cannot address a project without its file and is not supported. `podman compose` takes the same code path but was never run |
 | **ProxyJump against a real bastion** | Verified against two containers (bastion + target). Never tried against an actual bastion. Multi-hop is not implemented and is refused |
 | **macOS and BSD servers** | No adapter. Connecting works and **files and terminal do too**; the other tabs explain themselves |
 | **Remote → local drag** | Wails v2 has no drag-out API. Use the download button |

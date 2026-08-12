@@ -1765,7 +1765,20 @@ button.danger {
   opacity: 0.75;
   font-weight: 400;
 }
-.mcp-badge-menu {
+/* A popup list anchored under its trigger. `.pop-wrap` is the positioned
+   ancestor; the MCP badge had the only one of these until the container view
+   needed the same thing. */
+.pop-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.pop-caret {
+  padding: 0 var(--sp-1);
+  min-width: 0;
+}
+
+.mcp-badge-menu,
+.pop-menu {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
@@ -1781,7 +1794,8 @@ button.danger {
 }
 /* The global button is a fixed 28px, which clips a two-line entry into the one
    below it. These are menu rows, not buttons in a toolbar. */
-.mcp-badge-menu button {
+.mcp-badge-menu button,
+.pop-menu button {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -1795,10 +1809,12 @@ button.danger {
   text-align: left;
   cursor: pointer;
 }
-.mcp-badge-menu button + button {
+.mcp-badge-menu button + button,
+.pop-menu button + button {
   border-top: 1px solid var(--border);
 }
-.mcp-badge-menu button:hover {
+.mcp-badge-menu button:hover,
+.pop-menu button:hover {
   background: var(--bg-sunken);
 }
 .mcp-approve-actions {

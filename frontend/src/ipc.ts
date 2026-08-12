@@ -265,6 +265,16 @@ export interface Container {
   exitCode: number
   networks?: string[]
   size?: string
+  /** Set when Compose started this container; absent otherwise. */
+  compose?: Compose
+}
+
+/** The Compose project and service a container belongs to (§4.5). */
+export interface Compose {
+  project: string
+  service: string
+  /** From `compose run`. Part of the project, but not of its declared set. */
+  oneOff?: boolean
 }
 
 /** An open terminal tab (§4.6). */
@@ -526,6 +536,13 @@ interface Bindings {
     action: string,
     elevate: boolean,
   ): Promise<ActionResult>
+  ComposeAction(
+    id: string,
+    project: string,
+    service: string,
+    action: string,
+    elevate: boolean,
+  ): Promise<ActionResult>
   RemoveContainer(
     id: string,
     containerId: string,
@@ -734,6 +751,13 @@ export const ContainerAction = (
   action: string,
   elevate: boolean,
 ) => api().ContainerAction(id, containerId, action, elevate)
+export const ComposeAction = (
+  id: string,
+  project: string,
+  service: string,
+  action: string,
+  elevate: boolean,
+) => api().ComposeAction(id, project, service, action, elevate)
 export const RemoveContainer = (
   id: string,
   containerId: string,

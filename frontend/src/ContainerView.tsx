@@ -3,6 +3,7 @@ import { usePoll } from './usePoll'
 import { ImagesVolumes } from './ImagesVolumes'
 import { LogPanel } from './LogPanel'
 import {
+  ComposeAction,
   ContainerAction,
   FollowContainerLog,
   ListContainers,
@@ -21,6 +22,130 @@ const POLL_MS = 5000
 
 type Filter = 'all' | 'running' | 'stopped'
 
+/** Containers Compose would restart along with this one. */
+function projectPeers(all: Container[], project: string): Container[] {
+  // One-offs from `compose run` carry the project label but are not part of the
+  // declared set, so Compose leaves them alone — listing them would overstate
+  // what the button does.
+  return all.filter((c) => c.compose?.project === project && !c.compose.oneOff)
+}
+
+/**
+ * Restart, with a scope to choose when the container came from Compose.
+ *
+ * Plain containers keep the plain button: a menu with one entry is worse than
+ * no menu. The service entry appears only when the service has more than one
+ * container, because otherwise it and "this container" do the same thing and
+ * the user has to work out that they are the same.
+ */
+function RestartButton({
+  container,
+  peers,
+  busy,
+  onContainer,
+  onService,
+  onProject,
+}: {
+  container: Container
+  peers: Container[]
+  busy: boolean
+  onContainer: () => void
+  onService: (service: string) => void
+  onProject: (project: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const wrap = useRef<HTMLSpanElement>(null)
+  const compose = container.compose
+
+  useEffect(() => {
+    if (!open) return
+    const close = (e: MouseEvent) => {
+      if (!wrap.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    // Capture, so a click on another card's caret closes this one before that
+    // one opens rather than leaving two menus on screen.
+    document.addEventListener('mousedown', close, true)
+    document.addEventListener('keydown', esc)
+    return () => {
+      document.removeEventListener('mousedown', close, true)
+      document.removeEventListener('keydown', esc)
+    }
+  }, [open])
+
+  if (!compose || compose.oneOff) {
+    return (
+      <button disabled={busy} onClick={onContainer}>
+        {t('재시작')}
+      </button>
+    )
+  }
+
+  const inProject = projectPeers(peers, compose.project)
+  const inService = inProject.filter((c) => c.compose?.service === compose.service)
+
+  return (
+    <span className="pop-wrap" ref={wrap}>
+      <button disabled={busy} onClick={onContainer}>
+        {t('재시작')}
+      </button>
+      <button
+        className="pop-caret"
+        disabled={busy}
+        aria-label={t('재시작 범위')}
+        aria-expanded={open}
+        title={t('재시작 범위')}
+        onClick={() => setOpen((v) => !v)}
+      >
+        ▾
+      </button>
+      {open && (
+        <div className="pop-menu">
+          <button
+            onClick={() => {
+              setOpen(false)
+              onContainer()
+            }}
+          >
+            {t('이 컨테이너만')}
+            <span className="muted small ellipsis">{container.name}</span>
+          </button>
+          {inService.length > 1 && (
+            <button
+              onClick={() => {
+                setOpen(false)
+                onService(compose.service)
+              }}
+            >
+              {t('서비스 전체')}
+              <span className="muted small ellipsis">
+                {t('{service} · 컨테이너 {n}개', {
+                  service: compose.service,
+                  n: inService.length,
+                })}
+              </span>
+            </button>
+          )}
+          <button
+            onClick={() => {
+              setOpen(false)
+              onProject(compose.project)
+            }}
+          >
+            {t('프로젝트 전체')}
+            <span className="muted small ellipsis">
+              {t('{project} · 컨테이너 {n}개', {
+                project: compose.project,
+                n: inProject.length,
+              })}
+            </span>
+          </button>
+        </div>
+      )}
+    </span>
+  )
+}
+
 export function ContainerView({
   hostID,
   visible,
@@ -37,6 +162,10 @@ export function ContainerView({
   const [loading, setLoading] = useState(true)
   const [log, setLog] = useState<LogStream | null>(null)
   const [confirmRemove, setConfirmRemove] = useState<Container | null>(null)
+  const [confirmProject, setConfirmProject] = useState<{
+    container: Container
+    project: string
+  } | null>(null)
   const [needsRoot, setNeedsRoot] = useState<{ retry: () => void; message: string } | null>(
     null,
   )
@@ -168,6 +297,22 @@ export function ContainerView({
                 <span className="dot" data-status={running ? 'active' : c.exitCode > 0 ? 'failed' : undefined} />
                 <strong className="ellipsis">{c.name}</strong>
                 <span className="muted small ellipsis">{c.image}</span>
+                {/* Why this card has a restart menu and the one below it does
+                    not. The project is the part worth naming — the service is
+                    usually already legible in the container name. */}
+                {c.compose && (
+                  <span
+                    className="badge"
+                    title={t('Compose 프로젝트 {project} · 서비스 {service}', {
+                      project: c.compose.project,
+                      service: c.compose.service,
+                    })}
+                  >
+                    {c.compose.oneOff
+                      ? t('{project} (일회성)', { project: c.compose.project })
+                      : c.compose.project}
+                  </span>
+                )}
               </div>
 
               <div className="card-meta">
@@ -200,14 +345,20 @@ export function ContainerView({
                     >
                       {t('중지')}
                     </button>
-                    <button
-                      disabled={busy}
-                      onClick={() =>
+                    <RestartButton
+                      container={c}
+                      peers={containers}
+                      busy={busy}
+                      onContainer={() =>
                         void run(c.id, (e) => ContainerAction(hostID, c.id, 'restart', e))
                       }
-                    >
-                      {t('재시작')}
-                    </button>
+                      onService={(service) =>
+                        void run(c.id, (e) =>
+                          ComposeAction(hostID, c.compose!.project, service, 'restart', e),
+                        )
+                      }
+                      onProject={(project) => setConfirmProject({ container: c, project })}
+                    />
                   </>
                 ) : (
                   <button
@@ -251,6 +402,43 @@ export function ContainerView({
       )}
 
       {log && <LogPanel stream={log} onClose={() => setLog(null)} />}
+
+      {/* Restarting one container is the user's own container coming back.
+          Restarting a project takes other services down with it, and the list
+          of which is already on screen — so it is shown rather than described.
+          No extra command: the names come from the poll that drew the cards. */}
+      {confirmProject && (
+        <div className="scrim">
+          <div className="dialog">
+            <h2>{t('프로젝트 전체를 재시작하시겠습니까?')}</h2>
+            <dl className="keyinfo">
+              <dt>{t('프로젝트')}</dt>
+              <dd className="mono">{confirmProject.project}</dd>
+              <dt>{t('대상')}</dt>
+              <dd className="mono">
+                {projectPeers(containers, confirmProject.project)
+                  .map((c) => c.name)
+                  .join(' · ')}
+              </dd>
+            </dl>
+            <div className="dialog-actions">
+              <button onClick={() => setConfirmProject(null)}>{t('취소')}</button>
+              <button
+                className="primary"
+                onClick={() => {
+                  const { container, project } = confirmProject
+                  setConfirmProject(null)
+                  void run(container.id, (e) =>
+                    ComposeAction(hostID, project, '', 'restart', e),
+                  )
+                }}
+              >
+                {t('재시작')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {confirmRemove && (
         <div className="scrim">

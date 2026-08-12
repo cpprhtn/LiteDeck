@@ -29,6 +29,78 @@ type Container struct {
 	ExitCode int      `json:"exitCode"`
 	Networks []string `json:"networks,omitempty"`
 	Size     string   `json:"size,omitempty"`
+	// Compose is set when the container was started by Compose, and nil
+	// otherwise. It comes out of the labels already in `docker ps` output, so
+	// knowing this costs no extra command.
+	Compose *Compose `json:"compose,omitempty"`
+}
+
+// Compose identifies the project and service a container belongs to.
+//
+// Enough to act on the project without reading the compose file: `docker
+// compose -p <project> restart` works from any directory, with no
+// configuration file present, which matters because the file may live
+// somewhere this account cannot read — or may not exist any more.
+type Compose struct {
+	Project string `json:"project"`
+	Service string `json:"service"`
+	// OneOff marks a container from `compose run`, which belongs to the project
+	// but is not part of its declared set. Restarting the project leaves it
+	// alone, so offering the choice on one would be a lie.
+	OneOff bool `json:"oneOff,omitempty"`
+}
+
+const (
+	labelComposeProject = "com.docker.compose.project"
+	labelComposeService = "com.docker.compose.service"
+	labelComposeOneOff  = "com.docker.compose.oneoff"
+)
+
+// parseLabels splits the Labels column of `docker ps`.
+//
+// The column separates labels with commas, and at least one value it carries
+// contains commas of its own — com.docker.compose.project.config_files holds
+// one path per file. So a fragment with no "=" is not a label; it is the rest
+// of the one before it.
+//
+// A value holding both a comma and an "=" would still be split wrongly, and
+// nothing in this output format can tell the two apart. The compose labels read
+// here cannot contain either: project and service names are restricted to
+// letters, digits, dashes and underscores.
+func parseLabels(s string) map[string]string {
+	out := map[string]string{}
+	last := ""
+	for _, part := range strings.Split(s, ",") {
+		key, value, ok := strings.Cut(part, "=")
+		if !ok {
+			if last != "" {
+				out[last] += "," + part
+			}
+			continue
+		}
+		out[key] = value
+		last = key
+	}
+	return out
+}
+
+// composeOf reads the compose identity out of a container's labels, or returns
+// nil when the container was not started by Compose.
+func composeOf(labels string) *Compose {
+	if !strings.Contains(labels, labelComposeProject) {
+		return nil
+	}
+	l := parseLabels(labels)
+	project, service := l[labelComposeProject], l[labelComposeService]
+	if project == "" || service == "" {
+		return nil
+	}
+	return &Compose{
+		Project: project,
+		Service: service,
+		// Compose writes Python's True/False here, not JSON's.
+		OneOff: strings.EqualFold(l[labelComposeOneOff], "true"),
+	}
 }
 
 // Running reports whether the container is up.
@@ -61,6 +133,7 @@ type containerRow struct {
 	Networks string `json:"Networks"`
 	Created  string `json:"CreatedAt"`
 	Size     string `json:"Size"`
+	Labels   string `json:"Labels"`
 }
 
 // PSArgsContainers returns the argv for listing containers.
@@ -70,6 +143,25 @@ type containerRow struct {
 // too. One line of JSON per container.
 func PSArgsContainers() []string {
 	return []string{"ps", "-a", "--no-trunc", "--format", "{{json .}}"}
+}
+
+// ComposeArgs returns the argv for a lifecycle verb on a compose project.
+//
+// Addressed by project name alone. Compose v2 resolves the project from the
+// running containers' labels, so this needs neither the compose file nor the
+// directory it lives in — both of which may be unreadable by this account, or
+// gone. Verified against Compose v2; the standalone v1 `docker-compose` does
+// require a file and is not supported (docs/support.md).
+//
+// An empty service means the whole project.
+func ComposeArgs(project, service, action string) []string {
+	args := []string{"compose", "--project-name", project, action}
+	if service != "" {
+		// The separator matters: a service called "-f" would otherwise be read
+		// as a flag.
+		args = append(args, "--", service)
+	}
+	return args
 }
 
 // ParseContainers parses the output of the command above.
@@ -108,6 +200,7 @@ func ParseContainers(data []byte) ([]Container, error) {
 			Size:     row.Size,
 			Ports:    ParsePorts(row.Ports),
 			ExitCode: parseExitCode(row.Status),
+			Compose:  composeOf(row.Labels),
 		}
 		if row.Networks != "" {
 			c.Networks = strings.Split(row.Networks, ",")
