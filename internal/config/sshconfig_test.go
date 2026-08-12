@@ -98,8 +98,11 @@ func TestImportSSHConfig(t *testing.T) {
 			t.Errorf("%s missing", name)
 			continue
 		}
-		if h.Hostname != "db.internal" || h.User != "postgres" {
+		if h.Hostname != "db.internal" || h.User != "postgres" || h.Port != 22 {
 			t.Errorf("%s = %+v", name, h)
+		}
+		if len(h.Auth) != 2 || h.Auth[0] != AuthAgent || h.Auth[1] != AuthPassword {
+			t.Errorf("%s auth = %v, want agent then password", name, h.Auth)
 		}
 	}
 
@@ -113,8 +116,8 @@ func TestImportSSHConfig(t *testing.T) {
 	}
 
 	// A Host with no HostName uses the alias as the address.
-	if h := m["plain-alias"]; h.Hostname != "plain-alias" {
-		t.Errorf("plain-alias hostname = %q, want the alias itself", h.Hostname)
+	if h := m["plain-alias"]; h.Hostname != "plain-alias" || h.Port != 22 {
+		t.Errorf("plain-alias = %+v, want hostname plain-alias on port 22", h)
 	}
 
 	for _, h := range hosts {

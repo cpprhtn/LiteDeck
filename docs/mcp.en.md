@@ -69,7 +69,7 @@ line, so the port and the token never have to be copied by hand.
 |---|---|---|
 | **Claude Code** | ✅ **verified on real hardware** | one `claude mcp add --transport http …` line |
 | **Claude Desktop** | ⬜ not verified | the same Streamable HTTP settings |
-| **Codex CLI** | ⬜ **not verified** | takes the **name** of an environment variable, not the token |
+| **Codex CLI** | ✅ **verified by a contributor** | takes the **name** of an environment variable, not the token |
 | Any other MCP client | ⬜ not verified | Streamable HTTP with a Bearer token is all it needs |
 
 ```bash
@@ -92,12 +92,14 @@ codex mcp add litedeck --url http://127.0.0.1:<port>/mcp \
 > containers and the exposed ports. Writes do raise the approval dialog; approving sends the
 > command through to the server, and a write nobody answers does not run.
 >
-> **Codex CLI — not verified.** The author does not have Codex installed. The transport is the
-> same one (Streamable HTTP with a Bearer token), and the endpoint answers correctly to every
-> request Codex was observed to make: 404 on the OAuth discovery paths, which reads as "no
-> OAuth, use the token"; `401 WWW-Authenticate: Bearer` without credentials; the 405 the spec
-> prescribes for a `GET` that would open an SSE stream; 200 for a POST with no `Accept` header.
-> **Nobody has actually attached it.** Working or not, please say so in an
-> [issue](https://github.com/cpprhtn/LiteDeck/issues) and this table gets corrected.
+> **Codex CLI — a contributor attached it and it works.** The author has no Codex install,
+> which is why this sat unverified for so long. [@INMD1](https://github.com/INMD1) connected it
+> against a real server and confirmed it.
+>
+> What the author checked is still only the protocol: replaying the requests Codex makes, the
+> endpoint answers correctly to all of them — 404 on the OAuth discovery paths, which reads as
+> "no OAuth, use the token"; `401 WWW-Authenticate: Bearer` without credentials; the 405 the
+> spec prescribes for a `GET` that would open an SSE stream; 200 for a POST with no `Accept`
+> header.
 >
 > MCP against a **Windows** server has not been tried yet.

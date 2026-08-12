@@ -1937,3 +1937,11 @@ button.danger {
   gap: var(--sp-2);
   padding-left: 22px;
 }
+/* WebKitGTK clips Korean glyphs in a select whose border-box is forced to the
+   shared 28px control height. Let this text-heavy chooser size its line box
+   naturally, with a little extra vertical room for the native popup field. */
+.mcp-host-opts select {
+  height: auto;
+  min-height: 32px;
+  line-height: 1.5;
+}

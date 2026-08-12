@@ -55,6 +55,11 @@ func ImportSSHConfig(path string) ([]Host, error) {
 			ProxyJump:    e.proxyJump,
 			Source:       "ssh_config",
 		}
+		// Addr treats zero as OpenSSH's default too, but keep the concrete port
+		// in imported data so the editor never presents a misleading port 0.
+		if h.Port == 0 {
+			h.Port = 22
+		}
 		if h.User == "" {
 			// OpenSSH falls back to the local username.
 			if u := os.Getenv("USER"); u != "" {

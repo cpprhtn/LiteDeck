@@ -204,7 +204,7 @@ export function McpPanel({
                   {client === 'codex' && (
                     <span className="muted small">
                       {t(
-                        'Codex 는 토큰을 값이 아니라 환경변수 이름으로 받습니다. 두 줄을 함께 붙여넣으세요. 저자는 Claude Code 로만 확인했고 Codex 로는 확인하지 못했습니다.',
+                        'Codex 는 토큰을 값이 아니라 환경변수 이름으로 받습니다. 두 줄을 함께 붙여넣으세요.',
                       )}
                     </span>
                   )}

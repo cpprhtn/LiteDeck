@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -293,7 +294,7 @@ func Dial(ctx context.Context, cfg HostConfig) (*Conn, error) {
 		if jump != nil {
 			_ = jump.Close()
 		}
-		return nil, fmt.Errorf("sshcore: handshake with %s: %w", cfg.Addr, err)
+		return nil, fmt.Errorf("sshcore: handshake with %s: %w", cfg.Addr, explainAuthFailure(err))
 	}
 
 	maxSessions := cfg.MaxSessions
@@ -311,6 +312,29 @@ func Dial(ctx context.Context, cfg HostConfig) (*Conn, error) {
 		sem:       make(chan struct{}, maxSessions),
 		longLived: make(chan struct{}, maxLongLived),
 	}, nil
+}
+
+// explainAuthFailure names the one handshake failure whose own message sends
+// people looking in the wrong place.
+//
+// An ssh-agent offers every key it holds, and each one spends an attempt from
+// the server's MaxAuthTries — six by default. A developer with a busy agent is
+// therefore disconnected before the password method is ever reached, and the
+// server's wording ("too many authentication failures") reads as a bad
+// password on a locked-out account. The credentials are usually fine; the
+// agent used up the budget in front of them.
+//
+// Reported against a real server on 2026-08-12 (#1). The fix people need is a
+// one-line change in the host editor, so the error says where it is rather
+// than leaving them to find it.
+func explainAuthFailure(err error) error {
+	if err == nil {
+		return nil
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "too many authentication failures") {
+		return err
+	}
+	return fmt.Errorf("%w — %s", err, i18n.S("ssh-agent 가 가진 키를 차례로 시도하다 서버의 인증 시도 한도를 넘겼습니다. 비밀번호는 시도되지도 않았습니다 — 호스트 편집기에서 인증 방법의 에이전트를 끄거나, 에이전트에 올려둔 키를 줄이세요"))
 }
 
 // SetObserver installs the Command Log sink. Pass nil to detach.

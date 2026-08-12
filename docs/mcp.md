@@ -68,7 +68,7 @@ MCP 패널의 **연결** 탭에서 클라이언트를 고르고 **복사** 를 �
 |---|---|---|
 | **Claude Code** | ✅ **실기 검증** | `claude mcp add --transport http …` 한 줄 |
 | **Claude Desktop** | ⬜ 미검증 | 같은 Streamable HTTP 설정 |
-| **Codex CLI** | ⬜ **미검증** | 토큰을 환경변수 **이름**으로 받습니다 (아래) |
+| **Codex CLI** | ✅ **기여자 검증** | 토큰을 환경변수 **이름**으로 받습니다 (아래) |
 | 그 밖의 MCP 클라이언트 | ⬜ 미검증 | Streamable HTTP + Bearer를 지원하면 됩니다 |
 
 ```bash
@@ -90,10 +90,11 @@ codex mcp add litedeck --url http://127.0.0.1:<포트>/mcp \
 > 실제 Ubuntu 24.04.4 서버를 상대로 모델이 스스로 도구를 호출해 조회하고 파일을
 > 읽고 쓰는 것까지 왕복했습니다.
 >
-> **Codex CLI — 검증하지 못했습니다.** 저자 환경에 Codex가 없습니다. 전송 방식이
-> 같고(Streamable HTTP + Bearer), Codex가 하는 요청을 흉내 내 확인한 범위에서는
-> 엔드포인트가 전부 올바르게 답합니다 — OAuth 탐색에 404(= OAuth 없음, Bearer로
-> 폴백), 무인증에 `401 WWW-Authenticate: Bearer`, SSE를 여는 `GET` 에 명세가
-> 지정한 405, `Accept` 헤더가 없어도 200. 그래도 **붙여서 확인한 사람은 없습니다.**
-> 되든 안 되든 [이슈](https://github.com/cpprhtn/LiteDeck/issues)로 알려주시면
-> 이 표를 고치겠습니다.
+> **Codex CLI — 기여자가 붙여서 확인했습니다.** 저자 환경에는 Codex가 없어
+> 오랫동안 미검증으로 두었던 항목입니다. [@INMD1](https://github.com/INMD1) 님이
+> 실제로 연결해 동작하는 것을 확인해 주셨습니다.
+>
+> 저자가 직접 확인한 것은 여전히 프로토콜 쪽뿐입니다 — Codex가 하는 요청을 흉내 내
+> 보면 엔드포인트가 전부 올바르게 답합니다: OAuth 탐색에 404(= OAuth 없음, Bearer로
+> 폴백), 무인증에 `401 WWW-Authenticate: Bearer`, SSE를 여는 `GET` 에 명세가 지정한
+> 405, `Accept` 헤더가 없어도 200.
