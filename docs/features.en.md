@@ -99,24 +99,27 @@ bytes at the seam disagree, the resume is refused and the half-finished file is 
 Folder transfers are not resumable. Skipping already-copied files on size alone would keep a stale
 copy of anything that changed without changing length.
 
-## Compose: restart the project, not one container
+## Compose: act on the project, not one container
 
-A container Compose started carries its project name on the card, and the ▾ beside
-**Restart** chooses the scope.
+Containers Compose started are grouped by project, and the group header carries buttons
+that act on all of it.
 
-| Scope | What runs |
+| Where you press | What runs |
 |---|---|
-| Only this container | `docker restart <id>` — the default, and what the button always did |
-| The whole service | `docker compose --project-name <p> restart -- <service>` |
-| The whole project | `docker compose --project-name <p> restart` |
+| Start/Stop/Restart on a card | `docker start·stop·restart <id>` — that one container |
+| Start/Stop/Restart all, on the group header | `docker compose --project-name <p> start·stop·restart` |
 
-The service entry appears only when that service has more than one container. With one,
-it does the same thing as "only this container", and offering both leaves the reader to
-work out that they are identical.
+**Nothing asks you for a scope.** Where you press is the scope. Asking was considered and
+rejected: on a server run mostly through Compose that puts a dialog on nearly every click,
+while the common case is still one container — which teaches people to dismiss the dialog
+without reading it.
 
-Restarting the project takes the other services down with it, so the containers it will
-touch are listed first and confirmed — **from what is already on screen, so the
-confirmation costs the server nothing.**
+Acting on the project takes the other services with it, so the containers it will touch
+are listed first and confirmed — **from what is already on screen, so the confirmation
+costs the server nothing.**
+
+The count on the header is the whole project regardless of the filter. A number that
+disagreed with what the button next to it touches would be a lie.
 
 **Working out which project a container belongs to costs no extra command.** Compose
 writes the answer into labels, and those labels are already in the `docker ps` output the

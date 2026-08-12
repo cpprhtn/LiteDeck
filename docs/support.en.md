@@ -20,7 +20,7 @@ This section separates **what has actually been run** from what merely ought to 
 | **Server** | Alpine 3.20 + OpenSSH | Transport: SFTP, reconnect, injection defence, concurrent sessions |
 | **Jumping** | Two Alpine containers (bastion + target) | ProxyJump, with the target publishing no port so it is **genuinely unreachable directly** |
 | **Containers** | docker 28 (dind) | Containers, images, volumes |
-| **Compose** | docker 28 (dind) + Compose v2.40.3 | Reading the project labels, and restarting per service and per project — including after the compose file was deleted |
+| **Compose** | docker 28 (dind) + Compose v2.40.3 | Reading the project labels, and starting/stopping/restarting per service and per project — including after the compose file was deleted |
 
 **The one real Linux SSH server is the row above.** An Ubuntu 24.04.4 server was driven through the
 MCP integration, covering the read side and reading, writing and deleting files. **The paths the
