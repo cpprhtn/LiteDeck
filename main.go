@@ -29,7 +29,7 @@ func main() {
 
 	a := app.New()
 
-	err := wails.Run(&options.App{
+	opts := &options.App{
 		Title:  "LiteDeck",
 		Width:  1280,
 		Height: 820,
@@ -68,8 +68,10 @@ func main() {
 				Message: "SSH 하나로 원격 서버를 내 컴퓨터의 GUI에서 다룹니다.",
 			},
 		},
-	})
-	if err != nil {
+	}
+	withMenu(opts)
+
+	if err := wails.Run(opts); err != nil {
 		log.Fatalf("litedeck: %v", err)
 	}
 }

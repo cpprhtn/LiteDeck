@@ -362,6 +362,7 @@ export const en: Record<string, string> = {
   '크기': 'Size',
   '클라이언트에 붙여넣기': 'Paste into your client',
   'Codex 는 토큰을 값이 아니라 환경변수 이름으로 받습니다. 두 줄을 함께 붙여넣으세요. 저자는 Claude Code 로만 확인했고 Codex 로는 확인하지 못했습니다.': 'Codex takes the name of the environment variable, not the token itself. Paste both lines. The author has only tried this with Claude Code, not with Codex.',
+  '클립보드를 읽지 못했습니다.': 'Could not read the clipboard.',
   '클릭해서 복사': 'Click to copy',
   '키 종류': 'Key type',
   '키체인 없음': 'No keychain',

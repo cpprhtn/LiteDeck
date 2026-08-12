@@ -14,6 +14,7 @@ import {
 } from './ipc'
 import { LineWatcher } from './lineWatcher'
 import { requestReveal } from './openFiles'
+import { getPlatform } from './platform'
 import { t } from './i18n'
 
 // The built-in terminal (§4.6).
@@ -97,6 +98,49 @@ function TerminalPane({
 
     termRef.current = term
     fitRef.current = fit
+
+    // Copy and paste, which the terminal has to bind for itself.
+    //
+    // Everywhere else in the window the OS provides them — the macOS Edit menu
+    // (menu_darwin.go), or WebView2 and WebKitGTK's own bindings. Here it
+    // cannot: Ctrl+C is SIGINT and must stay SIGINT, and xterm claims every
+    // keystroke before the browser sees it.
+    //
+    // So the platform's terminal convention rather than its text-field one:
+    // ⌘C/⌘V on macOS, where ⌘ collides with nothing, and Ctrl+Shift+C/V
+    // everywhere else — what GNOME Terminal, Konsole and Windows Terminal all
+    // use, and for the same reason.
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.type !== 'keydown') return true
+      const mac = getPlatform().isMac
+      const combo = mac
+        ? e.metaKey && !e.ctrlKey && !e.altKey
+        : e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey
+      if (!combo) return true
+
+      const key = e.key.toLowerCase()
+      if (key !== 'c' && key !== 'v') return true
+      // preventDefault stops the macOS Edit menu firing the same action a
+      // second time: WKWebView reports the key equivalent as handled when the
+      // page consumes it, which is what lets a web app override ⌘C at all.
+      e.preventDefault()
+
+      if (key === 'c') {
+        const sel = term.getSelection()
+        if (sel) void navigator.clipboard.writeText(sel).catch(() => {})
+        return false
+      }
+      navigator.clipboard
+        .readText()
+        // term.paste rather than WriteTerminal: it wraps the text in the
+        // bracketed-paste markers when the far side asked for them, which is
+        // what stops a pasted block from being run a line at a time, and
+        // normalises CRLF to CR. It reaches the server through onData below,
+        // so the Command Log and the `code`/`vi` watcher still see it.
+        .then((text) => text && term.paste(text))
+        .catch(() => onError(t('클립보드를 읽지 못했습니다.')))
+      return false
+    })
 
     const offData = on<string>(`term:data:${info.id}`, (chunk) =>
       term.write(b64decode(chunk)),
