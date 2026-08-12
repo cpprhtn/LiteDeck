@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePoll } from './usePoll'
 import { ImagesVolumes } from './ImagesVolumes'
 import { LogPanel } from './LogPanel'
-import { PopMenu } from './PopMenu'
 import {
   ComposeAction,
   ContainerAction,
@@ -23,113 +22,73 @@ const POLL_MS = 5000
 
 type Filter = 'all' | 'running' | 'stopped'
 
-/** Containers Compose would restart along with this one. */
-function projectPeers(all: Container[], project: string): Container[] {
-  // One-offs from `compose run` carry the project label but are not part of the
-  // declared set, so Compose leaves them alone — listing them would overstate
-  // what the button does.
-  return all.filter((c) => c.compose?.project === project && !c.compose.oneOff)
+/** The verbs a project can be told to do. Deliberately not `down` or `up`. */
+type ComposeVerb = 'start' | 'stop' | 'restart'
+
+const VERB_LABEL: Record<ComposeVerb, () => string> = {
+  start: () => t('시작'),
+  stop: () => t('중지'),
+  restart: () => t('재시작'),
+}
+
+/** Pending key for a project-wide action; container IDs cannot collide with it. */
+const PROJECT_PENDING = 'compose:'
+
+/** One compose project, or the containers belonging to none. */
+interface Group {
+  /** null for containers Compose did not start. */
+  project: string | null
+  /** Cards to draw — after the running/stopped filter. */
+  shown: Container[]
+  /** Every declared member of the project, filter or not. The header's buttons
+   *  act on these, so the count beside them has to be this and not `shown`. */
+  members: Container[]
+  running: number
 }
 
 /**
- * Restart, with a scope to choose when the container came from Compose.
+ * Splits the list into compose projects, ungrouped last.
  *
- * Plain containers keep the plain button: a menu with one entry is worse than
- * no menu. The service entry appears only when the service has more than one
- * container, because otherwise it and "this container" do the same thing and
- * the user has to work out that they are the same.
+ * `shown` and `members` are counted from different lists on purpose. A filter
+ * of "running only" hides most cards, but "start the whole project" still
+ * starts the whole project — a header claiming 1 container while the button
+ * touches 5 would be lying about what it is about to do.
+ *
+ * One-offs from `compose run` sit with their project because that is where a
+ * reader will look for them, but they are not members: Compose leaves them
+ * alone, so counting them would overstate the buttons' reach.
  */
-function RestartButton({
-  container,
-  peers,
-  busy,
-  onContainer,
-  onService,
-  onProject,
-}: {
-  container: Container
-  peers: Container[]
-  busy: boolean
-  onContainer: () => void
-  onService: (service: string) => void
-  onProject: (project: string) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const caret = useRef<HTMLButtonElement>(null)
-  const compose = container.compose
+function groupByProject(shown: Container[], all: Container[]): Group[] {
+  const order: string[] = []
+  const byProject = new Map<string, Container[]>()
+  const loose: Container[] = []
 
-  if (!compose || compose.oneOff) {
-    return (
-      <button disabled={busy} onClick={onContainer}>
-        {t('재시작')}
-      </button>
-    )
+  for (const c of shown) {
+    const project = c.compose?.project
+    if (!project) {
+      loose.push(c)
+      continue
+    }
+    if (!byProject.has(project)) {
+      byProject.set(project, [])
+      order.push(project)
+    }
+    byProject.get(project)!.push(c)
   }
 
-  const inProject = projectPeers(peers, compose.project)
-  const inService = inProject.filter((c) => c.compose?.service === compose.service)
-
-  return (
-    <span className="pop-wrap">
-      <button disabled={busy} onClick={onContainer}>
-        {t('재시작')}
-      </button>
-      <button
-        ref={caret}
-        className="pop-caret"
-        disabled={busy}
-        aria-label={t('재시작 범위')}
-        aria-expanded={open}
-        title={t('재시작 범위')}
-        onClick={() => setOpen((v) => !v)}
-      >
-        ▾
-      </button>
-      {open && (
-        <PopMenu anchor={caret.current} onClose={() => setOpen(false)}>
-          <button
-            onClick={() => {
-              setOpen(false)
-              onContainer()
-            }}
-          >
-            {t('이 컨테이너만')}
-            <span className="muted small ellipsis">{container.name}</span>
-          </button>
-          {inService.length > 1 && (
-            <button
-              onClick={() => {
-                setOpen(false)
-                onService(compose.service)
-              }}
-            >
-              {t('서비스 전체')}
-              <span className="muted small ellipsis">
-                {t('{service} · 컨테이너 {n}개', {
-                  service: compose.service,
-                  n: inService.length,
-                })}
-              </span>
-            </button>
-          )}
-          <button
-            onClick={() => {
-              setOpen(false)
-              onProject(compose.project)
-            }}
-          >
-            {t('프로젝트 전체')}
-            <span className="muted small ellipsis">
-              {t('{project} · 컨테이너 {n}개', {
-                project: compose.project,
-                n: inProject.length,
-              })}
-            </span>
-          </button>
-        </PopMenu>
-      )}
-    </span>
-  )
+  const groups: Group[] = order.sort().map((project) => {
+    const members = all.filter((c) => c.compose?.project === project && !c.compose.oneOff)
+    return {
+      project,
+      shown: byProject.get(project)!,
+      members,
+      running: members.filter((c) => c.state === 'running').length,
+    }
+  })
+  if (loose.length > 0) {
+    groups.push({ project: null, shown: loose, members: loose, running: 0 })
+  }
+  return groups
 }
 
 export function ContainerView({
@@ -149,9 +108,12 @@ export function ContainerView({
   const [log, setLog] = useState<LogStream | null>(null)
   const [confirmRemove, setConfirmRemove] = useState<Container | null>(null)
   const [confirmProject, setConfirmProject] = useState<{
-    container: Container
     project: string
+    action: ComposeVerb
+    members: Container[]
   } | null>(null)
+  /** Projects the user folded away. Keyed by name; '' is the ungrouped block. */
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [needsRoot, setNeedsRoot] = useState<{ retry: () => void; message: string } | null>(
     null,
   )
@@ -219,6 +181,7 @@ export function ContainerView({
     return true
   })
 
+  const groups = groupByProject(rows, containers)
   const runningCount = containers.filter((c) => c.state === 'running').length
   const crashed = containers.filter((c) => c.exitCode > 0).length
 
@@ -274,96 +237,134 @@ export function ContainerView({
           <div className="placeholder">{t('조건에 맞는 컨테이너가 없습니다.')}</div>
         )}
 
-        {rows.map((c) => {
-          const running = c.state === 'running'
-          const busy = pending === c.id
+        {groups.map((g) => {
+          const key = g.project ?? ''
+          const folded = collapsed.has(key)
           return (
-            <div key={c.id} className="card" data-running={running || undefined} data-busy={busy || undefined}>
-              <div className="card-head">
-                <span className="dot" data-status={running ? 'active' : c.exitCode > 0 ? 'failed' : undefined} />
-                <strong className="ellipsis">{c.name}</strong>
-                <span className="muted small ellipsis">{c.image}</span>
-                {/* Why this card has a restart menu and the one below it does
-                    not. The project is the part worth naming — the service is
-                    usually already legible in the container name. */}
-                {c.compose && (
-                  <span
-                    className="badge"
-                    title={t('Compose 프로젝트 {project} · 서비스 {service}', {
-                      project: c.compose.project,
-                      service: c.compose.service,
-                    })}
-                  >
-                    {c.compose.oneOff
-                      ? t('{project} (일회성)', { project: c.compose.project })
-                      : c.compose.project}
-                  </span>
-                )}
-              </div>
-
-              <div className="card-meta">
-                <span className={c.exitCode > 0 ? 'danger-text' : 'muted'}>{c.status}</span>
-                {(c.ports?.length ?? 0) > 0 && (
-                  <span className="mono small">
-                    {c.ports
-                      .map((p) =>
-                        p.hostPort
-                          ? `${p.hostPort}→${p.container}/${p.protocol}`
-                          : `${p.container}/${p.protocol}`,
-                      )
-                      .join(' · ')}
-                  </span>
-                )}
-              </div>
-
-              <div className="card-cmd mono small ellipsis muted" title={c.command}>
-                {c.command}
-              </div>
-
-              <div className="card-actions">
-                {running ? (
-                  <>
+            <div key={key || '\u0000none'} className="card-group">
+              <div className="card-group-head">
+                <button
+                  className="twisty"
+                  aria-expanded={!folded}
+                  onClick={() =>
+                    setCollapsed((prev) => {
+                      const next = new Set(prev)
+                      if (!next.delete(key)) next.add(key)
+                      return next
+                    })
+                  }
+                >
+                  {folded ? '\u25b8' : '\u25be'}
+                </button>
+                <span className="card-group-name">
+                  {g.project ?? t('프로젝트 없음')}
+                </span>
+                <span className="muted small">
+                  {g.project
+                    ? t('{n}개 · {r} 실행 중', { n: g.members.length, r: g.running })
+                    : t('{n}개', { n: g.shown.length })}
+                </span>
+                <span className="spacer" />
+                {/* Only for real projects: "no project" is not a thing Compose
+                    can be told to start. */}
+                {g.project &&
+                  (['start', 'stop', 'restart'] as const).map((action) => (
                     <button
-                      disabled={busy}
+                      key={action}
+                      disabled={pending === PROJECT_PENDING + g.project}
                       onClick={() =>
-                        void run(c.id, (e) => ContainerAction(hostID, c.id, 'stop', e))
+                        setConfirmProject({ project: g.project!, action, members: g.members })
                       }
                     >
-                      {t('중지')}
+                      {action === 'start' && t('전체 시작')}
+                      {action === 'stop' && t('전체 중지')}
+                      {action === 'restart' && t('전체 재시작')}
                     </button>
-                    <RestartButton
-                      container={c}
-                      peers={containers}
-                      busy={busy}
-                      onContainer={() =>
-                        void run(c.id, (e) => ContainerAction(hostID, c.id, 'restart', e))
-                      }
-                      onService={(service) =>
-                        void run(c.id, (e) =>
-                          ComposeAction(hostID, c.compose!.project, service, 'restart', e),
-                        )
-                      }
-                      onProject={(project) => setConfirmProject({ container: c, project })}
-                    />
-                  </>
-                ) : (
-                  <button
-                    disabled={busy}
-                    onClick={() =>
-                      void run(c.id, (e) => ContainerAction(hostID, c.id, 'start', e))
-                    }
-                  >
-                    {t('시작')}
-                  </button>
-                )}
-                <button disabled={busy} onClick={() => void showLogs(c)}>
-                  {t('로그')}
-                </button>
-                <span className="spacer" />
-                <button className="danger" disabled={busy} onClick={() => setConfirmRemove(c)}>
-                  {t('삭제')}
-                </button>
+                  ))}
               </div>
+
+              {!folded && (
+                <div className="card-grid">
+                  {g.shown.map((c) => {
+              const running = c.state === 'running'
+              const busy = pending === c.id
+              return (
+                <div key={c.id} className="card" data-running={running || undefined} data-busy={busy || undefined}>
+                  <div className="card-head">
+                    <span className="dot" data-status={running ? 'active' : c.exitCode > 0 ? 'failed' : undefined} />
+                    <strong className="ellipsis">{c.name}</strong>
+                    <span className="muted small ellipsis">{c.image}</span>
+                    {/* The group header already names the project, so the only
+                        thing left to say is that Compose will skip this one. */}
+                    {c.compose?.oneOff && (
+                      <span className="badge" title={t('compose run 으로 만들어진 컨테이너입니다. 프로젝트 전체 동작에 포함되지 않습니다.')}>
+                        {t('일회성')}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="card-meta">
+                    <span className={c.exitCode > 0 ? 'danger-text' : 'muted'}>{c.status}</span>
+                    {(c.ports?.length ?? 0) > 0 && (
+                      <span className="mono small">
+                        {c.ports
+                          .map((p) =>
+                            p.hostPort
+                              ? `${p.hostPort}→${p.container}/${p.protocol}`
+                              : `${p.container}/${p.protocol}`,
+                          )
+                          .join(' · ')}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="card-cmd mono small ellipsis muted" title={c.command}>
+                    {c.command}
+                  </div>
+
+                  <div className="card-actions">
+                    {running ? (
+                      <>
+                        <button
+                          disabled={busy}
+                          onClick={() =>
+                            void run(c.id, (e) => ContainerAction(hostID, c.id, 'stop', e))
+                          }
+                        >
+                          {t('중지')}
+                        </button>
+                        <button
+                          disabled={busy}
+                          onClick={() =>
+                            void run(c.id, (e) => ContainerAction(hostID, c.id, 'restart', e))
+                          }
+                        >
+                          {t('재시작')}
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        disabled={busy}
+                        onClick={() =>
+                          void run(c.id, (e) => ContainerAction(hostID, c.id, 'start', e))
+                        }
+                      >
+                        {t('시작')}
+                      </button>
+                    )}
+                    <button disabled={busy} onClick={() => void showLogs(c)}>
+                      {t('로그')}
+                    </button>
+                    <span className="spacer" />
+                    <button className="danger" disabled={busy} onClick={() => setConfirmRemove(c)}>
+                      {t('삭제')}
+                    </button>
+                  </div>
+                </div>
+              )
+                  })}
+                </div>
+              )}
             </div>
           )
         })}
@@ -389,37 +390,39 @@ export function ContainerView({
 
       {log && <LogPanel stream={log} onClose={() => setLog(null)} />}
 
-      {/* Restarting one container is the user's own container coming back.
-          Restarting a project takes other services down with it, and the list
-          of which is already on screen — so it is shown rather than described.
-          No extra command: the names come from the poll that drew the cards. */}
+      {/* A card button is the user's own container coming back. A header
+          button takes the others with it, and the list of which is already on
+          screen — so it is shown rather than described. No extra command: the
+          names come from the poll that drew the cards. */}
       {confirmProject && (
         <div className="scrim">
           <div className="dialog">
-            <h2>{t('프로젝트 전체를 재시작하시겠습니까?')}</h2>
+            <h2>
+              {confirmProject.action === 'start' && t('프로젝트 전체를 시작하시겠습니까?')}
+              {confirmProject.action === 'stop' && t('프로젝트 전체를 중지하시겠습니까?')}
+              {confirmProject.action === 'restart' && t('프로젝트 전체를 재시작하시겠습니까?')}
+            </h2>
             <dl className="keyinfo">
               <dt>{t('프로젝트')}</dt>
               <dd className="mono">{confirmProject.project}</dd>
               <dt>{t('대상')}</dt>
               <dd className="mono">
-                {projectPeers(containers, confirmProject.project)
-                  .map((c) => c.name)
-                  .join(' · ')}
+                {confirmProject.members.map((c) => c.name).join(' · ')}
               </dd>
             </dl>
             <div className="dialog-actions">
               <button onClick={() => setConfirmProject(null)}>{t('취소')}</button>
               <button
-                className="primary"
+                className={confirmProject.action === 'stop' ? 'danger' : 'primary'}
                 onClick={() => {
-                  const { container, project } = confirmProject
+                  const { project, action } = confirmProject
                   setConfirmProject(null)
-                  void run(container.id, (e) =>
-                    ComposeAction(hostID, project, '', 'restart', e),
+                  void run(PROJECT_PENDING + project, (e) =>
+                    ComposeAction(hostID, project, '', action, e),
                   )
                 }}
               >
-                {t('재시작')}
+                {VERB_LABEL[confirmProject.action]()}
               </button>
             </div>
           </div>

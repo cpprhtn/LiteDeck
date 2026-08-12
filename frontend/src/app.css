@@ -1217,18 +1217,56 @@ button.danger {
 
 /* Container cards -------------------------------------------------------- */
 
+/* The scroller. flex:1 is required, not decorative: without it this takes its
+   content height inside the flex-column view and an empty list collapses to
+   nothing, which reads as a broken tab. */
 .cards {
-  /* flex:1 is required, not decorative: without it this grid takes its content
-     height inside the flex-column view and an empty list collapses to nothing,
-     which reads as a broken tab. */
   flex: 1;
   overflow-y: auto;
   padding: var(--sp-3) var(--sp-4);
+  min-height: 0;
+}
+
+/* One compose project, or the containers belonging to none. The header is
+   where project-wide actions live: scope is expressed by which button you
+   press, not by a mode or a dialog. */
+.card-group + .card-group {
+  margin-top: var(--sp-4);
+}
+.card-group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) 0 var(--sp-2);
+}
+.card-group-head .twisty {
+  border: 0;
+  background: transparent;
+  color: var(--fg-faint);
+  font: inherit;
+  padding: 0 var(--sp-1);
+  height: auto;
+  cursor: pointer;
+}
+.card-group-name {
+  font-weight: 600;
+}
+.card-group-head .spacer {
+  flex: 1;
+}
+/* Smaller than the card buttons on purpose. These act on more, but they are
+   not the thing being looked at — the containers are. */
+.card-group-head button:not(.twisty) {
+  height: 24px;
+  font-size: var(--text-sm);
+  padding: 0 var(--sp-2);
+}
+
+.card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: var(--sp-3);
   align-content: start;
-  min-height: 0;
 }
 
 .card {
@@ -1250,10 +1288,17 @@ button.danger {
 
 .card-head {
   display: grid;
-  grid-template-columns: 10px auto 1fr;
+  /* The trailing track is for a badge. Without it a fourth child drops to a
+     second row and lands in the 10px dot column, which renders a short label
+     one character per line. Cards with no badge get a zero-width track. */
+  grid-template-columns: 10px auto 1fr auto;
   align-items: baseline;
   gap: var(--sp-2);
   min-width: 0;
+}
+.card-head .badge {
+  margin-left: 0;
+  white-space: nowrap;
 }
 .card-meta {
   display: flex;
@@ -1772,20 +1817,10 @@ button.danger {
   opacity: 0.75;
   font-weight: 400;
 }
-/* A popup list anchored under its trigger. `.pop-wrap` is the positioned
-   ancestor; the MCP badge had the only one of these until the container view
-   needed the same thing. */
-.pop-wrap {
-  position: relative;
-  display: inline-flex;
-}
-.pop-caret {
-  padding: 0 var(--sp-1);
-  min-width: 0;
-}
-
-.mcp-badge-menu,
-.pop-menu {
+.mcp-badge-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
   z-index: 40;
   min-width: 230px;
   display: flex;
@@ -1796,24 +1831,9 @@ button.danger {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   overflow: hidden;
 }
-/* The badge sits at the top right of the window with nothing that clips it, so
-   it can stay anchored to its own trigger. */
-.mcp-badge-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-}
-/* The restart menu is portalled to the body and given viewport coordinates by
-   PopMenu.tsx — the card list scrolls, and anything inside it gets clipped on
-   both axes. */
-.pop-menu {
-  position: fixed;
-}
-
 /* The global button is a fixed 28px, which clips a two-line entry into the one
    below it. These are menu rows, not buttons in a toolbar. */
-.mcp-badge-menu button,
-.pop-menu button {
+.mcp-badge-menu button {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -1827,12 +1847,10 @@ button.danger {
   text-align: left;
   cursor: pointer;
 }
-.mcp-badge-menu button + button,
-.pop-menu button + button {
+.mcp-badge-menu button + button {
   border-top: 1px solid var(--border);
 }
-.mcp-badge-menu button:hover,
-.pop-menu button:hover {
+.mcp-badge-menu button:hover {
   background: var(--bg-sunken);
 }
 .mcp-approve-actions {
