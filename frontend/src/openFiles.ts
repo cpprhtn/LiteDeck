@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import type { TextFile } from './ipc'
+import type { FilePreview, TextFile } from './ipc'
 
 // Which files the editor has open, per host (§4.7-3).
 //
@@ -19,6 +19,9 @@ export type OpenFile = {
   baseModTime: number
   baseSize: number
   perm: number
+  /** Set on a tab the editor will not open — an image, or an unknown blob.
+   *  Present means read-only: there is no document to save. */
+  preview?: FilePreview
 }
 
 export type HostFiles = {
@@ -90,6 +93,25 @@ export function openFile(hostID: string, file: TextFile) {
       perm: file.perm,
     }
     return { files: [...h.files, opened], active: file.path }
+  })
+}
+
+/** Opens a read-only tab for a file the editor refuses (§4.2). */
+export function openPreview(hostID: string, preview: FilePreview) {
+  update(hostID, (h) => {
+    if (h.files.some((f) => f.path === preview.path)) return { ...h, active: preview.path }
+    const opened: OpenFile = {
+      path: preview.path,
+      name: preview.path.split('/').pop() || preview.path,
+      // Empty and equal, so isDirty is false and every save path stays shut.
+      doc: '',
+      base: '',
+      baseModTime: 0,
+      baseSize: preview.size,
+      perm: 0,
+      preview,
+    }
+    return { files: [...h.files, opened], active: preview.path }
   })
 }
 

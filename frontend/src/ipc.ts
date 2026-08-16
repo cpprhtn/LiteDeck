@@ -282,6 +282,19 @@ export interface Compose {
   oneOff?: boolean
 }
 
+/** A read-only look at a file the editor will not open (§4.2). */
+export interface FilePreview {
+  path: string
+  size: number
+  /** "image" when the webview can draw it, "binary" otherwise. */
+  kind: 'image' | 'binary'
+  mime: string
+  /** base64. The whole file for an image, a bounded prefix otherwise. */
+  data: string
+  truncated?: boolean
+  tooLarge?: boolean
+}
+
 /** An open terminal tab (§4.6). */
 export interface TerminalInfo {
   id: string
@@ -584,6 +597,7 @@ interface Bindings {
     typed: string,
   ): Promise<ActionResult>
   ReadTextFile(id: string, p: string): Promise<TextFile>
+  PreviewFile(id: string, p: string): Promise<FilePreview>
   WriteTextFile(id: string, p: string, content: string): Promise<ActionResult>
   SaveTextFile(id: string, req: SaveRequest): Promise<SaveResult>
 
@@ -812,6 +826,7 @@ export const DeletePaths = (
   typed: string,
 ) => api().DeletePaths(id, paths, recursive, typed)
 export const ReadTextFile = (id: string, p: string) => api().ReadTextFile(id, p)
+export const PreviewFile = (id: string, p: string) => api().PreviewFile(id, p)
 export const WriteTextFile = (id: string, p: string, content: string) =>
   api().WriteTextFile(id, p, content)
 export const SaveTextFile = (id: string, req: SaveRequest) =>

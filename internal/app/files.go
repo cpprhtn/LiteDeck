@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path"
 	"sort"
@@ -32,6 +34,17 @@ const maxListEntries = 20000
 // the file is almost certainly not something to edit in a dialog, and loading
 // it would freeze the webview.
 const maxEditableBytes = 2 << 20 // 2 MiB
+
+// maxPreviewBytes is the ceiling for a read-only look at a file the editor
+// refuses. Higher than the editor's limit because nothing is parsed, laid out
+// or kept in a document model — the bytes are shown and dropped. Still bounded:
+// this crosses the IPC boundary as base64, which is a third larger again.
+const maxPreviewBytes = 8 << 20 // 8 MiB
+
+// hexPreviewBytes is how much of a non-image binary is worth showing. Enough to
+// read a magic number and any header strings, which is what somebody asking
+// "what is this file" actually wants.
+const hexPreviewBytes = 4 << 10 // 4 KiB
 
 // FileEntry is one row of the file explorer.
 type FileEntry struct {
@@ -376,6 +389,92 @@ func (a *App) ReadTextFile(hostID, p string) (TextFile, error) {
 	}
 	out.Content = string(data)
 	return out, nil
+}
+
+// FilePreview is a read-only look at a file the editor will not open (§4.2).
+//
+// Refusing to show a binary at all was the whole answer until now: the file
+// explorer raised a toast and there was no way to see the thing. Somebody who
+// opens a .png on a server wants to look at it, and somebody who opens an
+// unknown blob wants to know what it is — neither needs an editor.
+type FilePreview struct {
+	Path string `json:"path"`
+	Size int64  `json:"size"`
+	// Kind is "image" when the bytes are one the webview can draw, "binary"
+	// otherwise. Sniffed from content rather than the extension: a screenshot
+	// saved as .log is still a screenshot, and a .png that is really a tarball
+	// must not be handed to an <img>.
+	Kind string `json:"kind"`
+	MIME string `json:"mime"`
+	// Data is base64. For an image it is the whole file, for anything else the
+	// first hexPreviewBytes.
+	Data string `json:"data"`
+	// Truncated says Data is a prefix, so the screen can say so rather than
+	// implying the file is 4 KiB long.
+	Truncated bool `json:"truncated"`
+	// TooLarge means not even the preview would load it.
+	TooLarge bool `json:"tooLarge"`
+}
+
+// PreviewFile reads a file for the read-only viewer.
+func (a *App) PreviewFile(hostID, p string) (FilePreview, error) {
+	cleaned, err := CleanRemotePath(p)
+	if err != nil {
+		return FilePreview{}, err
+	}
+	client, err := a.mgr.SFTP(hostID)
+	if err != nil {
+		return FilePreview{}, err
+	}
+
+	fi, err := client.Stat(cleaned)
+	if err != nil {
+		return FilePreview{}, fmt.Errorf("%s: %w", cleaned, err)
+	}
+	out := FilePreview{Path: cleaned, Size: fi.Size(), Kind: "binary"}
+	if fi.Size() > maxPreviewBytes {
+		out.TooLarge = true
+		return out, nil
+	}
+
+	f, err := client.Open(cleaned)
+	if err != nil {
+		return out, fmt.Errorf("%s: %w", cleaned, err)
+	}
+	defer f.Close()
+
+	data, err := io.ReadAll(io.LimitReader(f, maxPreviewBytes))
+	if err != nil {
+		return out, fmt.Errorf("%s: %w", cleaned, err)
+	}
+
+	out.MIME = sniffMIME(data)
+	if strings.HasPrefix(out.MIME, "image/") {
+		out.Kind = "image"
+		out.Data = base64.StdEncoding.EncodeToString(data)
+		return out, nil
+	}
+	if len(data) > hexPreviewBytes {
+		data, out.Truncated = data[:hexPreviewBytes], true
+	}
+	out.Data = base64.StdEncoding.EncodeToString(data)
+	return out, nil
+}
+
+// sniffMIME identifies the bytes without trusting the file name.
+//
+// SVG is excluded on purpose even though a webview draws it: it is a document
+// that can carry script, and this viewer shows whatever is on a server the user
+// may not fully control. It falls through to the hex path, where it is inert.
+func sniffMIME(data []byte) string {
+	mime := http.DetectContentType(data)
+	if i := strings.IndexByte(mime, ';'); i >= 0 {
+		mime = strings.TrimSpace(mime[:i])
+	}
+	if mime == "image/svg+xml" || mime == "text/xml" {
+		return "application/octet-stream"
+	}
+	return mime
 }
 
 // SaveRequest is one save from the editor (§4.7-3).

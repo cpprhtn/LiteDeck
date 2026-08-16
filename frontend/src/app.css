@@ -889,6 +889,79 @@ button.danger {
   overflow: hidden;
 }
 
+/* Read-only viewer for a file the editor will not open (§4.2). Sits in the
+   same slot CodeMirror would, so the tab bar and status line are unchanged. */
+.preview-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.preview-image {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-4);
+  /* A checkerboard, so a transparent PNG reads as transparent rather than as a
+     failed load on a dark background. */
+  background-image:
+    linear-gradient(45deg, var(--bg-sunken) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--bg-sunken) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--bg-sunken) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--bg-sunken) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+.preview-image img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  /* Screenshots and icons are the common cases and both want honest pixels. */
+  image-rendering: auto;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+}
+
+.preview-hex {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.preview-hex-row {
+  display: flex;
+  gap: var(--sp-3);
+  white-space: pre;
+}
+.preview-hex-off {
+  color: var(--fg-faint);
+}
+.preview-hex-bytes {
+  color: var(--fg-muted);
+}
+.preview-hex-ascii {
+  color: var(--fg);
+}
+
+.preview-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  border-top: 1px solid var(--border);
+  background: var(--bg-sunken);
+  font-size: var(--text-sm);
+}
+.preview-foot .grow {
+  flex: 1;
+}
+
 .editor-status {
   display: flex;
   align-items: center;

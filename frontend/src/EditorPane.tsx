@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect, useRef, useState, type ReactNode } from 'react'
 import { CodeEditor } from './CodeEditor'
+import { FilePreviewPane } from './FilePreviewPane'
 import { detectLanguage } from './editorLanguage'
 import { ReadTextFile, SaveTextFile, type TextFile } from './ipc'
 import {
@@ -42,11 +43,14 @@ export function EditorPane({
   hostID,
   onError,
   onSaved,
+  onDownload,
 }: {
   hostID: string
   onError: (msg: string) => void
   /** Called with the saved path so the tree can reread just that directory. */
   onSaved: (path: string) => void
+  /** A read-only tab's only action: get the file rather than look at it. */
+  onDownload: (path: string) => void
 }) {
   const { files, active } = useOpenFiles(hostID)
   const [confirm, setConfirm] = useState<Confirm | null>(null)
@@ -173,27 +177,36 @@ export function EditorPane({
         ))}
       </div>
 
-      <CodeEditor
-        path={file.path}
-        value={file.doc}
-        onChange={(doc) => setDoc(hostID, file.path, doc)}
-        onSave={() => latest.current && requestSave(latest.current)}
-        onCursor={(line, col) => setCursor({ line, col })}
-      />
+      {file.preview ? (
+        <FilePreviewPane preview={file.preview} onDownload={() => onDownload(file.path)} />
+      ) : (
+        <CodeEditor
+          path={file.path}
+          value={file.doc}
+          onChange={(doc) => setDoc(hostID, file.path, doc)}
+          onSave={() => latest.current && requestSave(latest.current)}
+          onCursor={(line, col) => setCursor({ line, col })}
+        />
+      )}
 
       <div className="editor-status">
         <span className="mono ellipsis" title={file.path}>
           {file.path}
         </span>
-        <span className="muted small">{lang?.label ?? t('일반 텍스트')}</span>
-        <span className="muted small mono">
-          {cursor.line}:{cursor.col}
+        <span className="muted small">
+          {file.preview ? t('읽기 전용') : lang?.label ?? t('일반 텍스트')}
         </span>
+        {!file.preview && (
+          <span className="muted small mono">
+            {cursor.line}:{cursor.col}
+          </span>
+        )}
         <span className="grow" />
         {notice && <span className="muted small ellipsis">{notice}</span>}
         {/* The keyboard already does this; these are here because a shortcut
             nobody knows about is not a feature. Double-click the number to go
             back to the default, as everywhere else in the app. */}
+        {!file.preview && (
         <span className="editor-zoom">
           <button
             className="ghost"
@@ -219,10 +232,13 @@ export function EditorPane({
             +
           </button>
         </span>
-        <button disabled={busy || !isDirty(file)} onClick={() => requestSave(file)}>
-          {t('저장')}
-          {isDirty(file) ? ' •' : ''}
-        </button>
+        )}
+        {!file.preview && (
+          <button disabled={busy || !isDirty(file)} onClick={() => requestSave(file)}>
+            {t('저장')}
+            {isDirty(file) ? ' •' : ''}
+          </button>
+        )}
       </div>
 
       {confirm?.kind === 'save' && (

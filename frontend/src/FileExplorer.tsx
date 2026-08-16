@@ -12,6 +12,7 @@ import {
   PickLocalUploadDir,
   ReadTextFile,
   RenamePath,
+  PreviewFile,
   StartDownload,
   StartUpload,
   type DirListing,
@@ -22,6 +23,7 @@ import {
   clearReveal,
   forgetPaths,
   openFile,
+  openPreview,
   renameOpen,
   setTreeWidth,
   unsavedUnder,
@@ -604,11 +606,17 @@ export function FileExplorer({
     try {
       const file = await ReadTextFile(hostID, e.path)
       if (file.tooLarge) {
-        onError(t('{name}: {size} — 편집기 한도(2MB)를 넘습니다', { name: e.name, size: fmtSize(file.size, false) }))
+        onError(t('{name}: {size} — 편집기 한도(2MB)를 넘어 읽기 전용으로 엽니다', {
+          name: e.name,
+          size: fmtSize(file.size, false),
+        }))
+        openPreview(hostID, await PreviewFile(hostID, e.path))
         return
       }
       if (file.binary) {
-        onError(t('{name}: 바이너리 파일이라 편집할 수 없습니다', { name: e.name }))
+        // Not editable is not the same as not viewable. A refusal here was the
+        // whole answer until now, which left no way to look at the file at all.
+        openPreview(hostID, await PreviewFile(hostID, e.path))
         return
       }
       openFile(hostID, file)
@@ -718,6 +726,17 @@ export function FileExplorer({
     // upload closes over cwd, so the subscription is refreshed on navigation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cwd, hostID])
+
+  /** Download exactly one path — what a read-only tab offers. */
+  const downloadOne = async (p: string) => {
+    try {
+      const dir = await PickLocalDir()
+      if (!dir) return
+      await StartDownload(hostID, [p], dir)
+    } catch (e) {
+      onError(String(e))
+    }
+  }
 
   const download = async () => {
     if (selectedEntries.length === 0) {
@@ -1027,6 +1046,7 @@ export function FileExplorer({
                 hostID={hostID}
                 onError={onError}
                 onSaved={(path) => void refreshDir(parentOf(path))}
+                onDownload={(path) => void downloadOne(path)}
               />
             </Suspense>
           </>
