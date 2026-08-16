@@ -724,9 +724,13 @@ func TestJournalTimeExpressionsAreValidated(t *testing.T) {
 	}
 }
 
-// The port has to survive a restart, or the line the user pasted into their MCP
-// client is dead the next morning. Letting the OS pick looks tidier and is the
-// bug: it lands in that line.
+// The address has to survive a restart, or the line the user pasted into their
+// MCP client is dead the next morning. Letting the OS pick looks tidier and is
+// the bug: it lands in that line.
+//
+// Stability comes from asking for the same port every time, not from writing
+// down whatever was bound — see TestBusyPortFallsBackForThisRunOnly for why the
+// second approach made a temporary problem permanent (#2).
 func TestPortIsStableAcrossRestart(t *testing.T) {
 	dir := t.TempDir()
 
@@ -738,9 +742,10 @@ func TestPortIsStableAcrossRestart(t *testing.T) {
 		t.Fatalf("did not start: %s", state.Error)
 	}
 	url := state.URL
-	port := first.mcpSettings().Port
-	if port == 0 {
-		t.Fatal("the bound port was not written back to settings")
+	// Nothing is recorded: the default is where it goes back to on its own.
+	if got := first.mcpSettings().Port; got != 0 {
+		first.stopMCP()
+		t.Fatalf("port %d was written to settings; nobody pinned it", got)
 	}
 	first.stopMCP()
 
@@ -754,28 +759,125 @@ func TestPortIsStableAcrossRestart(t *testing.T) {
 	}
 }
 
-// A taken port must not leave the integration switched off.
-func TestBusyPortFallsBackAndIsRemembered(t *testing.T) {
+// A taken port must not leave the integration switched off — and must not
+// become the new normal either.
+//
+// Reported as #2: the port that got bound was written back to settings on every
+// launch, so one busy moment moved the endpoint for good. The next launch asked
+// for the port it had drifted to, got it, and never tried the real one again.
+// The client line the user pasted once was dead with nothing on screen to say
+// why.
+func TestBusyPortFallsBackForThisRunOnly(t *testing.T) {
 	dir := t.TempDir()
 
-	// Hold the preferred port so the app has to move.
 	blocker, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", defaultMCPPort))
 	if err != nil {
 		t.Skipf("port %d is already in use by something else", defaultMCPPort)
 	}
-	defer blocker.Close()
+
+	a := New()
+	a.configDir = dir
+	a.settings = config.OpenSettings(dir)
+	state := a.SetMCPEnabled(true)
+
+	if !state.Running {
+		blocker.Close()
+		t.Fatalf("a busy preferred port must not stop the endpoint: %s", state.Error)
+	}
+	if state.Port == defaultMCPPort {
+		blocker.Close()
+		t.Fatal("bound the port that was supposed to be held")
+	}
+	// The screen has to be able to say the address moved.
+	if state.WantedPort != defaultMCPPort {
+		t.Errorf("WantedPort = %d, want the default %d", state.WantedPort, defaultMCPPort)
+	}
+	// And nothing may be written down, or the move outlives the reason for it.
+	if got := a.mcpSettings().Port; got != 0 {
+		t.Errorf("the fallback port was persisted as %d", got)
+	}
+	a.stopMCP()
+
+	// The obstruction goes away, and the endpoint has to come home by itself.
+	blocker.Close()
+
+	second := New()
+	second.configDir = dir
+	second.settings = config.OpenSettings(dir)
+	again := second.SetMCPEnabled(true)
+	defer second.stopMCP()
+	if !again.Running {
+		t.Fatalf("did not start on the second run: %s", again.Error)
+	}
+	if again.Port != defaultMCPPort {
+		t.Errorf("port = %d after the obstruction cleared, want %d — the endpoint "+
+			"never returns to the address the docs tell people to paste",
+			again.Port, defaultMCPPort)
+	}
+}
+
+// A port written by the pre-v1.2.3 auto-remember is not a preference and must
+// not be honoured, or upgrading leaves the user exactly where the bug left them.
+func TestUnpinnedStoredPortIsIgnored(t *testing.T) {
+	dir := t.TempDir()
+	store := config.OpenSettings(dir)
+	// What the old code would have left behind.
+	if err := store.SetMCP(config.MCPSettings{Enabled: true, Port: 56802}); err != nil {
+		t.Fatal(err)
+	}
 
 	a := New()
 	a.configDir = dir
 	a.settings = config.OpenSettings(dir)
 	state := a.SetMCPEnabled(true)
 	defer a.stopMCP()
-
 	if !state.Running {
-		t.Fatalf("a busy preferred port must not stop the endpoint: %s", state.Error)
+		t.Skipf("could not start: %s", state.Error)
 	}
-	if got := a.mcpSettings().Port; got == 0 || got == defaultMCPPort {
-		t.Errorf("fell back to port %d without remembering a usable one", got)
+	if state.Port == 56802 {
+		t.Error("a stored port with no PortPinned was treated as a preference")
+	}
+}
+
+// Pinning is the deliberate version of what the bug did by accident, so it has
+// to survive a restart.
+func TestPinnedPortIsHonouredAcrossRestart(t *testing.T) {
+	dir := t.TempDir()
+
+	// A free port to pin, found by asking for one and letting it go.
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pinned := listenerPort(probe.Addr().String())
+	probe.Close()
+
+	a := New()
+	a.configDir = dir
+	a.settings = config.OpenSettings(dir)
+	if state := a.SetMCPEnabled(true); !state.Running {
+		t.Fatalf("did not start: %s", state.Error)
+	}
+	if state := a.PinMCPPort(pinned); state.Error != "" {
+		t.Fatalf("PinMCPPort: %s", state.Error)
+	}
+	a.stopMCP()
+
+	second := New()
+	second.configDir = dir
+	second.settings = config.OpenSettings(dir)
+	again := second.SetMCPEnabled(true)
+	defer second.stopMCP()
+	if again.Port != pinned {
+		t.Errorf("port = %d, want the pinned %d", again.Port, pinned)
+	}
+	if !again.PortPinned {
+		t.Error("PortPinned = false after pinning")
+	}
+
+	// And releasing it goes back to the default rather than sticking.
+	if state := second.PinMCPPort(0); state.PortPinned {
+		t.Error("PortPinned = true after releasing")
 	}
 }
 

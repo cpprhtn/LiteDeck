@@ -3,6 +3,7 @@ import {
   MCPChanges,
   MCPState,
   RestoreMCPChange,
+  PinMCPPort,
   RotateMCPToken,
   SetMCPEnabled,
   SetMCPHost,
@@ -151,6 +152,48 @@ export function McpPanel({
                   <span className="muted small">
                     {t('127.0.0.1 에만 열립니다. 외부 인터페이스로 여는 설정은 없습니다.')}
                   </span>
+                  {/* The address moving is invisible from the client side — it
+                      just stops connecting. Saying it here is the whole fix for
+                      the half of #2 that was about not knowing. */}
+                  {state.port && state.wantedPort && state.port !== state.wantedPort && (
+                    <>
+                      <span className="badge warn">
+                        {t('{wanted} 번 포트가 사용 중이라 {got} 번으로 열렸습니다', {
+                          wanted: state.wantedPort,
+                          got: state.port,
+                        })}
+                      </span>
+                      <span className="muted small">
+                        {t('다음 실행에서 {wanted} 번이 비어 있으면 그쪽으로 돌아갑니다.', {
+                          wanted: state.wantedPort,
+                        })}
+                      </span>
+                      <div className="mcp-row">
+                        <button
+                          className="ghost small-btn"
+                          disabled={busy}
+                          onClick={() => void apply(() => PinMCPPort(state.port!))}
+                          title={t('다음 실행부터 이 포트를 씁니다')}
+                        >
+                          {t('이 포트로 고정')}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                  {state.portPinned && (
+                    <div className="mcp-row">
+                      <span className="muted small">
+                        {t('{port} 번 포트로 고정되어 있습니다.', { port: state.port ?? 0 })}
+                      </span>
+                      <button
+                        className="ghost small-btn"
+                        disabled={busy}
+                        onClick={() => void apply(() => PinMCPPort(0))}
+                      >
+                        {t('고정 해제')}
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mcp-endpoint">

@@ -41,9 +41,17 @@ type MCPSettings struct {
 	// because a token that changes every start breaks the client config the
 	// user pasted in once and expects to keep working.
 	Token string `json:"token,omitempty"`
-	// Port to bind on loopback. Zero asks the OS, which is fine until the user
-	// wants a stable line in their client config — then they pin one.
-	Port int `json:"port,omitempty"`
+	// Port to bind on loopback, and whether the user chose it.
+	//
+	// The two are separate because they answer different questions: Port is
+	// what the app should try, PortPinned is whether anybody asked for it.
+	// Until v1.2.3 the port that happened to get bound was written back here on
+	// every launch, so one busy moment on the default port moved the endpoint
+	// permanently — the app tried the remembered port next launch, got it, and
+	// never went home (#2). A Port with no PortPinned is a leftover of that and
+	// is ignored.
+	Port       int  `json:"port,omitempty"`
+	PortPinned bool `json:"portPinned,omitempty"`
 	// Hosts the AI may read, by host ID. Absent means no: registering a server
 	// in LiteDeck must not hand it to an AI as a side effect.
 	Hosts map[string]bool `json:"hosts,omitempty"`

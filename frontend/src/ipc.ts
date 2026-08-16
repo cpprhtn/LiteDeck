@@ -87,6 +87,11 @@ export interface MCPStatus {
   hosts: Record<string, boolean>
   write: Record<string, WritePolicyView>
   delete: Record<string, boolean>
+  /** The port actually bound, and the one asked for. They differ when something
+   *  else held the preferred port. */
+  port?: number
+  wantedPort?: number
+  portPinned?: boolean
   /** The exact `claude mcp add` line, assembled by Go so nobody mistypes it. */
   snippet?: string
   /** The same for Codex, which wants the token as an environment variable's
@@ -490,6 +495,7 @@ interface Bindings {
   SetMCPEnabled(enabled: boolean): Promise<MCPStatus>
   SetMCPHost(hostID: string, allowed: boolean): Promise<MCPStatus>
   RotateMCPToken(): Promise<MCPStatus>
+  PinMCPPort(port: number): Promise<MCPStatus>
   SetMCPWritePolicy(hostID: string, mode: string, minutes: number): Promise<MCPStatus>
   AnswerMCPWrite(id: string, approved: boolean): Promise<void>
   MCPChanges(hostID: string): Promise<MCPChange[]>
@@ -707,6 +713,7 @@ export const MCPState = () => api().MCPState()
 export const SetMCPEnabled = (enabled: boolean) => api().SetMCPEnabled(enabled)
 export const SetMCPHost = (hostID: string, allowed: boolean) => api().SetMCPHost(hostID, allowed)
 export const RotateMCPToken = () => api().RotateMCPToken()
+export const PinMCPPort = (port: number) => api().PinMCPPort(port)
 export const SetMCPWritePolicy = (hostID: string, mode: string, minutes: number) =>
   api().SetMCPWritePolicy(hostID, mode, minutes)
 export const AnswerMCPWrite = (id: string, approved: boolean) => api().AnswerMCPWrite(id, approved)

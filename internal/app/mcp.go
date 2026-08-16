@@ -39,6 +39,8 @@ type mcpState struct {
 	mu       sync.Mutex
 	listener *mcp.Listener
 	url      string
+	// wanted is the port that was asked for, which is not always the one bound.
+	wanted int
 }
 
 // MCPStatus is what the settings screen draws.
@@ -54,6 +56,13 @@ type MCPStatus struct {
 	Write map[string]WritePolicyView `json:"write"`
 	// Delete lists hosts where file deletion is offered at all.
 	Delete map[string]bool `json:"delete"`
+	// Port is the port actually bound, and WantedPort the one asked for. They
+	// differ when something else held the preferred port, and the screen has to
+	// say so — a client configured against the old address just stops
+	// connecting, with nothing anywhere to explain it (#2).
+	Port       int  `json:"port,omitempty"`
+	WantedPort int  `json:"wantedPort,omitempty"`
+	PortPinned bool `json:"portPinned,omitempty"`
 	// Snippet is the line to paste into Claude Code.
 	Snippet string `json:"snippet,omitempty"`
 	// CodexSnippet is the same thing for Codex CLI, which takes the token as the
@@ -105,20 +114,27 @@ func (a *App) startMCP() {
 	a.registerMCPTools(srv)
 	a.registerMCPWriteTools(srv)
 
+	// The port the user asked for. A stored port only counts when they pinned
+	// it: before v1.2.3 whatever got bound was written back here, so a value on
+	// its own says nothing about what anyone wanted (#2).
+	wanted := defaultMCPPort
+	if s.PortPinned && s.Port != 0 {
+		wanted = s.Port
+	}
+
 	opts := mcp.Options{
 		Token:   token,
-		Port:    s.Port,
+		Port:    wanted,
 		Limiter: mcp.NewLimiter(mcpCallsPerSecond, mcpBurst),
 		OnCall:  a.logAICall,
 	}
-	if opts.Port == 0 {
-		opts.Port = defaultMCPPort
-	}
 
 	listener, url, err := srv.Serve(opts)
-	if err != nil && opts.Port != 0 {
+	if err != nil {
 		// Something else has the port. Take any free one rather than leaving the
-		// integration off, and remember it so this is a one-time change.
+		// integration off — but only for this run. Writing it down is what made
+		// one busy moment permanent: the next launch would ask for the port it
+		// had drifted to, get it, and never try the real one again.
 		opts.Port = 0
 		listener, url, err = srv.Serve(opts)
 	}
@@ -128,14 +144,10 @@ func (a *App) startMCP() {
 	}
 	a.mcp.listener, a.mcp.url = listener, url
 
-	// Persist whatever was bound. This is what keeps the client config the user
-	// pasted once from going stale on the next launch.
-	if bound := listenerPort(listener.Addr()); bound != 0 && bound != s.Port {
-		s.Port = bound
-		if err := a.settings.SetMCP(s); err != nil {
-			a.emit("log:warning", i18n.T("MCP 설정을 저장하지 못했습니다: %v", err))
-		}
-	}
+	// Silence here is what turned this into a support question: the client the
+	// user configured once just stops connecting, and nothing on screen says the
+	// address moved. MCPStatus carries `wanted` so the panel can say so.
+	a.mcp.wanted = wanted
 }
 
 // listenerPort pulls the port out of a "127.0.0.1:8779" address.
@@ -223,7 +235,12 @@ func (a *App) MCPState() MCPStatus {
 	a.mcp.mu.Lock()
 	out.Running = a.mcp.listener != nil
 	out.URL = a.mcp.url
+	out.WantedPort = a.mcp.wanted
+	if a.mcp.listener != nil {
+		out.Port = listenerPort(a.mcp.listener.Addr())
+	}
 	a.mcp.mu.Unlock()
+	out.PortPinned = s.PortPinned
 
 	if out.Running {
 		// The exact line to paste. A user who has to assemble this from three
@@ -239,6 +256,35 @@ func (a *App) MCPState() MCPStatus {
 			out.Token, out.URL)
 	}
 	return out
+}
+
+// PinMCPPort fixes the endpoint on a port, or releases it back to the default.
+//
+// This is the case the old auto-remember behaviour was trying to serve: someone
+// whose preferred port was taken, who copied the address they actually got into
+// their client. Doing it on their behalf is what broke everyone else, so it is
+// a button now — the app never decides this by itself.
+//
+// Takes effect on the next start; rebinding underneath a connected client would
+// break it at the moment the user is trying to make it stable.
+func (a *App) PinMCPPort(port int) MCPStatus {
+	if a.settings == nil {
+		return a.MCPState()
+	}
+	// 0 means "stop pinning", which is how somebody undoes this.
+	if port != 0 && (port < 1024 || port > 65535) {
+		s := a.MCPState()
+		s.Error = i18n.S("포트는 1024 에서 65535 사이여야 합니다")
+		return s
+	}
+	m := a.settings.Get().MCP
+	m.Port, m.PortPinned = port, port != 0
+	if err := a.settings.SetMCP(m); err != nil {
+		s := a.MCPState()
+		s.Error = err.Error()
+		return s
+	}
+	return a.MCPState()
 }
 
 // SetMCPEnabled turns the endpoint on or off.
