@@ -110,7 +110,7 @@ export const en: Record<string, string> = {
   '{port} 번 포트로 고정되어 있습니다.': 'Pinned to port {port}.',
   '{wanted} 번 포트가 사용 중이라 {got} 번으로 열렸습니다': 'Port {wanted} was in use, so this opened on {got}',
   '{name}: {size} — 편집기 한도(2MB)를 넘어 읽기 전용으로 엽니다': '{name}: {size} — over the editor\'s 2MB limit, opening read-only',
-  '{size} — 미리보기 한도(8MB)를 넘습니다. 받아서 여세요.': '{size} — over the 8MB preview limit. Download it to open it.',
+  '{size} — 그리기에는 너무 큰 이미지입니다. 받아서 여세요.': '{size} — too large an image to draw. Download it to open it.',
   '{path} 에서 가져올 호스트를 찾지 못했습니다.': 'Found no hosts to import in {path}.',
   '{path}: 바이너리 파일이라 열 수 없습니다': '{path}: a binary file cannot be opened',
   '{path}: 편집기 한도(2MB)를 넘어 열 수 없습니다': '{path}: over the editor\'s 2MB limit, so it cannot be opened',

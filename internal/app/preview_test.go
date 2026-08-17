@@ -106,3 +106,103 @@ func TestPreviewFileOverSFTP(t *testing.T) {
 		t.Errorf("Size = %d, want the whole file's length", bin.Size)
 	}
 }
+
+func TestLooksBinary(t *testing.T) {
+	tests := []struct {
+		name     string
+		head     []byte
+		complete bool
+		want     bool
+	}{
+		{"plain ascii", []byte("worker_processes 1;\n"), true, false},
+		{"utf-8 korean", []byte("서버 설정\n"), true, false},
+		{"a NUL anywhere", []byte("text\x00more"), true, true},
+		{"ELF header", []byte{0x7f, 'E', 'L', 'F', 2, 1, 1, 0}, true, true},
+		{"latin-1 bytes", []byte{0x48, 0xe9, 0x6c, 0x6c, 0x6f}, true, true},
+		// The head boundary can cut a multi-byte character in half. Calling a
+		// UTF-8 file binary for that is the failure this guards against.
+		{"rune cut at the boundary", []byte("서버 설정\xed\x95"), false, false},
+		// The same bytes with nothing more to come really are broken.
+		{"truncated rune at EOF", []byte("서버 설정\xed\x95"), true, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := looksBinary(tt.head, tt.complete); got != tt.want {
+				t.Errorf("looksBinary = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// The cost of looking at a blob must not scale with the blob.
+//
+// The first cut read up to 8 MiB to show 4 KiB of hex, and refused outright
+// above that — so a core dump or a model checkpoint could not be identified at
+// all, having already been dragged across the wire. Reading the head answers
+// the question for a file of any size.
+func TestPreviewOfALargeBlobReadsOnlyItsHead(t *testing.T) {
+	a := connectedApp(t)
+	dir := scratchDir(t, a, "litedeck-bigblob")
+	conn, err := a.mgr.Conn("fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 40 MiB — five times the old preview ceiling, so the old code would have
+	// given up on it.
+	blob := path.Join(dir, "huge.bin")
+	if _, err := conn.Exec(testCtx(t), "sh", "-c",
+		"head -c 41943040 /dev/zero | tr '\\0' 'Z' > "+blob); err != nil {
+		t.Skipf("could not write the blob: %v", err)
+	}
+
+	got, err := a.PreviewFile("fixture", blob)
+	if err != nil {
+		t.Fatalf("PreviewFile: %v", err)
+	}
+	if got.TooLarge {
+		t.Error("refused a blob whose first 4 KiB is exactly what identifies it")
+	}
+	if !got.Truncated {
+		t.Error("Truncated = false on a 40 MiB file")
+	}
+	raw, err := base64.StdEncoding.DecodeString(got.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) != hexPreviewBytes {
+		t.Errorf("carried %d bytes across, want %d", len(raw), hexPreviewBytes)
+	}
+	if got.Size != 41943040 {
+		t.Errorf("Size = %d, want the real length", got.Size)
+	}
+}
+
+// And the editor must not drag a binary across before deciding it is one.
+func TestReadTextFileGivesUpOnABinaryEarly(t *testing.T) {
+	a := connectedApp(t)
+	dir := scratchDir(t, a, "litedeck-earlyout")
+	conn, err := a.mgr.Conn("fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A NUL in the first bytes, then a megabyte of filler the editor has no
+	// reason to read.
+	blob := path.Join(dir, "early.bin")
+	if _, err := conn.Exec(testCtx(t), "sh", "-c",
+		"printf 'ELF\\0' > "+blob+" && head -c 1048576 /dev/zero | tr '\\0' 'Q' >> "+blob); err != nil {
+		t.Skipf("could not write the blob: %v", err)
+	}
+
+	got, err := a.ReadTextFile("fixture", blob)
+	if err != nil {
+		t.Fatalf("ReadTextFile: %v", err)
+	}
+	if !got.Binary {
+		t.Fatal("a file starting with a NUL was not called binary")
+	}
+	if got.Content != "" {
+		t.Errorf("carried %d bytes of a binary across the boundary", len(got.Content))
+	}
+}

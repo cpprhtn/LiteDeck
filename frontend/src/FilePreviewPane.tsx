@@ -60,7 +60,7 @@ export function FilePreviewPane({
     return (
       <div className="preview-pane">
         <div className="placeholder">
-          {t('{size} — 미리보기 한도(8MB)를 넘습니다. 받아서 여세요.', {
+          {t('{size} — 그리기에는 너무 큰 이미지입니다. 받아서 여세요.', {
             size: fmtSize(preview.size),
           })}
         </div>
