@@ -38,13 +38,21 @@ import (
 //
 // Windows has no cheap equivalent — a PowerShell job per poll is worse than the
 // problem — so WindowsMetricsScript keeps only its Get-Command guard.
+//
+// The trailing `:` is what makes the script's exit status its own rather than
+// nvidia-smi's. A shell reports the last command's status, so on the ordinary
+// server with no card this whole poll exited 127 — every two seconds, as a red
+// line in the Command Log with a failure count climbing behind it. The readings
+// were fine; the log was lying. That log is the one place this app asks to be
+// believed, so a normal condition must not appear there as a failure.
 const MetricsScript = `echo '#stat'; cat /proc/stat 2>/dev/null | head -1
 echo '#mem'; cat /proc/meminfo 2>/dev/null
 echo '#load'; cat /proc/loadavg 2>/dev/null
 echo '#up'; cat /proc/uptime 2>/dev/null
 echo '#df'; df -P -B1 2>/dev/null
 echo '#gpu'; GPUTO=; command -v timeout >/dev/null 2>&1 && GPUTO='timeout 5'
-$GPUTO nvidia-smi --query-gpu=index,name,utilization.gpu,fan.speed,temperature.gpu,memory.total,memory.used --format=csv,noheader,nounits 2>/dev/null`
+$GPUTO nvidia-smi --query-gpu=index,name,utilization.gpu,fan.speed,temperature.gpu,memory.total,memory.used --format=csv,noheader,nounits 2>/dev/null
+:`
 
 // CPUTimes is one sample of the aggregate CPU counters.
 //

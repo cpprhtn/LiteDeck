@@ -60,3 +60,45 @@ func TestMetricsSurviveAHangingNvidiaSmi(t *testing.T) {
 		t.Error("the gpu section marker is missing, so the sections may have shifted")
 	}
 }
+
+// A server with no NVIDIA card must not look like a failing command.
+//
+// The shell reports the last command's status, and the GPU line is last — so on
+// the ordinary server this poll exited 127, every two seconds, as a red row in
+// the Command Log with a failure count climbing behind it (v1.3.0). The numbers
+// on screen were right the whole time; the log was the thing that lied, and the
+// log is the one place this app asks to be believed.
+func TestMetricsExitZeroWithoutNvidiaSmi(t *testing.T) {
+	a := connectedApp(t)
+	conn, err := a.mgr.Conn("fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The fixture has no nvidia-smi, which is the case under test. Exec reports
+	// a non-zero exit through the result, not through err, so the status is what
+	// has to be read here.
+	if probe, err := conn.Exec(testCtx(t), "sh", "-c", "command -v nvidia-smi"); err == nil && probe.OK() {
+		t.Skip("this fixture has nvidia-smi, so it cannot show the missing case")
+	}
+
+	res, err := conn.Exec(testCtx(t), "sh", "-c", adapter.MetricsScript)
+	if err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
+	if !res.OK() {
+		t.Errorf("exit %d on a host with no GPU — the Command Log shows this as a "+
+			"failed command on every poll", res.ExitCode)
+	}
+	// And the rest of the snapshot still arrived.
+	m, err := adapter.ParseMetrics(res.Stdout, adapter.CPUTimes{})
+	if err != nil {
+		t.Fatalf("ParseMetrics: %v", err)
+	}
+	if m.MemTotal == 0 {
+		t.Error("memory is missing")
+	}
+	if len(m.GPUs) != 0 {
+		t.Errorf("got %d GPUs on a host with no nvidia-smi", len(m.GPUs))
+	}
+}
