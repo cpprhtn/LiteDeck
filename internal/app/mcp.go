@@ -115,7 +115,7 @@ func (a *App) startMCP() {
 	a.registerMCPWriteTools(srv)
 
 	// The port the user asked for. A stored port only counts when they pinned
-	// it: before v1.2.3 whatever got bound was written back here, so a value on
+	// it: before v1.3.0 whatever got bound was written back here, so a value on
 	// its own says nothing about what anyone wanted (#2).
 	wanted := defaultMCPPort
 	if s.PortPinned && s.Port != 0 {

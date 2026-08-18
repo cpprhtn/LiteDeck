@@ -45,7 +45,7 @@ type MCPSettings struct {
 	//
 	// The two are separate because they answer different questions: Port is
 	// what the app should try, PortPinned is whether anybody asked for it.
-	// Until v1.2.3 the port that happened to get bound was written back here on
+	// Until v1.3.0 the port that happened to get bound was written back here on
 	// every launch, so one busy moment on the default port moved the endpoint
 	// permanently — the app tried the remembered port next launch, got it, and
 	// never went home (#2). A Port with no PortPinned is a leftover of that and

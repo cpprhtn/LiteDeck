@@ -816,7 +816,7 @@ func TestBusyPortFallsBackForThisRunOnly(t *testing.T) {
 	}
 }
 
-// A port written by the pre-v1.2.3 auto-remember is not a preference and must
+// A port written by the pre-v1.3.0 auto-remember is not a preference and must
 // not be honoured, or upgrading leaves the user exactly where the bug left them.
 func TestUnpinnedStoredPortIsIgnored(t *testing.T) {
 	dir := t.TempDir()
