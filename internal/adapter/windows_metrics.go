@@ -33,6 +33,14 @@ func WindowsMetricsScript() string {
 		`Write-Output '#disk'`,
 		windowspowershell.JSON(`Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | `+
 			`Select-Object DeviceID,Size,FreeSpace`, 2),
+		`Write-Output '#gpu'`,
+		// Guarded rather than silenced: an unrecognised command is a PowerShell
+		// error record, and those arrive as CLIXML on the same stream the rest of
+		// this output has to survive on. Get-Command is the same test detect.go
+		// uses for docker.
+		`if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) { ` +
+			`nvidia-smi --query-gpu=index,name,utilization.gpu,fan.speed,temperature.gpu,memory.total,memory.used ` +
+			`--format=csv,noheader,nounits }`,
 	}, "; ")
 }
 
@@ -69,6 +77,7 @@ func ParseWindowsMetrics(data []byte, nowMillis int64) (Metrics, error) {
 	m := Metrics{
 		CPU:         -1,
 		Filesystems: []Filesystem{},
+		GPUs:        []GPU{},
 		// Windows has no load average. Nothing here approximates it: the
 		// processor queue length counter measures something else, and reporting
 		// zero would read as an idle machine rather than as an absent figure. The
@@ -127,5 +136,10 @@ func ParseWindowsMetrics(data []byte, nowMillis int64) (Metrics, error) {
 			})
 		}
 	}
+
+	// nvidia-smi is the same binary with the same CSV on both platforms, so the
+	// rows go through the Linux parser rather than a second copy of it.
+	m.GPUs = parseGPUs(strings.Split(blocks["gpu"], "\n"))
+
 	return m, nil
 }

@@ -94,7 +94,7 @@ All the server does is **run commands it already had and hand back text**. Which
 | **Sessions** | Who is logged in to this server, and cutting any of them off |
 | **Scheduled jobs** | systemd timers. Next and last run |
 | **Terminal** | xterm.js PTY, multiple tabs. `code .` and `vi foo.conf` are **caught by the app** and open in the file tab. They are never sent to the server, so neither VS Code nor vi needs to exist there |
-| **Monitoring** | CPU, memory, disk summary bar with sparklines |
+| **Monitoring** | CPU, memory, disk summary bar with sparklines. NVIDIA cards add **utilisation, fan, temperature and VRAM** (nvidia-smi) |
 | **Command Log** | **Every command the GUI runs, live.** Click to copy |
 | **MCP** | Claude Code and Claude Desktop read and change your servers through this app. Per-server opt-in, changes are approved, **and can be undone** |
 | **Connecting** | Password, key, agent, 2FA. Import from `~/.ssh/config`. One **ProxyJump** hop |

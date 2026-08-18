@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { HostMetrics, type MetricsView } from './ipc'
+import { HostMetrics, type GPU, type MetricsView } from './ipc'
 import { usePoll } from './usePoll'
 import { t } from './i18n'
 
@@ -58,10 +58,35 @@ function Sparkline({ values, warn }: { values: number[]; warn?: boolean }) {
   )
 }
 
+// -1 is "the card did not answer", which is not the same as zero: a passively
+// cooled datacentre card really does read 0 RPM.
+function fmtPct(v: number): string {
+  return v < 0 ? '—' : v.toFixed(0)
+}
+
+function fmtTemp(v: number): string {
+  return v < 0 ? '—' : `${v.toFixed(0)}°C`
+}
+
+function gpuTitle(g: GPU): string {
+  const parts = [g.name]
+  if (g.tempC >= 0) parts.push(fmtTemp(g.tempC))
+  if (g.fan >= 0) parts.push(t('팬 {f}%', { f: g.fan.toFixed(0) }))
+  if (g.memTotal > 0) parts.push(`${fmtBytes(g.memUsed)} / ${fmtBytes(g.memTotal)}`)
+  return parts.join(' · ')
+}
+
+// A card is worth flagging when it is pinned or hot; either one is a reason to
+// look before starting more work on it.
+function gpuWarn(g: GPU): boolean {
+  return g.utilization >= 90 || g.tempC >= 85
+}
+
 function Stat({
   label,
   value,
   unit,
+  note,
   history,
   warn,
   title,
@@ -69,6 +94,10 @@ function Stat({
   label: string
   value: string
   unit?: string
+  // A second, smaller figure on the same line. Fan speed rides along with GPU
+  // load here rather than taking a tile of its own: it is the number you check
+  // after the load, not instead of it.
+  note?: string
   history?: number[]
   warn?: boolean
   title?: string
@@ -81,6 +110,7 @@ function Stat({
           {value}
           {unit && <span className="metric-unit">{unit}</span>}
         </span>
+        {note && <span className="metric-note">{note}</span>}
         {history && <Sparkline values={history} warn={warn} />}
       </div>
     </div>
@@ -91,14 +121,42 @@ export function MetricsBar({ hostID }: { hostID: string }) {
   const [m, setM] = useState<MetricsView | null>(null)
   const [cpuHist, setCpuHist] = useState<number[]>([])
   const [memHist, setMemHist] = useState<number[]>([])
+  // One row per card, in the order nvidia-smi listed them, plus the busiest
+  // card per sample for the collapsed tile — following one card's line there
+  // would make the line jump between cards as the lead changes.
+  const [gpuHist, setGpuHist] = useState<number[][]>([])
+  const [gpuMaxHist, setGpuMaxHist] = useState<number[]>([])
+  const [gpuOpen, setGpuOpen] = useState(false)
   const [failed, setFailed] = useState<string | null>(null)
   const inFlight = useRef(false)
+  const gpuPopRef = useRef<HTMLDivElement | null>(null)
+
+  // The panel is an overlay over the tab below it, so it closes the way every
+  // other overlay does: click away, or Escape.
+  useEffect(() => {
+    if (!gpuOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (!gpuPopRef.current?.contains(e.target as Node)) setGpuOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setGpuOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [gpuOpen])
 
   useEffect(() => {
     // Host changed: the previous host's history says nothing about this one.
     setM(null)
     setCpuHist([])
     setMemHist([])
+    setGpuHist([])
+    setGpuMaxHist([])
+    setGpuOpen(false)
     setFailed(null)
   }, [hostID])
 
@@ -118,6 +176,19 @@ export function MetricsBar({ hostID }: { hostID: string }) {
         setCpuHist((h) => [...h, next.cpu].slice(-HISTORY))
       }
       setMemHist((h) => [...h, next.memPercent].slice(-HISTORY))
+      // Same rule as the CPU: a card that did not report utilisation keeps the
+      // history it has rather than plotting a -1 as a dive to the floor. Rows
+      // are rebuilt from the current list so a card appearing or disappearing
+      // cannot leave a stale line behind.
+      setGpuHist((h) =>
+        (next.gpus ?? []).map((g, i) =>
+          g.utilization < 0 ? h[i] ?? [] : [...(h[i] ?? []), g.utilization].slice(-HISTORY),
+        ),
+      )
+      const busiest = (next.gpus ?? []).reduce((a, g) => Math.max(a, g.utilization), -1)
+      if (busiest >= 0) {
+        setGpuMaxHist((h) => [...h, busiest].slice(-HISTORY))
+      }
     } catch (e) {
       // The bar must never interrupt what the user is doing: a failure here is
       // shown in place, not raised as an app-level error.
@@ -145,6 +216,11 @@ export function MetricsBar({ hostID }: { hostID: string }) {
   }
 
   const disk = m.disks?.[0]
+  const gpus = m.gpus ?? []
+  // The busiest card is what answers "is this box working right now". An
+  // average across an idle second card would hide a pinned first one.
+  const gpuBusy = gpus.reduce((a, g) => Math.max(a, g.utilization), -1)
+  const gpuFan = gpus.reduce((a, g) => Math.max(a, g.fan), -1)
 
   return (
     <div className="metrics-bar">
@@ -164,6 +240,67 @@ export function MetricsBar({ hostID }: { hostID: string }) {
         warn={m.memPercent >= 90}
         title={`${fmtBytes(m.memUsed)} / ${fmtBytes(m.memTotal)}`}
       />
+      {/* Sits with CPU and memory rather than at the end: on a box that has a
+          card at all, it is the figure being watched. */}
+      {gpus.length === 1 && (
+        <Stat
+          label="GPU"
+          value={fmtPct(gpus[0].utilization)}
+          unit={gpus[0].utilization < 0 ? undefined : '%'}
+          note={gpus[0].fan < 0 ? fmtTemp(gpus[0].tempC) : t('팬 {f}%', { f: fmtPct(gpus[0].fan) })}
+          history={gpuHist[0]}
+          warn={gpuWarn(gpus[0])}
+          title={gpuTitle(gpus[0])}
+        />
+      )}
+      {/* Eight cards would eat the whole bar, so the many-card case collapses
+          to the busiest one and opens the rest on click. */}
+      {gpus.length > 1 && (
+        <div className="metric-pop" ref={gpuPopRef}>
+          <button
+            type="button"
+            className="metric-btn"
+            aria-expanded={gpuOpen}
+            onClick={() => setGpuOpen((o) => !o)}
+            title={t('GPU {n}개 — 눌러서 카드별로 보기', { n: gpus.length })}
+          >
+            <Stat
+              label={t('GPU ×{n}', { n: gpus.length })}
+              value={fmtPct(gpuBusy)}
+              unit={gpuBusy < 0 ? undefined : '%'}
+              note={gpuFan < 0 ? undefined : t('팬 {f}%', { f: fmtPct(gpuFan) })}
+              history={gpuMaxHist}
+              warn={gpus.some(gpuWarn)}
+            />
+            <span className="metric-caret" aria-hidden="true">
+              {gpuOpen ? '▴' : '▾'}
+            </span>
+          </button>
+          {gpuOpen && (
+            <div className="gpu-panel">
+              {gpus.map((g, i) => (
+                <div className="gpu-row" key={g.index} data-warn={gpuWarn(g) || undefined}>
+                  <span className="gpu-idx">#{g.index}</span>
+                  <span className="gpu-name" title={g.name}>
+                    {g.name}
+                  </span>
+                  <span className="gpu-num metric-value">
+                    {g.utilization < 0 ? '—' : `${fmtPct(g.utilization)}%`}
+                  </span>
+                  <Sparkline values={gpuHist[i] ?? []} warn={gpuWarn(g)} />
+                  <span className="gpu-num muted">
+                    {g.fan < 0 ? t('팬 —') : t('팬 {f}%', { f: fmtPct(g.fan) })}
+                  </span>
+                  <span className="gpu-num muted">{fmtTemp(g.tempC)}</span>
+                  <span className="gpu-num muted">
+                    {g.memTotal > 0 ? `${fmtBytes(g.memUsed)} / ${fmtBytes(g.memTotal)}` : '—'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {disk && (
         <Stat
           label={t('디스크 {mount}', { mount: disk.mountPoint })}

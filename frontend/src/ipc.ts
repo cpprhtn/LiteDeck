@@ -313,6 +313,23 @@ export interface Filesystem {
   percent: number
 }
 
+/** One NVIDIA card (§4.7). NVIDIA only: nvidia-smi ships with every driver and
+ *  answers over a plain SSH connection; AMD and Intel need a package that is not
+ *  installed by default. */
+export interface GPU {
+  index: number
+  name: string
+  /** -1 where the card does not report the figure, the same convention cpu uses.
+   *  Passively cooled datacentre cards have no fan reading, and a 0 there would
+   *  read as a stopped fan. */
+  utilization: number
+  fan: number
+  tempC: number
+  memTotal: number
+  memUsed: number
+  memPercent: number
+}
+
 export interface MetricsView {
   /** -1 until a second sample exists — the counters are totals since boot. */
   cpu: number
@@ -332,6 +349,8 @@ export interface MetricsView {
   filesystems: Filesystem[]
   /** The filtered, sorted subset worth showing. */
   disks: Filesystem[]
+  /** Empty on every host without an NVIDIA card, which is most of them. */
+  gpus: GPU[]
 }
 
 /** An open live-log follow (§4.3, §4.5). */
