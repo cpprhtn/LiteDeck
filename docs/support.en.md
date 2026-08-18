@@ -44,6 +44,7 @@ file chooser have not.
 | **Debian, RHEL/Rocky 8** | Share the systemd 245 table-parsing path, so they should work, but untested |
 | **Podman** | Docker-compatible CLI, so the parser is shared, but never run |
 | **Windows containers** | The test machine had no Docker |
+| **NVIDIA GPU monitoring** | The parser is checked against real `nvidia-smi` output, and the rest of the metrics are proven to survive a wedged driver. But **the author has no NVIDIA card**, so it has never run against real hardware here. The contributor ([@INMD1](https://github.com/INMD1)) confirmed it works on theirs |
 | **Compose v1 and `podman compose`** | Only the Compose v2 plugin was tried. The standalone `docker-compose` (v1) cannot address a project without its file and is not supported. `podman compose` takes the same code path but was never run |
 | **ProxyJump against a real bastion** | Verified against two containers (bastion + target). Never tried against an actual bastion. Multi-hop is not implemented and is refused |
 | **macOS and BSD servers** | No adapter. Connecting works and **files and terminal do too**; the other tabs explain themselves |
