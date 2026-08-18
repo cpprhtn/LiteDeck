@@ -26,12 +26,25 @@ import (
 // The nvidia-smi line is the only one that can be absent. Its stderr is dropped
 // rather than probed for first, because `command -v nvidia-smi` would cost a
 // second lookup on every poll to learn something the empty output already says.
+//
+// It is also the only line that can hang. A wedged driver — an Xid fault, a card
+// that has fallen off the bus — leaves nvidia-smi blocked in the kernel, and
+// because this is one script the whole poll blocks with it: CPU, memory and disk
+// would go dark for the twenty seconds of pollTimeout, at exactly the moment
+// somebody needs them. `timeout` caps that at five seconds and costs an empty
+// GPU section instead. It is a shell builtin test, so hosts without coreutils
+// `timeout` fall through to running nvidia-smi bare rather than losing the
+// feature.
+//
+// Windows has no cheap equivalent — a PowerShell job per poll is worse than the
+// problem — so WindowsMetricsScript keeps only its Get-Command guard.
 const MetricsScript = `echo '#stat'; cat /proc/stat 2>/dev/null | head -1
 echo '#mem'; cat /proc/meminfo 2>/dev/null
 echo '#load'; cat /proc/loadavg 2>/dev/null
 echo '#up'; cat /proc/uptime 2>/dev/null
 echo '#df'; df -P -B1 2>/dev/null
-echo '#gpu'; nvidia-smi --query-gpu=index,name,utilization.gpu,fan.speed,temperature.gpu,memory.total,memory.used --format=csv,noheader,nounits 2>/dev/null`
+echo '#gpu'; GPUTO=; command -v timeout >/dev/null 2>&1 && GPUTO='timeout 5'
+$GPUTO nvidia-smi --query-gpu=index,name,utilization.gpu,fan.speed,temperature.gpu,memory.total,memory.used --format=csv,noheader,nounits 2>/dev/null`
 
 // CPUTimes is one sample of the aggregate CPU counters.
 //
