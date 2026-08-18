@@ -173,3 +173,70 @@ func TestMetricsMarshalsAsArrays(t *testing.T) {
 	assertArray(t, "Metrics.Filesystems with no df output", m.Filesystems)
 	assertArray(t, "InterestingFilesystems(empty)", InterestingFilesystems(nil))
 }
+
+// A host without a card is the common case: nvidia-smi is missing, the shell
+// complains to the dropped stderr, and the section arrives empty. That is not
+// an error, and it must not become a phantom card in the bar.
+func TestParseGPUsAbsent(t *testing.T) {
+	for _, in := range [][]string{nil, {""}, {"bash: nvidia-smi: command not found"}} {
+		if got := parseGPUs(in); len(got) != 0 {
+			t.Errorf("parseGPUs(%q) = %v, want none", in, got)
+		}
+	}
+}
+
+func TestParseGPUs(t *testing.T) {
+	got := parseGPUs([]string{
+		"0, NVIDIA GeForce RTX 4090, 37, 41, 55, 24564, 1228",
+		"1, Tesla A100-SXM4-40GB, 100, [N/A], 71, 40960, 40960",
+	})
+	if len(got) != 2 {
+		t.Fatalf("got %d cards, want 2", len(got))
+	}
+
+	// nounits gives bare numbers and memory in MiB; the conversion happens here
+	// so the UI never has to know which column carries which unit.
+	if got[0].Name != "NVIDIA GeForce RTX 4090" {
+		t.Errorf("name = %q", got[0].Name)
+	}
+	if got[0].Utilization != 37 || got[0].Fan != 41 || got[0].TempC != 55 {
+		t.Errorf("card 0 figures = %+v", got[0])
+	}
+	if got[0].MemTotal != 24564*1024*1024 || got[0].MemUsed != 1228*1024*1024 {
+		t.Errorf("memory = %d/%d bytes", got[0].MemUsed, got[0].MemTotal)
+	}
+	if got[0].MemPercent < 4.9 || got[0].MemPercent > 5.1 {
+		t.Errorf("memPercent = %v, want ~5", got[0].MemPercent)
+	}
+
+	// A passively cooled datacentre card reports no fan. Zero would read as a
+	// stopped fan on a card that is about to cook, so it stays -1.
+	if got[1].Fan != -1 {
+		t.Errorf("missing fan = %v, want -1", got[1].Fan)
+	}
+	if got[1].Index != 1 || got[1].MemPercent != 100 {
+		t.Errorf("card 1 = %+v", got[1])
+	}
+}
+
+// The GPU section is optional, so its absence must leave the rest of the
+// snapshot intact rather than failing the whole poll.
+func TestParseMetricsGPUSection(t *testing.T) {
+	m, err := ParseMetrics([]byte("#mem\nMemTotal: 100 kB\n#gpu\n0, NVIDIA A2, 0, [N/A], 33, 15356, 0\n"), CPUTimes{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.GPUs) != 1 || m.GPUs[0].Name != "NVIDIA A2" {
+		t.Fatalf("GPUs = %+v", m.GPUs)
+	}
+	assertArray(t, "Metrics.GPUs with no gpu output", mustParse(t, "#mem\nMemTotal: 100 kB\n").GPUs)
+}
+
+func mustParse(t *testing.T, s string) Metrics {
+	t.Helper()
+	m, err := ParseMetrics([]byte(s), CPUTimes{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
+}

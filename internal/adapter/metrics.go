@@ -1,6 +1,6 @@
 package adapter
 
-// The monitoring summary bar (§4.7): CPU, memory, disk and load.
+// The monitoring summary bar (§4.7): CPU, memory, disk, load and GPU.
 //
 // Positioned as a supporting feature, not a monitoring product. It answers "is
 // this box healthy right now" at a glance; anything more belongs to a real
@@ -20,13 +20,18 @@ import (
 // A shell script rather than argv, which is the one exception to the
 // argv-only rule (§3.2b) — and it is safe for the reason the rule exists: this
 // is a compile-time constant with nothing interpolated into it. Splitting it
-// into five separate commands would cost five round trips every two seconds,
+// into six separate commands would cost six round trips every two seconds,
 // and CPU has to be sampled twice anyway.
+//
+// The nvidia-smi line is the only one that can be absent. Its stderr is dropped
+// rather than probed for first, because `command -v nvidia-smi` would cost a
+// second lookup on every poll to learn something the empty output already says.
 const MetricsScript = `echo '#stat'; cat /proc/stat 2>/dev/null | head -1
 echo '#mem'; cat /proc/meminfo 2>/dev/null
 echo '#load'; cat /proc/loadavg 2>/dev/null
 echo '#up'; cat /proc/uptime 2>/dev/null
-echo '#df'; df -P -B1 2>/dev/null`
+echo '#df'; df -P -B1 2>/dev/null
+echo '#gpu'; nvidia-smi --query-gpu=index,name,utilization.gpu,fan.speed,temperature.gpu,memory.total,memory.used --format=csv,noheader,nounits 2>/dev/null`
 
 // CPUTimes is one sample of the aggregate CPU counters.
 //
@@ -64,6 +69,32 @@ type Filesystem struct {
 	Percent    float64 `json:"percent"`
 }
 
+// GPU is one NVIDIA card.
+//
+// NVIDIA only, deliberately: nvidia-smi ships with every driver install and
+// answers one line per card over a plain SSH connection. AMD and Intel expose
+// nothing comparable without a package that is not there by default, and §1.5
+// keeps LiteDeck from carrying an agent to fill the gap. A host with no cards
+// reports none and the summary bar drops the tiles, the same way it drops load
+// average on Windows.
+type GPU struct {
+	Index int    `json:"index"`
+	Name  string `json:"name"`
+
+	// Utilization, Fan and TempC are -1 where the card does not report the
+	// figure — the same convention CPU uses before its second sample. Fan speed
+	// is the common one: passively cooled datacentre cards (Tesla, A100) and
+	// laptop hybrids answer "[N/A]", and a 0 there reads as a stopped fan on a
+	// card that is about to cook.
+	Utilization float64 `json:"utilization"` // percent
+	Fan         float64 `json:"fan"`         // percent of maximum speed
+	TempC       float64 `json:"tempC"`
+
+	MemTotal   int64   `json:"memTotal"` // bytes
+	MemUsed    int64   `json:"memUsed"`
+	MemPercent float64 `json:"memPercent"`
+}
+
 // Metrics is one snapshot of a server's health.
 type Metrics struct {
 	// CPU is -1 until a second sample exists; the UI shows a dash rather than
@@ -91,13 +122,17 @@ type Metrics struct {
 	UptimeSeconds int64 `json:"uptimeSeconds"`
 
 	Filesystems []Filesystem `json:"filesystems"`
+
+	// GPUs is empty on the overwhelming majority of servers, which is why the
+	// summary bar treats it as an optional section rather than a fixed tile.
+	GPUs []GPU `json:"gpus"`
 }
 
 // ParseMetrics reads the output of MetricsScript.
 //
 // prev is the previous CPU sample; pass a zero value on the first call.
 func ParseMetrics(data []byte, prev CPUTimes) (Metrics, error) {
-	m := Metrics{CPU: -1, Filesystems: []Filesystem{}}
+	m := Metrics{CPU: -1, Filesystems: []Filesystem{}, GPUs: []GPU{}}
 
 	sections := splitSections(data)
 
@@ -143,6 +178,7 @@ func ParseMetrics(data []byte, prev CPUTimes) (Metrics, error) {
 	}
 
 	m.Filesystems = parseDF(sections["df"])
+	m.GPUs = parseGPUs(sections["gpu"])
 
 	if m.MemTotal == 0 && len(m.Filesystems) == 0 {
 		return m, fmt.Errorf("adapter: metrics output had nothing usable")
@@ -255,6 +291,63 @@ func parseDF(lines []string) []Filesystem {
 		out = append(out, fs)
 	}
 	return out
+}
+
+// parseGPUs reads `nvidia-smi --format=csv,noheader,nounits` rows.
+//
+// The section is empty on the hosts without a card, which is the common case
+// and not an error: the driver is absent, nvidia-smi is not on PATH, and the
+// shell wrote its complaint to the dropped stderr.
+//
+// nounits gives bare numbers, and memory is in MiB — the one unit the flag
+// cannot spell out, so it is converted here rather than left for the UI.
+func parseGPUs(lines []string) []GPU {
+	out := []GPU{}
+	for i, line := range lines {
+		f := strings.Split(line, ",")
+		if len(f) < 7 {
+			continue
+		}
+		for j := range f {
+			f[j] = strings.TrimSpace(f[j])
+		}
+
+		// The index column is authoritative but a driver that answered a row
+		// without one still names a real card; fall back to position.
+		idx, err := strconv.Atoi(f[0])
+		if err != nil {
+			idx = i
+		}
+		g := GPU{
+			Index:       idx,
+			Name:        f[1],
+			Utilization: parseGPUFloat(f[2]),
+			Fan:         parseGPUFloat(f[3]),
+			TempC:       parseGPUFloat(f[4]),
+		}
+		if total := parseGPUFloat(f[5]); total >= 0 {
+			g.MemTotal = int64(total) * 1024 * 1024
+		}
+		if used := parseGPUFloat(f[6]); used >= 0 {
+			g.MemUsed = int64(used) * 1024 * 1024
+		}
+		if g.MemTotal > 0 {
+			g.MemPercent = clampPercent(float64(g.MemUsed) / float64(g.MemTotal) * 100)
+		}
+		out = append(out, g)
+	}
+	return out
+}
+
+// parseGPUFloat returns -1 for the "[N/A]" and "[Not Supported]" placeholders
+// nvidia-smi prints where a card cannot answer, keeping them distinct from a
+// genuine zero.
+func parseGPUFloat(s string) float64 {
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return -1
+	}
+	return v
 }
 
 // InterestingFilesystems drops the ones nobody wants in a summary bar.

@@ -1595,7 +1595,85 @@ button.danger {
   color: var(--fg-faint);
   margin-left: 1px;
 }
+.metric-note {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .metric[data-warn] .metric-value {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* Per-card GPU breakdown. One card renders as a plain tile; several collapse
+   to the busiest and open the rest here. */
+.metric-pop {
+  position: relative;
+}
+.metric-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 2px var(--sp-1);
+  margin: -2px calc(-1 * var(--sp-1));
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.metric-btn:hover,
+.metric-btn[aria-expanded='true'] {
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+.metric-caret {
+  font-size: var(--text-xs);
+  color: var(--fg-faint);
+}
+.gpu-panel {
+  position: absolute;
+  top: calc(100% + var(--sp-2));
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  box-shadow: 0 8px 24px #00000030;
+}
+.gpu-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  white-space: nowrap;
+}
+.gpu-idx {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--fg-faint);
+}
+.gpu-name {
+  flex: 1;
+  min-width: 12ch;
+  max-width: 28ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--text-sm);
+}
+.gpu-num {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  min-width: 6ch;
+}
+.gpu-row[data-warn] .metric-value {
   color: var(--danger);
   font-weight: 600;
 }
