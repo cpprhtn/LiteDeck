@@ -204,8 +204,9 @@ LiteDeck nor Tailscale solves this for you.
 **Tailscale ACLs.** With several devices on the tailnet you can restrict which of them
 may reach the SSH port. The default allows everything.
 
-**This combination has not been verified by the author.** LiteDeck is built to work
-against any address SSH can reach, so there is no reason it would not, but by the same
-standard used in [what is and is not verified](support.en.md),
-**unverified means unverified.** If you try it, please report back in an
+**How far this has been verified.** Steps 1–4 have been: a host added at its tailnet
+address, connected, with files and metrics read over it. The later sections have not —
+**Tailscale SSH, subnet routers, Headscale and hand-rolled WireGuard** are held to the
+same standard used in [what is and is not verified](support.en.md), where
+**unverified means unverified.** If you try one, please report back in an
 [issue](https://github.com/cpprhtn/LiteDeck/issues).
