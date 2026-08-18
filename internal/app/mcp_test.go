@@ -732,6 +732,17 @@ func TestJournalTimeExpressionsAreValidated(t *testing.T) {
 // down whatever was bound — see TestBusyPortFallsBackForThisRunOnly for why the
 // second approach made a temporary problem permanent (#2).
 func TestPortIsStableAcrossRestart(t *testing.T) {
+	// The premise is that the default port is free. It is not when the
+	// developer has LiteDeck itself open, and then both starts below fall back
+	// to different ephemeral ports and this reads as a stability bug that is
+	// not there. TestBusyPortFallsBackForThisRunOnly is the test for that case.
+	if l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", defaultMCPPort)); err != nil {
+		t.Skipf("port %d is already taken, so stability cannot be observed: %v",
+			defaultMCPPort, err)
+	} else {
+		l.Close()
+	}
+
 	dir := t.TempDir()
 
 	first := New()
