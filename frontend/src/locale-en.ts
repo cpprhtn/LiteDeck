@@ -255,6 +255,7 @@ export const en: Record<string, string> = {
   '세션': 'Sessions',
   '세션 {n}개': '{n} {n#session|sessions}',
   '세션 슬롯을 기다린 시간': 'Time spent waiting for a session slot',
+  '이 조회가 실행된 횟수': 'How many times this read has run',
   '세션 종료': 'session ended',
   '세션을 읽는 중…': 'Reading sessions…',
   '세션을 종료하지 못했습니다': 'Could not end the session',

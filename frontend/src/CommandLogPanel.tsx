@@ -148,6 +148,16 @@ export function CommandLogPanel({
                 ))}
               </span>
               <span className="cmdlog-meta muted">
+                {/* A background read runs the same line forever, so the row
+                    carries a count instead of a hundred copies of itself. It
+                    doubles as the answer to "why does this keep happening" —
+                    a feed that should have opened once and shows ×40 is a
+                    feed that is restarting. */}
+                {e.repeat && e.repeat > 1 ? (
+                  <span className="cmdlog-repeat" title={t('이 조회가 실행된 횟수')}>
+                    ×{e.repeat}
+                  </span>
+                ) : null}
                 {e.status === 'running' && t('실행 중')}
                 {e.status === 'ok' && `${e.durationMs}ms`}
                 {e.status === 'probe' && t('없음 (exit {code})', { code: e.exitCode })}

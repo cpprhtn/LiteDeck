@@ -1938,6 +1938,14 @@ button.danger {
   opacity: 0.7;
 }
 
+/* 배경 조회의 반복 횟수. 같은 줄이 수백 개 쌓이는 대신 한 줄이 세어 준다.
+   숫자 자체가 정보라서 소요 시간보다 앞에 오고 조금 더 진하다. */
+.cmdlog-repeat {
+  margin-right: 6px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
 /* 호스트별 AI 변경 권한. 켜져 있는 동안 헤더에서 보여야 한다 —
    아무도 못 보는 스위치는 아무도 끄지 않는다. */
 .mcp-badge-wrap {

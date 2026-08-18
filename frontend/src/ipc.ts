@@ -456,6 +456,8 @@ export interface CommandEntry {
   origin?: string
   /** Time spent waiting for a session slot, when long enough to matter. */
   queuedMs?: number
+  /** How many times this background read has run. Absent for user actions. */
+  repeat?: number
 }
 
 export interface ConnectionState {

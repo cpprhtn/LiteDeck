@@ -27,7 +27,11 @@ type CommandEntry struct {
 	ExitCode int    `json:"exitCode"`
 	Duration int64  `json:"durationMs"`
 	// Kind is "", "poll" or "probe" — see sshcore.CommandKind.
-	Kind   string `json:"kind,omitempty"`
+	Kind string `json:"kind,omitempty"`
+	// Repeat counts how many times this background read has run. A view that
+	// refreshes every two seconds produces the same line forever, and a
+	// hundred identical rows say nothing a count does not say better.
+	Repeat int    `json:"repeat,omitempty"`
 	Stderr string `json:"stderr,omitempty"`
 	// QueuedMs is time spent waiting for one of the Exec channels. Shown only
 	// when it is long enough to matter, because a command that sat in a queue
@@ -54,14 +58,33 @@ type commandLog struct {
 	mu      sync.Mutex
 	seq     int
 	entries []CommandEntry
-	running map[string]int // line+host → index, to match a finish to its start
+	running map[string]int // line+host → seq, to match a finish to its start
+	// folded is host+kind+outcome+line → seq of the row that absorbs repeats
+	// of one background read. The outcome is part of the key so that a poll
+	// which starts failing gets a row of its own rather than changing the
+	// colour of the row that had been counting its successes.
+	folded map[string]int
 }
 
 func newCommandLog(a *App) *commandLog {
-	return &commandLog{app: a, running: make(map[string]int)}
+	return &commandLog{
+		app:     a,
+		running: make(map[string]int),
+		folded:  make(map[string]int),
+	}
 }
 
 func (l *commandLog) CommandStarted(info sshcore.CommandInfo) {
+	// A background read gets no row while it runs. It finishes in under a
+	// second, nobody watches it happen, and one row per run is what filled this
+	// panel with hundreds of identical lines — the panel holds 500 entries, and
+	// at two pollers on a two second cadence the one restart the user actually
+	// performed was evicted within about eight minutes. They fold into a single
+	// counted row on completion instead.
+	if info.Background() {
+		return
+	}
+
 	l.mu.Lock()
 	l.seq++
 	e := CommandEntry{
@@ -73,9 +96,7 @@ func (l *commandLog) CommandStarted(info sshcore.CommandInfo) {
 		Kind:   string(info.Kind),
 	}
 	l.entries = append(l.entries, e)
-	if len(l.entries) > commandLogLimit {
-		l.entries = l.entries[len(l.entries)-commandLogLimit:]
-	}
+	l.trim()
 	l.running[info.HostID+"\x00"+info.Line] = e.Seq
 	l.mu.Unlock()
 
@@ -83,48 +104,115 @@ func (l *commandLog) CommandStarted(info sshcore.CommandInfo) {
 }
 
 func (l *commandLog) CommandFinished(info sshcore.CommandInfo, res *sshcore.Result, err error) {
-	l.mu.Lock()
-	key := info.HostID + "\x00" + info.Line
-	seq, ok := l.running[key]
-	delete(l.running, key)
+	status, exit, stderr := classify(info, res, err)
 
+	l.mu.Lock()
 	var updated CommandEntry
-	for i := range l.entries {
-		if !ok || l.entries[i].Seq != seq {
-			continue
-		}
-		e := &l.entries[i]
-		switch {
-		case err != nil:
-			e.Status = "error"
-			e.Stderr = err.Error()
-		case res != nil && !res.OK() && info.Probe():
-			// A probe answering "no" is information, not a fault. Counting it
-			// as a failure would put two red rows in the log on every single
-			// connection, and a failure count that is always wrong is one the
-			// user stops reading.
-			e.Status = "probe"
-			e.ExitCode = res.ExitCode
-		case res != nil && !res.OK():
-			e.Status = "failed"
-			e.ExitCode = res.ExitCode
-			e.Stderr = truncate(string(res.Stderr), 4000)
-		default:
-			e.Status = "ok"
-		}
-		if res != nil {
-			e.Duration = res.Duration.Milliseconds()
-			if res.Queued > queueNoteFloor {
-				e.QueuedMs = res.Queued.Milliseconds()
+	if info.Background() {
+		updated = l.fold(info, status, exit, stderr, res)
+	} else {
+		key := info.HostID + "\x00" + info.Line
+		seq, ok := l.running[key]
+		delete(l.running, key)
+		if i := l.indexOf(seq); ok && i >= 0 {
+			e := &l.entries[i]
+			e.Status, e.ExitCode, e.Stderr = status, exit, stderr
+			if res != nil {
+				e.Duration = res.Duration.Milliseconds()
+				if res.Queued > queueNoteFloor {
+					e.QueuedMs = res.Queued.Milliseconds()
+				}
 			}
+			updated = *e
 		}
-		updated = *e
-		break
 	}
 	l.mu.Unlock()
 
 	if updated.Seq != 0 {
 		l.emit("cmd:finished", updated)
+	}
+}
+
+// classify turns an outcome into the row's status.
+func classify(info sshcore.CommandInfo, res *sshcore.Result, err error) (status string, exit int, stderr string) {
+	switch {
+	case err != nil:
+		return "error", 0, err.Error()
+	case res != nil && !res.OK() && info.Probe():
+		// A probe answering "no" is information, not a fault. Counting it as a
+		// failure would put two red rows in the log on every single connection,
+		// and a failure count that is always wrong is one the user stops
+		// reading.
+		return "probe", res.ExitCode, ""
+	case res != nil && !res.OK():
+		return "failed", res.ExitCode, truncate(string(res.Stderr), 4000)
+	}
+	return "ok", 0, ""
+}
+
+// fold merges one background read into the single row that counts it.
+//
+// The outcome is part of the key, so a poll that starts failing gets a row of
+// its own instead of recolouring the row that had been counting its successes.
+// A failure hidden behind a repeat count is a failure nobody sees, and the
+// count would stop meaning what it says.
+func (l *commandLog) fold(
+	info sshcore.CommandInfo, status string, exit int, stderr string, res *sshcore.Result,
+) CommandEntry {
+	outcome := "ok"
+	if status == "failed" || status == "error" {
+		outcome = "bad"
+	}
+	key := info.HostID + "\x00" + string(info.Kind) + "\x00" + outcome + "\x00" + info.Line
+
+	i := -1
+	if seq, ok := l.folded[key]; ok {
+		if i = l.indexOf(seq); i < 0 {
+			// Trimmed out from under us. Start counting again rather than
+			// leave the map pointing at a row that no longer exists.
+			delete(l.folded, key)
+		}
+	}
+	if i < 0 {
+		l.seq++
+		l.entries = append(l.entries, CommandEntry{
+			Seq:    l.seq,
+			HostID: info.HostID,
+			Line:   info.Line,
+			Kind:   string(info.Kind),
+		})
+		l.trim()
+		i = len(l.entries) - 1
+		l.folded[key] = l.entries[i].Seq
+	}
+
+	e := &l.entries[i]
+	e.At = time.Now().Format(time.RFC3339)
+	e.Status, e.ExitCode, e.Stderr = status, exit, stderr
+	e.Repeat++
+	e.QueuedMs = 0
+	if res != nil {
+		e.Duration = res.Duration.Milliseconds()
+		if res.Queued > queueNoteFloor {
+			e.QueuedMs = res.Queued.Milliseconds()
+		}
+	}
+	return *e
+}
+
+// indexOf finds an entry by sequence number, or -1 once it has been trimmed.
+func (l *commandLog) indexOf(seq int) int {
+	for i := range l.entries {
+		if l.entries[i].Seq == seq {
+			return i
+		}
+	}
+	return -1
+}
+
+func (l *commandLog) trim() {
+	if len(l.entries) > commandLogLimit {
+		l.entries = l.entries[len(l.entries)-commandLogLimit:]
 	}
 }
 
@@ -145,6 +233,9 @@ func (a *App) CommandLog() []CommandEntry {
 func (a *App) ClearCommandLog() {
 	a.log.mu.Lock()
 	a.log.entries = nil
+	// The fold map points at rows that no longer exist; leaving it would make
+	// the next background read update nothing.
+	a.log.folded = make(map[string]int)
 	a.log.mu.Unlock()
 }
 
@@ -173,9 +264,7 @@ func (l *commandLog) AICall(hostID, line string) {
 		Origin: "ai",
 	}
 	l.entries = append(l.entries, e)
-	if len(l.entries) > commandLogLimit {
-		l.entries = l.entries[len(l.entries)-commandLogLimit:]
-	}
+	l.trim()
 	l.mu.Unlock()
 
 	l.emit("cmd:started", e)
@@ -203,9 +292,7 @@ func (l *commandLog) AIWrite(hostID, summary, outcome string) {
 		Origin: "ai",
 	}
 	l.entries = append(l.entries, e)
-	if len(l.entries) > commandLogLimit {
-		l.entries = l.entries[len(l.entries)-commandLogLimit:]
-	}
+	l.trim()
 	l.mu.Unlock()
 
 	l.emit("cmd:started", e)
