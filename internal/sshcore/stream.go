@@ -47,6 +47,12 @@ type StreamOptions struct {
 	// here and never in argv — this is how an elevated follow passes a sudo
 	// password (§7.2).
 	Stdin io.Reader
+
+	// Background marks a stream the app opened for itself rather than one the
+	// user asked for. It draws from the background pool instead of the
+	// long-lived one, and it is logged as a poll — a reading nobody requested
+	// should not sit in the Command Log looking like a command somebody ran.
+	Background bool
 }
 
 // OpenStream starts a command and delivers its output line by line. onClose
@@ -79,17 +85,25 @@ func (c *Conn) OpenStreamOpts(
 	}
 
 	// Follows hold their channel for as long as the panel is open, so they draw
-	// from the long-lived budget alongside SFTP and terminals.
+	// from the long-lived budget alongside SFTP and terminals. Background feeds
+	// draw from their own, so that a full pool of terminal tabs cannot turn the
+	// GPU tiles off and a GPU feed cannot cost somebody a tab.
+	pool := c.longLived
+	full := i18n.S("sshcore: 동시에 열 수 있는 스트림 수를 초과했습니다 (%d개) — 터미널 탭이나 로그 창을 닫아보세요")
+	kind := CommandAction
+	if opts.Background {
+		pool = c.bg
+		full = i18n.S("sshcore: 배경 스트림 자리가 없습니다 (%d개)")
+		kind = CommandPoll
+	}
 	select {
-	case c.longLived <- struct{}{}:
+	case pool <- struct{}{}:
 	case <-ctx.Done():
 		return nil, fmt.Errorf("sshcore: waiting for a stream slot: %w", ctx.Err())
 	default:
-		return nil, fmt.Errorf(
-			i18n.S("sshcore: 동시에 열 수 있는 스트림 수를 초과했습니다 (%d개) — 터미널 탭이나 로그 창을 닫아보세요"),
-			cap(c.longLived))
+		return nil, fmt.Errorf(full, cap(pool))
 	}
-	release := func() { <-c.longLived }
+	release := func() { <-pool }
 
 	sess, err := c.client.NewSession()
 	if err != nil {
@@ -116,7 +130,7 @@ func (c *Conn) OpenStreamOpts(
 	s := &Stream{sess: sess, release: release}
 
 	if c.obs != nil {
-		info := CommandInfo{HostID: c.cfg.ID, Line: line, Kind: CommandAction}
+		info := CommandInfo{HostID: c.cfg.ID, Line: line, Kind: kind}
 		c.obs.CommandStarted(info)
 		// A follow has no exit code worth waiting for — it ends when the user
 		// closes it — so it is reported as finished immediately. Leaving it

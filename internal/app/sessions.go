@@ -127,6 +127,7 @@ func (a *App) freshen(hostID string) {
 	a.sshPorts.forget(hostID)
 	a.detected.forget(hostID)
 	a.cpu.forget(hostID)
+	a.gpus.forget(hostID)
 }
 
 // selfPIDs returns the sshd processes this connection is running underneath.

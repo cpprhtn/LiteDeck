@@ -149,6 +149,9 @@ func (a *App) DisconnectHost(hostID string) error {
 	// The CPU baseline is meaningless across a reconnect: /proc/stat counters
 	// reset on reboot, and a stale sample would draw a wild first reading.
 	a.cpu.forget(hostID)
+	// The GPU feed rides a channel on the connection being dropped, and its
+	// "this host has no card" is only true of the machine that just answered.
+	a.gpus.forget(hostID)
 	// Dropping the connection kills the sessions anyway; this is so the registry
 	// does not go on offering them back as tabs that cannot be typed into.
 	a.terminals.closeHost(hostID)

@@ -10,6 +10,9 @@ import (
 
 // A wedged nvidia-smi must not take the rest of the metrics with it.
 //
+// This covers the inline reading, which is what runs whenever the GPU feed is
+// not answering — so it is the path a card can still hang on.
+//
 // The GPU line rides on the same script as CPU, memory and disk, so a driver
 // fault that leaves nvidia-smi blocked in the kernel would black out the whole
 // summary bar until pollTimeout — twenty seconds, at the moment those numbers
@@ -34,7 +37,7 @@ func TestMetricsSurviveAHangingNvidiaSmi(t *testing.T) {
 
 	start := time.Now()
 	res, err := conn.Exec(testCtx(t), "sh", "-c",
-		"PATH=/tmp/fakebin:$PATH; "+adapter.MetricsScript)
+		"PATH=/tmp/fakebin:$PATH; "+adapter.MetricsScriptWithGPU)
 	if err != nil {
 		t.Fatalf("Exec: %v", err)
 	}
@@ -82,7 +85,7 @@ func TestMetricsExitZeroWithoutNvidiaSmi(t *testing.T) {
 		t.Skip("this fixture has nvidia-smi, so it cannot show the missing case")
 	}
 
-	res, err := conn.Exec(testCtx(t), "sh", "-c", adapter.MetricsScript)
+	res, err := conn.Exec(testCtx(t), "sh", "-c", adapter.MetricsScriptWithGPU)
 	if err != nil {
 		t.Fatalf("Exec: %v", err)
 	}
@@ -100,5 +103,35 @@ func TestMetricsExitZeroWithoutNvidiaSmi(t *testing.T) {
 	}
 	if len(m.GPUs) != 0 {
 		t.Errorf("got %d GPUs on a host with no nvidia-smi", len(m.GPUs))
+	}
+}
+
+// The feed's own script has to end quietly on a server with no card.
+//
+// It runs as a stream, and a stream that dies on nvidia-smi's exit 127 would
+// put the v1.3.0 Command Log flood back — a red row per host per reconnect —
+// and leave the app unable to tell "no such program" from "the driver broke".
+// The `command -v` guard turns both of those into an exit 0 with no output,
+// which the feed reads as the plain fact that this machine has no card.
+func TestGPUStreamScriptIsSilentWithoutNvidiaSmi(t *testing.T) {
+	a := connectedApp(t)
+	conn, err := a.mgr.Conn("fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if probe, err := conn.Exec(testCtx(t), "sh", "-c", "command -v nvidia-smi"); err == nil && probe.OK() {
+		t.Skip("this fixture has nvidia-smi, so it cannot show the missing case")
+	}
+
+	res, err := conn.Exec(testCtx(t), "sh", "-c", adapter.GPUStreamScript)
+	if err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
+	if !res.OK() {
+		t.Errorf("exit %d with no nvidia-smi — every connection to an ordinary "+
+			"server would log a failed command", res.ExitCode)
+	}
+	if len(res.Stdout) != 0 {
+		t.Errorf("stdout %q, want nothing", res.Stdout)
 	}
 }

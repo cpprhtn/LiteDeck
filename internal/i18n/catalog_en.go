@@ -45,6 +45,7 @@ var english = map[string]string{
 	"app: 임시 파일을 만들 수 없습니다":                                          "app: could not create a temp file",
 	"enabled (지연 시작)": "enabled (delayed start)",
 	"sshcore: 동시에 열 수 있는 스트림 수를 초과했습니다 (%d개) — 터미널 탭이나 로그 창을 닫아보세요": "sshcore: too many streams open at once (%d) — try closing a terminal tab or log window",
+	"sshcore: 배경 스트림 자리가 없습니다 (%d개)":                                "sshcore: no background stream slot free (%d)",
 	"sshcore: 이 호스트에 열 수 있는 터미널·로그 창 수를 초과했습니다 (동시 %d개) — ":         "sshcore: too many terminals and log windows open on this host (%d at once) — ",
 	"sshcore: 터미널이 응답하지 않습니다 — 실행 중인 프로그램이 있는지 확인하세요":               "sshcore: the terminal did not answer — check whether a program is running in it",
 	"sshcore: 터미널이 현재 디렉터리를 알려주지 않았습니다":                             "sshcore: the terminal did not report its directory",

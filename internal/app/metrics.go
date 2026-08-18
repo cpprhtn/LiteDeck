@@ -90,10 +90,22 @@ func (a *App) HostMetrics(hostID string) (MetricsView, error) {
 		}, nil
 	}
 
-	// One round trip for everything. The script is a compile-time constant with
-	// nothing interpolated, which is why passing it to `sh -c` does not violate
-	// the argv-only rule (§3.2b) — there is no caller-supplied text in it.
-	res, err := conn.Poll(ctx, "sh", "-c", adapter.MetricsScript)
+	// The card is read by a feed that outlives this poll, so that nvidia-smi is
+	// started once rather than every two seconds. Whether it is answering
+	// decides which script runs: when it is, the poll leaves the GPU out
+	// entirely; when it is not — no feed yet, no channel to spare, output that
+	// arrives in blocks instead of lines — the script still carries the inline
+	// nvidia-smi it always did. The tiles never go blank on account of this.
+	gpuRows, gpuLive := a.gpus.sample(hostID)
+	script := adapter.MetricsScriptWithGPU
+	if gpuLive {
+		script = adapter.MetricsScript
+	}
+
+	// One round trip for everything. Both scripts are compile-time constants
+	// with nothing interpolated, which is why passing one to `sh -c` does not
+	// violate the argv-only rule (§3.2b) — there is no caller-supplied text.
+	res, err := conn.Poll(ctx, "sh", "-c", script)
 	if err != nil {
 		return MetricsView{}, err
 	}
@@ -106,6 +118,18 @@ func (a *App) HostMetrics(hostID string) (MetricsView, error) {
 		return MetricsView{}, err
 	}
 	a.cpu.record(hostID, m.CPUTimes)
+	if gpuLive {
+		// Never nil: the bar maps over this, and a host with no card has to
+		// arrive as an empty list rather than as a missing one.
+		m.GPUs = gpuRows
+		if m.GPUs == nil {
+			m.GPUs = []adapter.GPU{}
+		}
+	}
+
+	// After the poll, not on connect: a poll is the evidence that somebody is
+	// looking at this host. Cheap and idempotent once the feed is running.
+	a.gpus.ensure(hostID, conn)
 
 	return MetricsView{
 		Metrics: m,

@@ -74,10 +74,19 @@ type HostConfig struct {
 // below instead. Charging it to the long-lived pool is what made the terminal
 // budget quietly 3 rather than the 4 the error message claimed.
 //
-//	1 (SFTP) + 5 (terminals, logs) + 3 (Exec) = 9, one under the default.
+// Background streams get their own slot rather than a share of the long-lived
+// pool. The pools answer to different owners: long-lived channels are opened
+// because the user asked, and taking one for a reading the app decided to
+// collect would mean a GPU host silently offers one terminal tab fewer than
+// every other host. It is also the pool that can be refused most cheaply — the
+// summary bar drops the GPU tiles and nothing else changes — so it sits last in
+// the budget where a server with a lowered MaxSessions will hit it first.
+//
+//	1 (SFTP) + 5 (terminals, logs) + 3 (Exec) + 1 (background) = 10, the default.
 const (
-	DefaultMaxSessions  = 3 // transient: Exec. Queues when full.
-	DefaultMaxLongLived = 5 // long-lived: terminal tabs + log follows.
+	DefaultMaxSessions   = 3 // transient: Exec. Queues when full.
+	DefaultMaxLongLived  = 5 // long-lived: terminal tabs + log follows.
+	DefaultMaxBackground = 1 // app-internal: the GPU feed.
 )
 
 // Result is the outcome of one remote command.
@@ -202,6 +211,10 @@ type Conn struct {
 	// longLived bounds the SFTP subsystem and terminal tabs, which hold their
 	// channel until closed.
 	longLived chan struct{}
+	// bg bounds streams the app opens for itself rather than for the user —
+	// today only the GPU feed. Separate from longLived so a background reading
+	// never costs somebody a terminal tab.
+	bg chan struct{}
 
 	mu   sync.Mutex
 	sftp *sftp.Client // created on first use, shared by all file operations
@@ -311,6 +324,7 @@ func Dial(ctx context.Context, cfg HostConfig) (*Conn, error) {
 		jump:      jump,
 		sem:       make(chan struct{}, maxSessions),
 		longLived: make(chan struct{}, maxLongLived),
+		bg:        make(chan struct{}, DefaultMaxBackground),
 	}, nil
 }
 

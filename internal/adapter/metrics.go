@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // MetricsScript collects everything the summary bar needs in one round trip.
@@ -23,12 +24,33 @@ import (
 // into six separate commands would cost six round trips every two seconds,
 // and CPU has to be sampled twice anyway.
 //
-// The nvidia-smi line is the only one that can be absent. Its stderr is dropped
-// rather than probed for first, because `command -v nvidia-smi` would cost a
-// second lookup on every poll to learn something the empty output already says.
+// Every line reads a file the kernel already keeps, so the whole snapshot costs
+// one round trip and no process on the server worth measuring. The GPU is the
+// exception and does not live here — see GPUStreamScript.
 //
-// It is also the only line that can hang. A wedged driver — an Xid fault, a card
-// that has fallen off the bus — leaves nvidia-smi blocked in the kernel, and
+// The trailing `:` makes the script's exit status its own rather than the last
+// command's. `cat /proc/loadavg` fails on a kernel without it, `df` fails on a
+// container with a broken mount, and a shell reports whatever ran last — so a
+// normal condition would show up in the Command Log as a red row with a failure
+// count climbing behind it. That log is the one place this app asks to be
+// believed, so a normal condition must not appear there as a failure.
+const MetricsScript = `echo '#stat'; cat /proc/stat 2>/dev/null | head -1
+echo '#mem'; cat /proc/meminfo 2>/dev/null
+echo '#load'; cat /proc/loadavg 2>/dev/null
+echo '#up'; cat /proc/uptime 2>/dev/null
+echo '#df'; df -P -B1 2>/dev/null
+:`
+
+// MetricsScriptWithGPU is MetricsScript with the card read inline, one
+// nvidia-smi per poll.
+//
+// This was the only way the GPU was read until the feed arrived, and it is
+// still the fallback: GPUStreamScript needs a channel and a server that lets
+// nvidia-smi write a line at a time, and when either is missing the summary bar
+// falls back here rather than dropping the tiles. Slower, never wrong.
+//
+// nvidia-smi is the one line that can hang. A wedged driver — an Xid fault, a
+// card that has fallen off the bus — leaves it blocked in the kernel, and
 // because this is one script the whole poll blocks with it: CPU, memory and disk
 // would go dark for the twenty seconds of pollTimeout, at exactly the moment
 // somebody needs them. `timeout` caps that at five seconds and costs an empty
@@ -38,21 +60,49 @@ import (
 //
 // Windows has no cheap equivalent — a PowerShell job per poll is worse than the
 // problem — so WindowsMetricsScript keeps only its Get-Command guard.
-//
-// The trailing `:` is what makes the script's exit status its own rather than
-// nvidia-smi's. A shell reports the last command's status, so on the ordinary
-// server with no card this whole poll exited 127 — every two seconds, as a red
-// line in the Command Log with a failure count climbing behind it. The readings
-// were fine; the log was lying. That log is the one place this app asks to be
-// believed, so a normal condition must not appear there as a failure.
-const MetricsScript = `echo '#stat'; cat /proc/stat 2>/dev/null | head -1
+const MetricsScriptWithGPU = `echo '#stat'; cat /proc/stat 2>/dev/null | head -1
 echo '#mem'; cat /proc/meminfo 2>/dev/null
 echo '#load'; cat /proc/loadavg 2>/dev/null
 echo '#up'; cat /proc/uptime 2>/dev/null
 echo '#df'; df -P -B1 2>/dev/null
 echo '#gpu'; GPUTO=; command -v timeout >/dev/null 2>&1 && GPUTO='timeout 5'
-$GPUTO nvidia-smi --query-gpu=index,name,utilization.gpu,fan.speed,temperature.gpu,memory.total,memory.used --format=csv,noheader,nounits 2>/dev/null
+$GPUTO nvidia-smi --query-gpu=` + gpuQueryFields + ` --format=csv,noheader,nounits 2>/dev/null
 :`
+
+// gpuQueryFields is the one list both readings ask for, so the inline poll and
+// the feed can never drift into parsing different columns.
+const gpuQueryFields = "index,name,utilization.gpu,fan.speed,temperature.gpu,memory.total,memory.used"
+
+// GPUStreamScript keeps one nvidia-smi alive and lets it report on a loop.
+//
+// nvidia-smi initialises NVML on startup and tears it down on exit, and that
+// setup — not the reading — is nearly all of what an invocation costs. Called
+// once per poll it was paying that price every two seconds, forever, on a
+// machine whose whole job is to be busy with something else. `-l` keeps one
+// process and one NVML session, so each further sample is a library call.
+//
+// `dmon` is the tool NVIDIA documents for this and it is the wrong one here: it
+// reports a fixed column set with no fan speed, no card name and no VRAM in
+// bytes. Streaming the same --query-gpu list keeps every figure the tiles
+// already show.
+//
+// The `command -v` guard is what keeps a card-less server quiet. Without it the
+// stream would end on nvidia-smi's exit 127 and the app would have to tell a
+// missing program apart from a broken one; with it, no card is a clean exit 0
+// and an empty feed, which is exactly what it means.
+//
+// stdbuf is a hedge, not a requirement. A program writing to a pipe usually
+// switches to block buffering, which would hold samples back until 4KB of them
+// had piled up; `-oL` asks for line buffering instead. Where coreutils stdbuf
+// is missing the command still runs, and a feed that goes quiet is caught by
+// the staleness check on the other end rather than by trusting this line.
+const GPUStreamScript = `command -v nvidia-smi >/dev/null 2>&1 || exit 0
+SB=; command -v stdbuf >/dev/null 2>&1 && SB='stdbuf -oL'
+exec $SB nvidia-smi --query-gpu=` + gpuQueryFields + ` --format=csv,noheader,nounits -l 2`
+
+// GPUStreamInterval is the `-l` period above. The reader needs it to tell a
+// feed that is merely between samples from one that has stopped answering.
+const GPUStreamInterval = 2 * time.Second
 
 // CPUTimes is one sample of the aggregate CPU counters.
 //
@@ -325,39 +375,50 @@ func parseDF(lines []string) []Filesystem {
 func parseGPUs(lines []string) []GPU {
 	out := []GPU{}
 	for i, line := range lines {
-		f := strings.Split(line, ",")
-		if len(f) < 7 {
-			continue
+		if g, ok := ParseGPULine(line, i); ok {
+			out = append(out, g)
 		}
-		for j := range f {
-			f[j] = strings.TrimSpace(f[j])
-		}
-
-		// The index column is authoritative but a driver that answered a row
-		// without one still names a real card; fall back to position.
-		idx, err := strconv.Atoi(f[0])
-		if err != nil {
-			idx = i
-		}
-		g := GPU{
-			Index:       idx,
-			Name:        f[1],
-			Utilization: parseGPUFloat(f[2]),
-			Fan:         parseGPUFloat(f[3]),
-			TempC:       parseGPUFloat(f[4]),
-		}
-		if total := parseGPUFloat(f[5]); total >= 0 {
-			g.MemTotal = int64(total) * 1024 * 1024
-		}
-		if used := parseGPUFloat(f[6]); used >= 0 {
-			g.MemUsed = int64(used) * 1024 * 1024
-		}
-		if g.MemTotal > 0 {
-			g.MemPercent = clampPercent(float64(g.MemUsed) / float64(g.MemTotal) * 100)
-		}
-		out = append(out, g)
 	}
 	return out
+}
+
+// ParseGPULine reads one CSV row. fallbackIndex names the card when the index
+// column is unreadable — the row still describes a real card.
+//
+// Exported because the feed sees rows one at a time as they arrive and has no
+// section to hand over whole.
+func ParseGPULine(line string, fallbackIndex int) (GPU, bool) {
+	f := strings.Split(line, ",")
+	if len(f) < 7 {
+		return GPU{}, false
+	}
+	for j := range f {
+		f[j] = strings.TrimSpace(f[j])
+	}
+
+	// The index column is authoritative but a driver that answered a row
+	// without one still names a real card; fall back to position.
+	idx, err := strconv.Atoi(f[0])
+	if err != nil {
+		idx = fallbackIndex
+	}
+	g := GPU{
+		Index:       idx,
+		Name:        f[1],
+		Utilization: parseGPUFloat(f[2]),
+		Fan:         parseGPUFloat(f[3]),
+		TempC:       parseGPUFloat(f[4]),
+	}
+	if total := parseGPUFloat(f[5]); total >= 0 {
+		g.MemTotal = int64(total) * 1024 * 1024
+	}
+	if used := parseGPUFloat(f[6]); used >= 0 {
+		g.MemUsed = int64(used) * 1024 * 1024
+	}
+	if g.MemTotal > 0 {
+		g.MemPercent = clampPercent(float64(g.MemUsed) / float64(g.MemTotal) * 100)
+	}
+	return g, true
 }
 
 // parseGPUFloat returns -1 for the "[N/A]" and "[Not Supported]" placeholders

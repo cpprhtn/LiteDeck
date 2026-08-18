@@ -37,6 +37,7 @@ type App struct {
 	transfers *transferQueue
 	terminals *terminalRegistry
 	cpu       *cpuHistory
+	gpus      *gpuWatcher
 	logs      *logRegistry
 	mcp       mcpState
 	approvals *approvalBridge
@@ -69,6 +70,7 @@ func New() *App {
 	a.transfers = newTransferQueue(a)
 	a.terminals = newTerminalRegistry(a)
 	a.cpu = newCPUHistory()
+	a.gpus = newGPUWatcher()
 	a.logs = newLogRegistry(a)
 	a.approvals = newApprovalBridge(a)
 	a.secrets = secret.Ephemeral{}
