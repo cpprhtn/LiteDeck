@@ -33,6 +33,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          # Without this, setup-go keeps whatever Go the runner image
+          # already has as long as it satisfies GO_VERSION — which is how
+          # govulncheck failed on stdlib fixes that had already shipped in
+          # a newer patch. It also decides which toolchain builds the
+          # released binaries, so the ones people download carry the fixes.
+          check-latest: true
           cache: true
 
       - name: go vet
@@ -61,6 +67,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          # Without this, setup-go keeps whatever Go the runner image
+          # already has as long as it satisfies GO_VERSION — which is how
+          # govulncheck failed on stdlib fixes that had already shipped in
+          # a newer patch. It also decides which toolchain builds the
+          # released binaries, so the ones people download carry the fixes.
+          check-latest: true
           cache: true
       - name: govulncheck
         run: |
@@ -97,6 +109,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          # Without this, setup-go keeps whatever Go the runner image
+          # already has as long as it satisfies GO_VERSION — which is how
+          # govulncheck failed on stdlib fixes that had already shipped in
+          # a newer patch. It also decides which toolchain builds the
+          # released binaries, so the ones people download carry the fixes.
+          check-latest: true
           cache: true
       - uses: actions/setup-node@v4
         with:
