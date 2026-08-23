@@ -14,6 +14,12 @@ import { t } from './i18n'
 // nothing was recorded, and joining the two ends draws a reading nobody took.
 // The line breaks instead, and the gap is shaded so it reads as absence rather
 // than as a flat stretch.
+//
+// Shaded, and not counted. Readings are only collected for the host on screen
+// (§3.2d), so gaps are what normally happens and not an exception worth
+// announcing — a note saying "1 gap" under every chart is the Command Log's
+// old habit of putting a red row against a routine condition, which teaches
+// people to stop reading the notes that matter.
 
 export function TimeChart({
   samples,
@@ -117,7 +123,12 @@ export function TimeChart({
             width={Math.max(1, g.to - g.from)}
             y="0"
             height={height}
-          />
+          >
+            {/* The explanation belongs on the shaded band, not on a line of
+                text under the axis. Whoever wonders what the grey is hovers
+                the grey. */}
+            <title>{t('이 구간은 앱이 보고 있지 않아 기록이 없습니다')}</title>
+          </rect>
         ))}
         {runs2.map((pts, i) =>
           pts.length >= 2 ? (
@@ -146,11 +157,6 @@ export function TimeChart({
       <div className="chart-axis muted">
         <span>{clock(t0)}</span>
         {scale === 'auto' && format && <span>{t('최고 {v}', { v: format(peak) })}</span>}
-        {gaps.length > 0 && (
-          <span title={t('이 구간은 앱이 보고 있지 않아 기록이 없습니다')}>
-            {t('빈 구간 {n}곳', { n: gaps.length })}
-          </span>
-        )}
         <span>{clock(t1)}</span>
       </div>
     </div>

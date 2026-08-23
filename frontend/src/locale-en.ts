@@ -293,7 +293,6 @@ export const en: Record<string, string> = {
   '메모리 사용률 추이': 'Memory over time',
   'GPU {n} 사용률 추이': 'GPU {n} over time',
   '아직 그릴 만큼 모이지 않았습니다.': 'Not enough readings yet to draw.',
-  '빈 구간 {n}곳': '{n} gaps',
   '이 구간은 앱이 보고 있지 않아 기록이 없습니다': 'Nothing was recorded here — the app was not watching',
   '그 밖': 'Other',
   '두 번째 표본을 기다리는 중 — 누적 카운터라 한 번만으로는 알 수 없습니다': 'Waiting for a second sample — the counters are totals since boot, so one reading says nothing',
