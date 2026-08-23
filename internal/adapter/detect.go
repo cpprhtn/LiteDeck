@@ -114,6 +114,12 @@ const (
 	// parser reads, so it stays off until something reads Get-CimInstance
 	// Win32_LogonSession instead.
 	CapSessions Capability = "sessions"
+	// CapEvents is the event timeline. It needs the journal, so it follows
+	// systemd — but being able to *reach* the journal is a second question that
+	// group membership decides, and ServerInfo.CanReadJournal answers it. A
+	// capability cannot say "yes, but empty unless you escalate", so the tab is
+	// enabled here and the view explains the rest.
+	CapEvents Capability = "events"
 )
 
 // Capabilities reports which tabs this server supports (§3.3).
@@ -131,6 +137,7 @@ func (i ServerInfo) Capabilities() map[Capability]bool {
 			CapMetrics:    false,
 			CapNetwork:    false,
 			CapSessions:   false,
+			CapEvents:     false,
 		}
 	}
 	if i.Platform == PlatformWindows {
@@ -143,6 +150,9 @@ func (i ServerInfo) Capabilities() map[Capability]bool {
 			CapContainers: i.HasDocker,
 			CapNetwork:    true, // Get-NetIPAddress, Get-NetAdapter, Get-Net{TCP,UDP}
 			CapSessions:   false,
+			// The Windows event log sits where journald does, but nothing reads
+			// it yet.
+			CapEvents: false,
 		}
 	}
 	return map[Capability]bool{
@@ -152,6 +162,7 @@ func (i ServerInfo) Capabilities() map[Capability]bool {
 		CapMetrics:    true, // /proc, df
 		CapNetwork:    true, // iproute2; the tab degrades per-command if partial
 		CapSessions:   true, // ps; w/ss/loginctl only enrich
+		CapEvents:     i.HasSystemd,
 	}
 }
 

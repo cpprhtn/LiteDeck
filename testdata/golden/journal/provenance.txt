@@ -1,0 +1,5 @@
+OS: Ubuntu 22.04.5 LTS
+systemd: systemd 249 (249.11-0ubuntu3.21)
+captured: 2026-08-23T04:12:30Z
+command: journalctl -o json --no-pager --since -1h -p 4 -n 500
+events: ld-fail.service (ExecStart=/bin/false) and ld-loop.service (Restart=always) were started to produce real failure and restart entries.

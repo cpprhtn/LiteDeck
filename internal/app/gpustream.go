@@ -33,6 +33,10 @@ import (
 // waiting is that the inline query keeps running meanwhile.
 const gpuFeedGrace = 10 * time.Second
 
+// maxGPUsPerSample bounds one sample. Well above any real machine — the largest
+// systems NVIDIA ships hold sixteen — so it only ever fires as a backstop.
+const maxGPUsPerSample = 64
+
 // gpuFeedRetry is the wait before reopening a feed that had been working and
 // then ended — a driver reload, a card reset. Long enough that a card stuck in
 // a crash loop cannot turn this into a reconnect storm.
@@ -195,12 +199,18 @@ func (w *gpuWatcher) ensure(hostID string, conn *sshcore.Conn) {
 
 // row folds one CSV line into the sample being assembled.
 func (f *gpuFeed) row(line string) {
+	// Under the lock before the parse, which reads f.batch for its fallback
+	// index. Only the stream's reader goroutine writes that field today, so
+	// this is not fixing a live race — it is keeping every read of the feed's
+	// state inside the lock so that the next thing to touch it does not have to
+	// notice the exception.
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	g, ok := adapter.ParseGPULine(line, len(f.batch))
 	if !ok {
 		return
 	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
 
 	f.rows++
 	f.lastRow = time.Now()
@@ -208,7 +218,14 @@ func (f *gpuFeed) row(line string) {
 	// nvidia-smi prints one row per card per interval with nothing between
 	// samples, so a card index that did not go up is where the next sample
 	// began.
-	if n := len(f.batch); n > 0 && g.Index <= f.batch[n-1].Index {
+	//
+	// The cap is what keeps that from being the only thing holding the batch
+	// together. A row whose index column will not parse falls back to its
+	// position, which rises with every row — so an unreadable index would mean
+	// the boundary never fires, the batch never closes, and the summary bar
+	// grows a new card every two seconds forever. One machine cannot have more
+	// cards than this, so reaching it is proof the boundary was missed.
+	if n := len(f.batch); n > 0 && (g.Index <= f.batch[n-1].Index || n >= maxGPUsPerSample) {
 		f.latest, f.batch, f.settled = f.batch, nil, true
 	}
 	f.batch = append(f.batch, g)

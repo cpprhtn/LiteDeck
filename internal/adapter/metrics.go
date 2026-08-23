@@ -34,7 +34,7 @@ import (
 // normal condition would show up in the Command Log as a red row with a failure
 // count climbing behind it. That log is the one place this app asks to be
 // believed, so a normal condition must not appear there as a failure.
-const MetricsScript = `echo '#stat'; cat /proc/stat 2>/dev/null | head -1
+const MetricsScript = `echo '#stat'; grep '^cpu' /proc/stat 2>/dev/null
 echo '#mem'; cat /proc/meminfo 2>/dev/null
 echo '#load'; cat /proc/loadavg 2>/dev/null
 echo '#up'; cat /proc/uptime 2>/dev/null
@@ -60,7 +60,7 @@ echo '#df'; df -P -B1 2>/dev/null
 //
 // Windows has no cheap equivalent — a PowerShell job per poll is worse than the
 // problem — so WindowsMetricsScript keeps only its Get-Command guard.
-const MetricsScriptWithGPU = `echo '#stat'; cat /proc/stat 2>/dev/null | head -1
+const MetricsScriptWithGPU = `echo '#stat'; grep '^cpu' /proc/stat 2>/dev/null
 echo '#mem'; cat /proc/meminfo 2>/dev/null
 echo '#load'; cat /proc/loadavg 2>/dev/null
 echo '#up'; cat /proc/uptime 2>/dev/null
@@ -112,6 +112,69 @@ const GPUStreamInterval = 2 * time.Second
 type CPUTimes struct {
 	Total uint64 `json:"total"`
 	Idle  uint64 `json:"idle"`
+
+	// The buckets behind that total. The parser was already walking every one
+	// of these fields to sum them and throwing the individual numbers away,
+	// which is why keeping them costs nothing.
+	//
+	// They are what makes a percentage mean something. A box at 90% that is all
+	// IOWait is not short of CPU, it is waiting for a disk; one at 90% Steal is
+	// not busy at all, its hypervisor is handing the time to somebody else. Both
+	// look exactly like "busy" until they are split apart.
+	User   uint64 `json:"user"`
+	System uint64 `json:"system"`
+	IOWait uint64 `json:"iowait"`
+	Steal  uint64 `json:"steal"`
+}
+
+// Split reports where the time between two samples went, in percent.
+func (c CPUTimes) Split(prev CPUTimes) CPUSplit {
+	if prev.Total == 0 || c.Total <= prev.Total {
+		return UnknownSplit()
+	}
+	total := float64(c.Total - prev.Total)
+	pct := func(now, before uint64) float64 {
+		if now < before {
+			return 0
+		}
+		return clampPercent(float64(now-before) / total * 100)
+	}
+	return CPUSplit{
+		User:   pct(c.User, prev.User),
+		System: pct(c.System, prev.System),
+		IOWait: pct(c.IOWait, prev.IOWait),
+		Steal:  pct(c.Steal, prev.Steal),
+	}
+}
+
+// UnknownSplit is the breakdown of a platform that does not report one, or of
+// a first sample with nothing to difference against. Not a zero value: four
+// zeroes draw a bar that says the machine is doing nothing, which is a claim,
+// and the whole point of these figures is that they are the difference between
+// "idle", "waiting on a disk" and "not being given any CPU at all".
+func UnknownSplit() CPUSplit {
+	return CPUSplit{User: -1, System: -1, IOWait: -1, Steal: -1}
+}
+
+// CPUSplit is the breakdown between two samples. -1 where it cannot be computed
+// yet, the same convention CPU itself uses.
+type CPUSplit struct {
+	User   float64 `json:"user"`
+	System float64 `json:"system"`
+	IOWait float64 `json:"iowait"`
+	Steal  float64 `json:"steal"`
+}
+
+// Core is one logical CPU.
+//
+// The aggregate hides the thing people most need to see: thirty-two cores at
+// "40%" is either every core half-busy or one core pinned at 100% and the rest
+// idle, and those are different problems with different fixes. The second is
+// the common one, because it is what a single-threaded bottleneck looks like.
+type Core struct {
+	Index int      `json:"index"`
+	Usage float64  `json:"usage"` // -1 until a second sample
+	Times CPUTimes `json:"-"`
 }
 
 // Usage returns busy percentage between two samples, or -1 when it cannot be
@@ -194,6 +257,21 @@ type Metrics struct {
 
 	Filesystems []Filesystem `json:"filesystems"`
 
+	// Cores is every logical CPU, in kernel order. Empty on a kernel that does
+	// not break /proc/stat down that way.
+	Cores []Core `json:"cores"`
+	// Split says where the CPU time went — see CPUTimes.
+	Split CPUSplit `json:"split"`
+
+	// The memory breakdown. MemUsed already subtracts what the kernel would
+	// hand back, but "70% used" still says nothing about whether that is a
+	// program holding it or a page cache that will evaporate the moment
+	// anything asks. These are what answers that.
+	MemBuffers int64 `json:"memBuffers"`
+	MemCached  int64 `json:"memCached"`
+	MemShared  int64 `json:"memShared"`
+	MemDirty   int64 `json:"memDirty"`
+
 	// GPUs is empty on the overwhelming majority of servers, which is why the
 	// summary bar treats it as an optional section rather than a fixed tile.
 	GPUs []GPU `json:"gpus"`
@@ -203,13 +281,25 @@ type Metrics struct {
 //
 // prev is the previous CPU sample; pass a zero value on the first call.
 func ParseMetrics(data []byte, prev CPUTimes) (Metrics, error) {
-	m := Metrics{CPU: -1, Filesystems: []Filesystem{}, GPUs: []GPU{}}
+	m := Metrics{
+		CPU:         -1,
+		Filesystems: []Filesystem{},
+		GPUs:        []GPU{},
+		Cores:       []Core{},
+		Split:       UnknownSplit(),
+	}
 
 	sections := splitSections(data)
 
 	if line := firstNonEmpty(sections["stat"]); line != "" {
 		m.CPUTimes = parseCPULine(line)
 		m.CPU = m.CPUTimes.Usage(prev)
+		m.Split = m.CPUTimes.Split(prev)
+	}
+	for _, line := range sections["stat"] {
+		if idx, t, ok := parseCPULineAt(line); ok {
+			m.Cores = append(m.Cores, Core{Index: idx, Usage: -1, Times: t})
+		}
 	}
 
 	mem := parseMeminfo(sections["mem"])
@@ -222,6 +312,12 @@ func ParseMetrics(data []byte, prev CPUTimes) (Metrics, error) {
 		m.MemUsed = m.MemTotal - m.MemAvailable
 		m.MemPercent = clampPercent(float64(m.MemUsed) / float64(m.MemTotal) * 100)
 	}
+	m.MemBuffers = mem["Buffers"]
+	// SReclaimable is slab the kernel gives back under pressure — the same kind
+	// of "used but not really" as the page cache, and free(1) counts it here too.
+	m.MemCached = mem["Cached"] + mem["SReclaimable"]
+	m.MemShared = mem["Shmem"]
+	m.MemDirty = mem["Dirty"]
 	m.SwapTotal = mem["SwapTotal"]
 	if free, ok := mem["SwapFree"]; ok && m.SwapTotal > 0 {
 		m.SwapUsed = m.SwapTotal - free
@@ -297,11 +393,40 @@ func parseCPULine(line string) CPUTimes {
 		// Fields beyond guest are already included in user/nice on modern
 		// kernels; summing everything present is still the conventional total.
 		t.Total += n
-		if i == 3 || i == 4 { // idle, iowait
+		// Column order is fixed by the kernel: user nice system idle iowait
+		// irq softirq steal guest guest_nice.
+		switch i {
+		case 0:
+			t.User += n
+		case 1:
+			t.User += n // nice is user time that was asked to wait its turn
+		case 2:
+			t.System += n
+		case 3:
 			t.Idle += n
+		case 4:
+			t.Idle += n // iowait counts as idle for "busy", and is broken out below
+			t.IOWait = n
+		case 7:
+			t.Steal = n
 		}
 	}
 	return t
+}
+
+// parseCPULineAt reads one `cpuN` row, returning the core number.
+func parseCPULineAt(line string) (int, CPUTimes, bool) {
+	f := strings.Fields(line)
+	if len(f) < 5 || !strings.HasPrefix(f[0], "cpu") || f[0] == "cpu" {
+		return 0, CPUTimes{}, false
+	}
+	idx, err := strconv.Atoi(strings.TrimPrefix(f[0], "cpu"))
+	if err != nil {
+		return 0, CPUTimes{}, false
+	}
+	// The aggregate parser only rejects a row whose first field is not exactly
+	// "cpu", so feed it a renamed copy rather than duplicating the column walk.
+	return idx, parseCPULine("cpu " + strings.Join(f[1:], " ")), true
 }
 
 // parseMeminfo reads /proc/meminfo into bytes, keyed by field name.

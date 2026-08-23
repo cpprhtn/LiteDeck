@@ -52,6 +52,7 @@ var english = map[string]string{
 	"SSH 세션 목록":        "the SSH session list",
 	"네트워크 정보":          "the network information",
 	"상태 정보":            "the machine's status",
+	"사건 기록":            "the event record",
 	"서비스 목록":           "the service list",
 	"프로세스 목록":          "the process list",
 	"알 수 없는 쓰기 모드: %s": "Unknown write mode: %s",

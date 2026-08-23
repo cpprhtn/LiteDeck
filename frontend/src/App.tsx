@@ -11,6 +11,7 @@ import { MetricsBar } from './MetricsBar'
 import { NetworkView } from './NetworkView'
 import { ProcessView } from './ProcessView'
 import { SessionView } from './SessionView'
+import { MonitorView } from './MonitorView'
 import { ServiceView } from './ServiceView'
 
 // xterm.js is ~340KB — more than the rest of the app combined. The terminal is
@@ -50,7 +51,15 @@ import { initPlatform } from './platform'
 // Scoped to what §1.6 fixed — a handful of servers, opened when something needs
 // doing, GUI first. No tray, no alerting, no fleet view.
 
-type Tab = 'services' | 'files' | 'processes' | 'containers' | 'network' | 'sessions' | 'terminal'
+type Tab =
+  | 'services'
+  | 'files'
+  | 'processes'
+  | 'containers'
+  | 'network'
+  | 'sessions'
+  | 'monitor'
+  | 'terminal'
 
 // files and terminal have no capability because they need nothing but SSH
 // itself — SFTP and a PTY. That is what keeps them working on a host no adapter
@@ -62,6 +71,7 @@ const TABS: { id: Tab; label: string; capability?: string }[] = [
   { id: 'containers', label: k('컨테이너'), capability: 'containers' },
   { id: 'network', label: k('네트워크'), capability: 'network' },
   { id: 'sessions', label: k('세션'), capability: 'sessions' },
+  { id: 'monitor', label: k('모니터링'), capability: 'metrics' },
   { id: 'terminal', label: k('터미널') },
 ]
 
@@ -517,6 +527,27 @@ function renderTab(
         )
       }
       return <SessionView hostID={hostID} visible onError={onError} />
+
+    case 'monitor':
+      if (!info.capabilities?.metrics) {
+        return (
+          <Unavailable
+            title={t('이 서버의 상태를 읽을 수 없습니다')}
+            detail={t('{os} — /proc 을 읽지 못했습니다.', { os: info.prettyName || t('이 서버') })}
+            hint={t('다른 탭은 그대로 쓸 수 있습니다.')}
+          />
+        )
+      }
+      // The event pane needs a journal; the resource pane does not. So the tab
+      // is gated on metrics and the pane hides itself, rather than the whole
+      // tab disappearing on a host that simply has no systemd.
+      return (
+        <MonitorView
+          hostID={hostID}
+          hasEvents={!!info.capabilities?.events}
+          onError={onError}
+        />
+      )
 
     case 'terminal':
       return (

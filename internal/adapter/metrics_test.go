@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -239,4 +240,133 @@ func mustParse(t *testing.T, s string) Metrics {
 		t.Fatal(err)
 	}
 	return m
+}
+
+// A percentage on its own does not say what to do about it.
+//
+// 90% that is all IOWait is not short of CPU, it is waiting for a disk; 90%
+// Steal is not busy at all, its hypervisor is handing the time to somebody
+// else — which is the one a cloud VM hits and the one that looks most like a
+// machine that needs replacing. Both are indistinguishable from "busy" until
+// they are split apart.
+func TestCPUSplitSeparatesWaitingFromWorking(t *testing.T) {
+	// user nice system idle iowait irq softirq steal
+	prev := parseCPULine("cpu 100 0 100 1000 100 0 0 100")
+	// Everything below moves by 100 except idle, so each bucket is 25%.
+	now := parseCPULine("cpu 200 0 200 1000 200 0 0 200")
+
+	got := now.Split(prev)
+	for name, v := range map[string]float64{
+		"user": got.User, "system": got.System, "iowait": got.IOWait, "steal": got.Steal,
+	} {
+		if v < 24.9 || v > 25.1 {
+			t.Errorf("%s = %v, want 25", name, v)
+		}
+	}
+}
+
+// Before a second sample there is nothing to difference, and a 0 there would
+// draw an idle machine.
+func TestCPUSplitIsUnknownOnTheFirstSample(t *testing.T) {
+	now := parseCPULine("cpu 200 0 200 1000 200 0 0 200")
+	if got := now.Split(CPUTimes{}); got.User != -1 || got.Steal != -1 {
+		t.Errorf("%+v — the first sample must be unknown, not zero", got)
+	}
+}
+
+// Thirty-two cores at "40%" is either every core half busy or one core pinned
+// and the rest idle. Those are different problems, and the aggregate cannot
+// tell them apart.
+func TestParseMetricsReadsEveryCore(t *testing.T) {
+	out := []byte("#stat\ncpu  100 0 100 1000 0 0 0 0\n" +
+		"cpu0 50 0 50 500 0 0 0 0\ncpu1 50 0 50 500 0 0 0 0\n" +
+		"#mem\nMemTotal: 1024 kB\n")
+	m, err := ParseMetrics(out, CPUTimes{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Cores) != 2 {
+		t.Fatalf("%d cores, want 2", len(m.Cores))
+	}
+	if m.Cores[0].Index != 0 || m.Cores[1].Index != 1 {
+		t.Errorf("core indices %d,%d", m.Cores[0].Index, m.Cores[1].Index)
+	}
+	// The aggregate row must not be mistaken for a core. Its columns sum to
+	// 1200 and each core's to 600, so the wrong row is unmistakable.
+	for _, c := range m.Cores {
+		if c.Times.Total != 600 {
+			t.Errorf("core %d total %d, want 600 — the aggregate row (1200) leaked in",
+				c.Index, c.Times.Total)
+		}
+	}
+}
+
+// "70% used" says nothing about whether that is a program holding it or a page
+// cache that evaporates the moment anything asks for it.
+func TestParseMetricsBreaksMemoryDown(t *testing.T) {
+	out := []byte("#mem\nMemTotal: 1000 kB\nMemAvailable: 800 kB\n" +
+		"Buffers: 50 kB\nCached: 300 kB\nSReclaimable: 100 kB\nShmem: 20 kB\nDirty: 5 kB\n")
+	m, err := ParseMetrics(out, CPUTimes{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.MemBuffers != 50*1024 {
+		t.Errorf("buffers %d", m.MemBuffers)
+	}
+	// Reclaimable slab is "used but not really", the same as page cache, and
+	// free(1) counts it here too.
+	if m.MemCached != 400*1024 {
+		t.Errorf("cached %d, want Cached+SReclaimable", m.MemCached)
+	}
+	if m.MemShared != 20*1024 || m.MemDirty != 5*1024 {
+		t.Errorf("shared %d dirty %d", m.MemShared, m.MemDirty)
+	}
+}
+
+// /proc/stat's intr line carries one number per interrupt vector — hundreds of
+// them on a real machine. Reading the whole file to get the cpu rows would put
+// that on the wire every two seconds.
+func TestMetricsScriptDoesNotShipTheInterruptTable(t *testing.T) {
+	for _, s := range []string{MetricsScript, MetricsScriptWithGPU} {
+		if !strings.Contains(s, "grep '^cpu' /proc/stat") {
+			t.Errorf("the stat line reads more than the cpu rows:\n%s", s)
+		}
+	}
+}
+
+// Every platform has to answer with the same shape.
+//
+// Windows has no per-core breakdown and no user/system/iowait/steal split. A
+// nil core list reaches the frontend as JSON null and the view maps over it; a
+// zeroed split draws a bar claiming the machine is doing nothing at all, which
+// is a statement rather than an absence.
+func TestWindowsMetricsFillTheSameShape(t *testing.T) {
+	m, err := ParseWindowsMetrics([]byte(""), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Cores == nil {
+		t.Error("Cores is nil — it reaches the view as null and the map throws")
+	}
+	if m.GPUs == nil || m.Filesystems == nil {
+		t.Error("a list arrived as nil")
+	}
+	if m.Split.User != -1 || m.Split.Steal != -1 {
+		t.Errorf("split %+v — zeroes say the machine is idle, which is a claim "+
+			"Windows cannot make here", m.Split)
+	}
+}
+
+// The Linux path has to say the same thing before its second sample.
+func TestLinuxSplitStartsUnknown(t *testing.T) {
+	m, err := ParseMetrics([]byte("#mem\nMemTotal: 1024 kB\n"), CPUTimes{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Cores == nil {
+		t.Error("Cores is nil")
+	}
+	if m.Split.User != -1 {
+		t.Errorf("split %+v with no stat section at all", m.Split)
+	}
 }
