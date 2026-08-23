@@ -12,6 +12,7 @@ import { NetworkView } from './NetworkView'
 import { ProcessView } from './ProcessView'
 import { SessionView } from './SessionView'
 import { MonitorView } from './MonitorView'
+import { forgetMetrics } from './metricsStore'
 import { ServiceView } from './ServiceView'
 
 // xterm.js is ~340KB — more than the rest of the app combined. The terminal is
@@ -149,6 +150,10 @@ export default function App() {
       setHosts((prev) =>
         prev.map((h) => (h.id === s.hostId ? { ...h, state: s.state } : h)),
       )
+      // A dropped connection is where the readings stop meaning anything: the
+      // counters behind them reset on a reboot, and Go clears its own baseline
+      // at the same moment. Switching hosts is not that — the history stays.
+      if (s.state === 'disconnected') forgetMetrics(s.hostId)
       if (s.error) setError(s.error)
     })
     return () => {

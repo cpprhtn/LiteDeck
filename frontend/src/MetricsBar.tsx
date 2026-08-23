@@ -1,13 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { HostMetrics, type GPU, type MetricsView } from './ipc'
 import { usePoll } from './usePoll'
-import {
-  GAP_MS,
-  forgetMetrics,
-  publishMetrics,
-  useMetricsHistory,
-  type Sample,
-} from './metricsStore'
+import { GAP_MS, publishMetrics, useMetricsHistory, type Sample } from './metricsStore'
 import { shortGPUName } from './gpuName'
 import { t } from './i18n'
 
@@ -180,10 +174,11 @@ export function MetricsBar({ hostID }: { hostID: string }) {
   }, [gpuOpen])
 
   useEffect(() => {
-    // Host changed: the previous host's history says nothing about this one.
-    // History lives in the store, which forgetMetrics clears — the bar keeps
-    // no second copy to fall out of step with it.
-    forgetMetrics(hostID)
+    // Only the bar's own view state. The readings and their history live in
+    // metricsStore, keyed by host, and switching to a host is not a reason to
+    // throw away what was already collected from it — going to another server
+    // and back used to restart the chart from nothing, which is the opposite of
+    // what a history is for. The gap while nobody was watching draws itself.
     setM(null)
     setGpuOpen(false)
     setFailed(null)
