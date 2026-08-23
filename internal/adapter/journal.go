@@ -96,9 +96,16 @@ type Event struct {
 
 // JournalArgs builds the argv for one timeline read.
 //
-// argv, never a shell string (§3.2b): `since` reaches here from the UI, and
-// journalctl's own `--since` accepts free text ("2 hours ago"), so it must not
-// be able to reach a shell. The caller validates the value; this only assembles.
+// argv, never a shell string (§3.2b). `since` never carries user text either:
+// the UI picks a range and the caller maps it to one of a fixed set, because
+// journalctl's `--since` accepts free English ("2 hours ago") and validating
+// that is a worse job than not accepting it.
+//
+// `-q` is not cosmetic. journalctl prints "you are currently not seeing
+// messages from other users and the system" **into its own output**, and
+// without this it would be the first thing the parser reads. `--no-pager`
+// likewise: journalctl pipes through less when it believes it has a terminal,
+// and the read would hang waiting for a keypress that never comes.
 func JournalArgs(since string, maxPriority, limit int) []string {
 	if limit <= 0 || limit > journalMaxLines {
 		limit = journalMaxLines
@@ -109,11 +116,38 @@ func JournalArgs(since string, maxPriority, limit int) []string {
 	return []string{
 		"-o", "json",
 		"--no-pager",
+		"-q",
 		"--since", since,
 		"-p", strconv.Itoa(maxPriority),
 		"-n", strconv.Itoa(limit),
 	}
 }
+
+// EventRange is how far back the timeline looks. A closed set, so that nothing
+// the user typed ever reaches journalctl.
+type EventRange string
+
+const (
+	EventRangeHour EventRange = "1h"
+	EventRangeDay  EventRange = "24h"
+	EventRangeWeek EventRange = "7d"
+)
+
+// Since maps a range onto journalctl's own syntax, defaulting to a day.
+func (r EventRange) Since() string {
+	switch r {
+	case EventRangeHour:
+		return "-1h"
+	case EventRangeWeek:
+		return "-7d"
+	default:
+		return "-24h"
+	}
+}
+
+// JournalMaxLines is journalMaxLines, exported so the view can tell "this is
+// everything" from "this is the first 500".
+const JournalMaxLines = journalMaxLines
 
 // journalMaxLines bounds one read. A busy server's journal is unbounded and
 // this is a timeline, not an export: past some number of rows nobody is reading
