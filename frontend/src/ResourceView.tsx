@@ -123,7 +123,7 @@ export function ResourceView({ hostID, cpuModel }: { hostID: string; cpuModel?: 
             label={t('CPU 사용률 추이')}
           />
           <SplitBar split={m.split} />
-          {m.hasPSI && <PressureLine label={t('CPU 압력')} p={m.psiCPU} />}
+          {m.hasPSI && <PressureLine kind="cpu" p={m.psiCPU} />}
           {cores.length > 1 && <CoreDie cores={cores} />}
         </Panel>
 
@@ -157,7 +157,7 @@ export function ResourceView({ hostID, cpuModel }: { hostID: string; cpuModel?: 
               />
             </>
           )}
-          {m.hasPSI && <PressureLine label={t('메모리 압력')} p={m.psiMemory} />}
+          {m.hasPSI && <PressureLine kind="memory" p={m.psiMemory} />}
         </Panel>
 
         {m.gpus.map((g) => (
@@ -226,7 +226,7 @@ export function ResourceView({ hostID, cpuModel }: { hostID: string; cpuModel?: 
               format={fmtRate}
               label={t('디스크 처리량 추이')}
             />
-            {m.hasPSI && <PressureLine label={t('IO 압력')} p={m.psiIO} />}
+            {m.hasPSI && <PressureLine kind="io" p={m.psiIO} />}
             <Facts
               rows={(m.diskIO ?? [])
                 .slice(0, 4)
@@ -319,15 +319,23 @@ function Chip({ label, value, warn }: { label: string; value: string; warn?: boo
  *  that is a machine doing its job — while one at 40% with rising pressure has
  *  tasks queueing. The kernel keeps the averages itself, so a connection that
  *  opened a second ago already carries the last five minutes. */
-function PressureLine({ label, p }: { label: string; p: Pressure }) {
+function PressureLine({ kind, p }: { kind: 'cpu' | 'memory' | 'io'; p: Pressure }) {
   const worst = Math.max(p.some10, p.some60, p.some300)
+  // The panel already says which resource. Repeating it put an "IO 압력" a few
+  // centimetres from the CPU split's "IO 대기" — two different numbers wearing
+  // almost the same name, with nothing on screen saying so.
+  const hint = {
+    cpu: t('작업이 CPU 를 얻지 못해 멈춰 있던 시간의 비율입니다. 사용률과는 다릅니다 — 100% 로 일하는 기계는 멀쩡한 것이고, 이 값이 오르면 일이 밀리고 있는 것입니다.'),
+    memory: t('작업이 메모리를 기다리느라 멈춰 있던 시간의 비율입니다. 회수와 스왑이 여기 들어갑니다. 여유가 남아 보여도 이 값이 오르면 실제로는 모자란 것입니다.'),
+    io: t('작업이 저장장치를 기다리느라 멈춰 있던 시간의 비율입니다. CPU 분해의 「IO 대기」 와는 다른 값입니다 — 그쪽은 CPU 시간에서 차지하는 몫이고, 이쪽은 작업이 실제로 멈춰 있던 시간의 몫입니다.')
+  }[kind]
   return (
     <div
       className="res-psi"
       data-warn={worst >= 10 || undefined}
-      title={t('일부 작업이 기다린 시간 비율 — 사용률과 달리 모자란지를 말합니다')}
+      title={hint}
     >
-      <span className="res-psi-label">{label}</span>
+      <span className="res-psi-label">{t('압력')}</span>
       <span className="res-psi-v">{p.some10.toFixed(1)}</span>
       <span className="muted">·</span>
       <span className="res-psi-v">{p.some60.toFixed(1)}</span>
@@ -405,7 +413,7 @@ function SplitBar({ split }: { split: CPUSplit }) {
   const parts = [
     { key: 'user', label: t('사용자 시간'), v: split.user, hint: t('프로그램이 직접 쓴 시간') },
     { key: 'system', label: t('커널 시간'), v: split.system, hint: t('커널이 그 프로그램을 대신해 쓴 시간') },
-    { key: 'iowait', label: t('IO 대기'), v: split.iowait, hint: t('디스크를 기다린 시간 — 높으면 CPU 가 아니라 디스크가 문제입니다') },
+    { key: 'iowait', label: t('IO 대기'), v: split.iowait, hint: t('CPU 가 할 일 없이 디스크를 기다린 시간의 몫입니다. 높으면 CPU 가 아니라 디스크가 문제입니다. 디스크 패널의 「압력」 과는 다른 값입니다 — 그쪽은 작업이 실제로 멈춰 있던 시간의 몫입니다.') },
     { key: 'steal', label: t('뺏김'), v: split.steal, hint: t('하이퍼바이저가 다른 손님에게 넘긴 시간 — 이 서버가 느린 이유가 이 서버 밖에 있습니다') },
   ]
   return (
@@ -421,12 +429,23 @@ function SplitBar({ split }: { split: CPUSplit }) {
         ))}
       </div>
       <Legend
-        items={parts.map((p) => ({
-          key: p.key,
-          label: p.label,
-          text: `${p.v.toFixed(0)}%`,
-          hint: p.hint,
-        }))}
+        items={[
+          ...parts.map((p) => ({
+            key: p.key,
+            label: p.label,
+            text: `${p.v.toFixed(0)}%`,
+            hint: p.hint,
+          })),
+          // The remainder. Went missing when this legend was built from the
+          // four buckets alone, and without it the four rarely add to anything
+          // a reader can check against.
+          {
+            key: 'idle',
+            label: t('유휴'),
+            text: `${Math.max(0, 100 - parts.reduce((a, p) => a + p.v, 0)).toFixed(0)}%`,
+            hint: t('아무 일도 하지 않은 시간의 몫입니다.'),
+          },
+        ]}
       />
     </>
   )
