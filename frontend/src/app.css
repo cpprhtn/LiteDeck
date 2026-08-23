@@ -2328,3 +2328,86 @@ button.events-unit {
   font-size: var(--text-xs);
   color: var(--fg);
 }
+
+/* CPU 분해. 네 숫자가 아니라 한 막대인 이유는 모양이 곧 읽는 값이기 때문이다 —
+   대부분이 IO 대기인 막대는 대부분이 사용자인 막대와 전혀 다르게 생겼고,
+   퍼센트만 노려봐서는 그게 안 튀어나온다. */
+.res-split {
+  display: flex;
+  height: 20px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-sunken);
+  margin-bottom: var(--sp-2);
+}
+.res-split span {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+[data-part='user'] { background: var(--accent); }
+[data-part='system'] { background: #8250df; }
+/* IO 대기와 뺏김은 「바쁨」이 아니라 「막힘」이다. 경고색을 주는 이유다. */
+[data-part='iowait'] { background: var(--warn); }
+[data-part='steal'] { background: var(--danger); }
+[data-part='app'] { background: var(--accent); }
+[data-part='buffers'] { background: #8250df; }
+[data-part='cached'] { background: var(--fg-faint); }
+
+.res-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  margin-bottom: var(--sp-3);
+}
+.res-legend i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: var(--sp-1);
+}
+
+/* 코어별. 집계는 「코어 하나가 박혀 있다」를 못 보여주는데, 그게 단일 스레드
+   병목의 모양이고 「서버가 느리다」의 가장 흔한 정체다. */
+.res-cores {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 40px;
+  padding: var(--sp-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+}
+.res-core {
+  flex: 1 1 4px;
+  min-width: 3px;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  background: var(--bg-raised);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.res-core span {
+  width: 100%;
+  background: var(--accent);
+  transition: height 0.3s ease;
+}
+.res-core[data-warn] span {
+  background: var(--danger);
+}
+
+.res-mem {
+  display: flex;
+  height: 20px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-sunken);
+  margin-bottom: var(--sp-2);
+}
+.res-mem span {
+  height: 100%;
+}

@@ -382,9 +382,33 @@ export interface EventsView {
   truncated: boolean
 }
 
+/** One logical CPU. Thirty-two cores at "40%" is either every core half busy or
+ *  one pinned and the rest idle, and those are different problems. */
+export interface Core {
+  index: number
+  /** -1 until a second sample. */
+  usage: number
+}
+
+/** Where the CPU time went between two samples, in percent. -1 when unknown.
+ *  90% that is all iowait is waiting for a disk, not short of CPU; 90% steal is
+ *  the hypervisor handing the time to somebody else. */
+export interface CPUSplit {
+  user: number
+  system: number
+  iowait: number
+  steal: number
+}
+
 export interface MetricsView {
   /** -1 until a second sample exists — the counters are totals since boot. */
   cpu: number
+  cores: Core[]
+  split: CPUSplit
+  memBuffers: number
+  memCached: number
+  memShared: number
+  memDirty: number
   memTotal: number
   memAvailable: number
   memUsed: number

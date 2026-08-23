@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Filesystem, GPU } from './ipc'
+import type { CPUSplit, Core, Filesystem, GPU } from './ipc'
 import { useMetrics } from './metricsStore'
 import { t } from './i18n'
 
@@ -51,14 +51,42 @@ export function ResourceView({ hostID }: { hostID: string }) {
   return (
     <div className="res-pane">
       <section className="res-section">
-        <h3>{t('지금')}</h3>
+        <h3>{t('CPU')}</h3>
+        {/* The bar says 40%. This says what the 40% is — which is the only
+            version of the number anybody can act on. */}
+        <SplitBar split={m.split} idle={m.cpu} />
+        {m.cores.length > 1 && <Cores cores={m.cores} />}
+      </section>
+
+      <section className="res-section">
+        <h3>{t('메모리')}</h3>
+        <MemoryBar
+          total={m.memTotal}
+          used={m.memUsed}
+          buffers={m.memBuffers}
+          cached={m.memCached}
+        />
         <div className="res-grid">
-          <Stat label="CPU" value={pct(m.cpu)} />
+          <Stat label={t('쓰는 중')} value={fmtBytes(m.memUsed)} note={pct(m.memPercent)} />
           <Stat
-            label={t('메모리')}
-            value={pct(m.memPercent)}
-            note={`${fmtBytes(m.memUsed)} / ${fmtBytes(m.memTotal)}`}
+            label={t('캐시')}
+            value={fmtBytes(m.memCached)}
+            note={t('필요하면 돌려받습니다')}
           />
+          <Stat label={t('버퍼')} value={fmtBytes(m.memBuffers)} />
+          {m.memShared > 0 && <Stat label={t('공유')} value={fmtBytes(m.memShared)} />}
+          {/* Dirty is pages written but not yet on disk. A number that keeps
+              climbing is a disk that cannot keep up with what is being written
+              to it. */}
+          {m.memDirty > 0 && (
+            <Stat label={t('미기록')} value={fmtBytes(m.memDirty)} note={t('아직 디스크에 안 감')} />
+          )}
+        </div>
+      </section>
+
+      <section className="res-section">
+        <h3>{t('그 밖')}</h3>
+        <div className="res-grid">
           <Stat
             label={t('스왑')}
             value={m.swapTotal > 0 ? pct((m.swapUsed / m.swapTotal) * 100) : '—'}
@@ -99,6 +127,99 @@ export function ResourceView({ hostID }: { hostID: string }) {
           </div>
         </section>
       )}
+    </div>
+  )
+}
+
+/** The CPU breakdown as one bar. Stacked rather than four numbers, because the
+ *  shape is the reading: a bar that is mostly iowait looks nothing like one
+ *  that is mostly user, and no amount of staring at percentages makes that
+ *  jump out. */
+function SplitBar({ split, idle }: { split: CPUSplit; idle: number }) {
+  if (split.user < 0) {
+    return (
+      <div className="muted small">
+        {t('두 번째 표본을 기다리는 중 — 누적 카운터라 한 번만으로는 알 수 없습니다')}
+      </div>
+    )
+  }
+  const parts: { key: string; label: string; v: number; hint: string }[] = [
+    { key: 'user', label: t('사용자 시간'), v: split.user, hint: t('프로그램이 직접 쓴 시간') },
+    { key: 'system', label: t('커널 시간'), v: split.system, hint: t('커널이 그 프로그램을 대신해 쓴 시간') },
+    { key: 'iowait', label: t('IO 대기'), v: split.iowait, hint: t('디스크를 기다린 시간 — 높으면 CPU 가 아니라 디스크가 문제입니다') },
+    { key: 'steal', label: t('뺏김'), v: split.steal, hint: t('하이퍼바이저가 다른 손님에게 넘긴 시간 — 이 서버가 느린 이유가 이 서버 밖에 있습니다') },
+  ]
+  return (
+    <>
+      <div className="res-split">
+        {parts.map((p) => (
+          <span
+            key={p.key}
+            data-part={p.key}
+            style={{ width: `${p.v}%` }}
+            title={`${p.label} ${p.v.toFixed(1)}% — ${p.hint}`}
+          />
+        ))}
+      </div>
+      <div className="res-legend">
+        {parts.map((p) => (
+          <span key={p.key} title={p.hint}>
+            <i data-part={p.key} />
+            {p.label} {p.v.toFixed(1)}%
+          </span>
+        ))}
+        <span className="muted">
+          {t('한가함')} {Math.max(0, 100 - (idle < 0 ? 0 : idle)).toFixed(1)}%
+        </span>
+      </div>
+    </>
+  )
+}
+
+/** One block per core. The aggregate cannot tell "every core half busy" from
+ *  "one core pinned", and the second is what a single-threaded bottleneck looks
+ *  like — the most common shape of "the server is slow". */
+function Cores({ cores }: { cores: Core[] }) {
+  return (
+    <div className="res-cores">
+      {cores.map((c) => (
+        <div
+          key={c.index}
+          className="res-core"
+          data-warn={c.usage >= 90 || undefined}
+          title={t('코어 {n} — {v}', { n: c.index, v: pct(c.usage) })}
+        >
+          <span style={{ height: `${c.usage < 0 ? 0 : Math.min(100, c.usage)}%` }} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** Used / buffers / cached as one bar. "70% used" is meaningless until the
+ *  cache is separated out — the kernel hands that back the moment anything
+ *  asks, so it is not pressure. */
+function MemoryBar({
+  total,
+  used,
+  buffers,
+  cached,
+}: {
+  total: number
+  used: number
+  buffers: number
+  cached: number
+}) {
+  if (total <= 0) return null
+  const w = (n: number) => `${Math.max(0, Math.min(100, (n / total) * 100))}%`
+  // used already excludes what the kernel would reclaim, so cache and buffers
+  // are drawn beside it rather than inside it.
+  const app = Math.max(0, used - buffers - cached)
+  return (
+    <div className="res-mem">
+      <span data-part="app" style={{ width: w(app) }} title={t('프로그램이 쥐고 있는 메모리')} />
+      <span data-part="buffers" style={{ width: w(buffers) }} title={t('버퍼')} />
+      <span data-part="cached" style={{ width: w(cached) }} title={t('캐시 — 필요하면 돌려받습니다')} />
     </div>
   )
 }

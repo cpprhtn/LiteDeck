@@ -24,16 +24,42 @@ import (
 type cpuHistory struct {
 	mu   sync.Mutex
 	byID map[string]adapter.CPUTimes
+	// cores holds the same thing per logical CPU, so that "one core pinned" and
+	// "every core half busy" can be told apart. Keyed by core index rather than
+	// by position: a kernel that renumbers cores across a hotplug would
+	// otherwise difference two different cores against each other and draw a
+	// number that never happened.
+	cores map[string]map[int]adapter.CPUTimes
 }
 
 func newCPUHistory() *cpuHistory {
-	return &cpuHistory{byID: make(map[string]adapter.CPUTimes)}
+	return &cpuHistory{
+		byID:  make(map[string]adapter.CPUTimes),
+		cores: make(map[string]map[int]adapter.CPUTimes),
+	}
 }
 
 func (h *cpuHistory) previous(hostID string) adapter.CPUTimes {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.byID[hostID]
+}
+
+// previousCore returns the last sample for one core, zero if never seen.
+func (h *cpuHistory) previousCore(hostID string, idx int) adapter.CPUTimes {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.cores[hostID][idx]
+}
+
+func (h *cpuHistory) recordCores(hostID string, cores []adapter.Core) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	next := make(map[int]adapter.CPUTimes, len(cores))
+	for _, c := range cores {
+		next[c.Index] = c.Times
+	}
+	h.cores[hostID] = next
 }
 
 // record stores a sample only once it has been parsed successfully. Storing
@@ -49,6 +75,7 @@ func (h *cpuHistory) forget(hostID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	delete(h.byID, hostID)
+	delete(h.cores, hostID)
 }
 
 // MetricsView is what the summary bar renders.
@@ -118,6 +145,14 @@ func (a *App) HostMetrics(hostID string) (MetricsView, error) {
 		return MetricsView{}, err
 	}
 	a.cpu.record(hostID, m.CPUTimes)
+	// Per core, against that core's own previous sample. Done here rather than
+	// in the parser because the parser has no memory — the counters are totals
+	// since boot, so one reading alone says nothing (the same reason the
+	// aggregate needs a history at all).
+	for i := range m.Cores {
+		m.Cores[i].Usage = m.Cores[i].Times.Usage(a.cpu.previousCore(hostID, m.Cores[i].Index))
+	}
+	a.cpu.recordCores(hostID, m.Cores)
 	if gpuLive {
 		// Never nil: the bar maps over this, and a host with no card has to
 		// arrive as an empty list rather than as a missing one.
