@@ -100,7 +100,7 @@ All the server does is **run commands it already had and hand back text**. Which
 | **Command Log** | **Every command the GUI runs, live.** Click to copy |
 | **MCP** | Claude Code and Claude Desktop read and change your servers through this app. Per-server opt-in, changes are approved, **and can be undone** |
 | **Connecting** | Password, key, agent, 2FA. Import from `~/.ssh/config`. One **ProxyJump** hop |
-| **Language** | English and Korean. Follows your OS on first run; switch with `KO`/`EN` at the bottom of the sidebar |
+| **Language** | English and Korean. Uses whichever you last chose, or your OS language if you never have. Switch with `KO`/`EN` at the bottom of the sidebar |
 
 ### It does not hide what it ran
 
