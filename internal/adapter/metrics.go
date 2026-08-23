@@ -698,13 +698,27 @@ func InterestingFilesystems(all []Filesystem) []Filesystem {
 	skipDevices := []string{"tmpfs", "devtmpfs", "shm", "overlay", "udev", "none"}
 	skipMounts := []string{"/dev", "/sys", "/proc", "/run", "/snap"}
 
+	// Files that a container runtime bind-mounts one at a time. df reports each
+	// as a filesystem the size of the whole disk it came from, so on a
+	// container they read as three more copies of the root — and when the root
+	// itself is skipped for being overlay, one of them becomes "the disk". A
+	// summary bar saying the machine's storage is /etc/hosts is worse than
+	// saying nothing.
+	skipExact := []string{"/etc/hosts", "/etc/hostname", "/etc/resolv.conf"}
+
 	out := []Filesystem{}
 	seen := make(map[string]bool)
 	for _, fs := range all {
 		if fs.Size == 0 || seen[fs.MountPoint] {
 			continue
 		}
-		if slicesContainsFold(skipDevices, fs.Device) {
+		if slicesContainsFold(skipExact, fs.MountPoint) {
+			continue
+		}
+		// The root filesystem is always worth showing, whatever driver is
+		// under it. Skipping it for being "overlay" is how a container ends up
+		// with no root on screen at all.
+		if fs.MountPoint != "/" && slicesContainsFold(skipDevices, fs.Device) {
 			continue
 		}
 		if hasAnyPrefix(fs.MountPoint, skipMounts) {
