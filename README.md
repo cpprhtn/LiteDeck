@@ -1,3 +1,5 @@
+
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.png">
@@ -98,7 +100,7 @@ RDP·VNC·TeamViewer는 서버의 **화면 픽셀을 영상으로 스트리밍**
 | **Command Log** | GUI가 실행한 **모든 명령을 실시간으로 표시**. 클릭하면 복사됩니다 |
 | **MCP** | Claude Code·Claude Desktop이 이 앱을 통해 서버를 조회하고 바꿉니다. 서버별 opt-in, 변경은 승인, **되돌리기 가능** |
 | **접속** | 비밀번호·키·에이전트·2FA. `~/.ssh/config` 가져오기. **ProxyJump** 로 경유 서버 한 단계 |
-| **언어** | 한국어·영어. 처음 열 때 OS 언어를 따르고, 사이드바 아래 `KO`/`EN` 로 바꿉니다 |
+| **언어** | 한국어·영어. 설정된 언어가 있으면 그 언어를, 없으면 OS 언어를 따르고, 사이드바 아래 `KO`/`EN` 로 바꿉니다 |
 
 ### 무엇을 실행했는지 숨기지 않습니다
 
@@ -153,7 +155,7 @@ claude mcp add --transport http litedeck http://127.0.0.1:<포트>/mcp \
 > 그래서 첫 실행에 macOS Gatekeeper와 Windows SmartScreen 경고가 뜹니다. 넘어가는 방법은
 > [설치와 서버 준비](docs/install.md)에 적어두었습니다.
 
-**서버 쪽 준비.** Linux는 이미 SSH로 접속하고 계시면 끝입니다. Windows는 OpenSSH 서버만 켜면 됩니다.
+**서버 쪽 준비.** Linux은 이미 SSH로 접속하고 계시면 끝입니다. Windows는 OpenSSH 서버만 켜면 됩니다.
 집에 있는 PC를 외부에서 다루려면 포트포워딩 대신 메시 VPN을 권합니다 —
 [서버 준비](docs/install.md#서버-준비) · [Tailscale로 외부에서 쓰기](docs/remote-access.md)
 
