@@ -77,6 +77,7 @@ export function ResourceView({ hostID, cpuModel }: { hostID: string; cpuModel?: 
             label={t('CPU 사용률 추이')}
           />
           <SplitBar split={m.split} />
+          {cores.length > 1 && <CoreDie cores={cores} />}
         </Panel>
 
         <Panel
@@ -163,18 +164,6 @@ export function ResourceView({ hostID, cpuModel }: { hostID: string; cpuModel?: 
           <Facts rows={[[t('가동 시간'), fmtUptime(m.uptimeSeconds)]]} />
         </Panel>
       </div>
-
-      {cores.length > 1 && (
-        <section className="res-block">
-          <h3>
-            {t('코어')} <span className="muted">{cores.length}</span>
-          </h3>
-          {/* The aggregate cannot tell "every core half busy" from "one core
-              pinned", and the second is what a single-threaded bottleneck looks
-              like — the most common shape of "the server is slow". */}
-          <Cores cores={cores} />
-        </section>
-      )}
 
       <section className="res-block">
         <h3>{t('파일시스템')}</h3>
@@ -289,17 +278,57 @@ function Legend({
   )
 }
 
-function Cores({ cores }: { cores: Core[] }) {
+/**
+ * The cores, laid out the way a die is rather than as one long row.
+ *
+ * The aggregate cannot tell "every core half busy" from "one core pinned", and
+ * the second is what a single-threaded bottleneck looks like — the most common
+ * shape of "the server is slow". A single row made that visible but grew
+ * unreadably wide past a dozen cores and read as a waveform, which it is not:
+ * the cores have no order that means anything, so a shape implying one is a
+ * shape that misleads.
+ *
+ * A block does not imply order, packs a 64-core machine into the same panel as
+ * a 4-core one, and looks like the thing it describes.
+ */
+function CoreDie({ cores }: { cores: Core[] }) {
+  const n = cores.length
+  // The nearest clean rectangle, so 8 is 4×2 and 12 is 4×3 rather than both
+  // being ragged. A prime count has no clean pair, so it falls back to square.
+  let rows = 1
+  for (let d = Math.floor(Math.sqrt(n)); d >= 1; d--) {
+    if (n % d === 0) {
+      rows = d
+      break
+    }
+  }
+  const cols = rows > 1 ? n / rows : Math.ceil(Math.sqrt(n))
+
+  // Cells shrink as the count grows so that a 128-thread server still fits the
+  // panel it shares with every other machine.
+  const cell = n <= 16 ? 20 : n <= 64 ? 13 : 8
+
   return (
-    <div className="res-cores">
+    <div
+      className="res-die"
+      style={{
+        gridTemplateColumns: `repeat(${cols}, ${cell}px)`,
+        gap: cell >= 13 ? 3 : 2,
+      }}
+      role="img"
+      aria-label={t('코어 {n}개', { n })}
+    >
       {cores.map((c) => (
         <div
           key={c.index}
           className="res-core"
           data-warn={c.usage >= 90 || undefined}
+          style={{ ['--fill' as string]: `${c.usage < 0 ? 0 : Math.min(100, c.usage)}%` }}
           title={t('코어 {n} — {v}', { n: c.index, v: pct(c.usage) })}
         >
-          <span style={{ height: `${c.usage < 0 ? 0 : Math.min(100, c.usage)}%` }} />
+          {/* The number only where it can be read. Below that size it would be
+              a smudge, and the tooltip already says which core this is. */}
+          {cell >= 20 && <span className="res-core-n">{c.index}</span>}
         </div>
       ))}
     </div>

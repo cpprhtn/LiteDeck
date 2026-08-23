@@ -2401,33 +2401,51 @@ button.events-unit {
   letter-spacing: 0.04em;
 }
 
-.res-cores {
-  display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 32px;
-  padding: var(--sp-1);
+/* 코어를 한 줄이 아니라 다이처럼 늘어놓는다. 한 줄은 열두 개만 넘어도
+   읽을 수 없이 길어지고, 무엇보다 파형처럼 보인다 — 코어에는 의미 있는
+   순서가 없으므로 순서를 암시하는 모양은 오해를 부른다. */
+.res-die {
+  display: grid;
+  width: fit-content;
+  margin-top: var(--sp-2);
+  padding: 3px;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 4px;
   background: var(--bg-sunken);
 }
+/* 칸마다 아래에서 차오른다. 색의 진하기로 짐작하게 하는 것보다 높이가
+   정확하다 — 40% 와 60% 를 눈으로 가를 수 있다. */
 .res-core {
-  flex: 1 1 4px;
-  min-width: 3px;
-  height: 100%;
-  display: flex;
-  align-items: flex-end;
-  background: var(--bg-raised);
+  position: relative;
+  aspect-ratio: 1;
   border-radius: 2px;
-  overflow: hidden;
+  background: linear-gradient(
+    to top,
+    var(--accent) var(--fill, 0%),
+    var(--bg-raised) var(--fill, 0%)
+  );
+  transition: background 0.3s ease;
 }
-.res-core span {
-  width: 100%;
-  background: var(--accent);
-  transition: height 0.3s ease;
+.res-core[data-warn] {
+  background: linear-gradient(
+    to top,
+    var(--danger) var(--fill, 0%),
+    var(--bg-raised) var(--fill, 0%)
+  );
 }
-.res-core[data-warn] span {
-  background: var(--danger);
+.res-core-n {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--fg-muted);
+  /* 채움 위에 얹히므로 섞이게 둔다 — 흰 글씨 검은 글씨 중 하나를 고르면
+     반대쪽 채움 높이에서 안 보인다. */
+  mix-blend-mode: difference;
+  opacity: 0.7;
 }
 
 .res-table {

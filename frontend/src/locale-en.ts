@@ -261,6 +261,7 @@ export const en: Record<string, string> = {
   '5분': '5 min',
   '15분': '15 min',
   '코어': 'Cores',
+  '코어 {n}개': '{n} cores',
   '온도': 'Temp',
   '팬': 'Fan',
   '프로그램': 'Programs',
