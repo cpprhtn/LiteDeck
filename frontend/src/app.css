@@ -2104,3 +2104,108 @@ button.danger {
   min-height: 32px;
   line-height: 1.5;
 }
+
+/* ── 사건 타임라인 (§4.7, arch/07) ──────────────────────────────
+   로그 뷰어가 아니다. 한 줄에 하나씩, 무슨 일이 언제 있었나만 읽히면 된다.
+   그래서 행이 촘촘하고, 색은 심각도에만 쓴다 — 평범한 줄에 색을 주면
+   심각한 줄이 안 보인다. */
+.events-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+.events-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+.events-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.events-note {
+  padding: var(--sp-1) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+.events-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-md);
+}
+.events-at {
+  flex: 0 0 auto;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+.events-kind {
+  flex: 0 0 auto;
+  font-size: var(--text-xs);
+  padding: 1px var(--sp-2);
+  border-radius: 9px;
+  border: 1px solid var(--border-strong);
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+.events-unit {
+  flex: 0 1 auto;
+  max-width: 220px;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+button.events-unit {
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  text-decoration: underline dotted;
+}
+.events-msg {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.events-row[data-tone='bad'] .events-kind {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.events-row[data-tone='warn'] .events-kind {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+/* 재부팅 경계. 「응답이 없었다」와 「재시작됐다」를 가르는 유일한 맥락이다. */
+.events-boot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--text-xs);
+  color: var(--fg-faint);
+}
+.events-boot::before,
+.events-boot::after {
+  content: '';
+  flex: 1;
+  border-top: 1px dashed var(--border-strong);
+}
+/* 빈 목록이 어떤 종류의 빔인지 말하는 자리. 눈에 띄어야 한다 —
+   못 읽는 것을 「아무 일도 없었다」로 읽고 넘어가면 안 된다. */
+.events-notice {
+  margin: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+}
+.events-notice p {
+  margin: 0 0 var(--sp-2);
+}
+.events-notice p:last-child {
+  margin-bottom: 0;
+}

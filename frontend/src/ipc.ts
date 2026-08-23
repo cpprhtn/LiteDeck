@@ -348,6 +348,40 @@ export interface GPU {
   memPercent: number
 }
 
+/** One row of the event timeline. See arch/07. */
+export interface ServerEvent {
+  at: string
+  kind:
+    | 'oom'
+    | 'unit-failed'
+    | 'start-failed'
+    | 'coredump'
+    | 'restart'
+    | 'boot'
+    | 'shutdown'
+    | 'session'
+    | 'other'
+  /** Journal PRIORITY: 0 emerg … 7 debug (RFC 5424). */
+  severity: number
+  unit?: string
+  message: string
+  /** Two adjacent rows with different boot ids have a reboot between them. */
+  bootId: string
+}
+
+/**
+ * `access` is why the list may be empty, which matters more here than anywhere
+ * else: a user outside systemd-journal/adm gets an empty journal with no error,
+ * and rendered plainly that reads as "nothing has gone wrong on this server".
+ */
+export interface EventsView {
+  events: ServerEvent[]
+  access: 'ok' | 'needs-sudo' | 'denied' | 'no-journal'
+  range: '1h' | '24h' | '7d'
+  /** The read hit its line cap, so the window shown is narrower than asked for. */
+  truncated: boolean
+}
+
 export interface MetricsView {
   /** -1 until a second sample exists — the counters are totals since boot. */
   cpu: number
@@ -560,6 +594,7 @@ interface Bindings {
   ProcessExists(id: string, pid: number): Promise<boolean>
 
   HostMetrics(id: string): Promise<MetricsView>
+  HostEvents(id: string, range: string, elevate: boolean): Promise<EventsView>
   HostNetwork(id: string): Promise<NetworkView>
   SSHDConfig(id: string): Promise<SSHDReport>
   FollowServiceLog(
@@ -779,6 +814,8 @@ export const ProcessExists = (id: string, pid: number) =>
   api().ProcessExists(id, pid)
 
 export const HostMetrics = (id: string) => api().HostMetrics(id)
+export const HostEvents = (id: string, range: string, elevate: boolean) =>
+  api().HostEvents(id, range, elevate)
 export const HostNetwork = (id: string) => api().HostNetwork(id)
 export const SSHDConfig = (id: string) => api().SSHDConfig(id)
 export const FollowServiceLog = (
