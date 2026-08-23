@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"errors"
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
 	"github.com/cpprhtn/LiteDeck/internal/i18n"
 )
@@ -49,6 +50,16 @@ func (a *App) ListContainers(hostID string) ([]adapter.Container, error) {
 
 	res, err := conn.Poll(ctx, runtime, adapter.PSArgsContainers()...)
 	if err != nil {
+		// A listing that ran out of time is not the same failure as a daemon
+		// that is not there, and "context deadline exceeded" tells the user
+		// neither. This one is worth naming because it is specific and it is
+		// not the app's to fix: seen on a host whose other queries answered in
+		// a tenth of a second while the container listing took 19.8 seconds,
+		// three times running — a figure that steady is something inside the
+		// daemon waiting on its own timeout, not work that takes a while.
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, i18n.Errorf("컨테이너 목록이 %.0f초 안에 오지 않았습니다 — 다른 탭이 멀쩡하다면 서버가 느린 것이 아니라 %s 데몬이 무언가를 기다리는 것입니다. 서버에서 `time %s ps` 와 `time %s ps -a` 를 비교해 보세요", pollTimeout.Seconds(), runtime, runtime, runtime)
+		}
 		return nil, err
 	}
 	if !res.OK() {
