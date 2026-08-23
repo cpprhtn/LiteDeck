@@ -99,6 +99,13 @@ type ServerInfo struct {
 	// round trip. Empty where the kernel does not name one.
 	CPUModel string `json:"cpuModel,omitempty"`
 
+	// Hostname and Timezone are what the machine calls itself and what its
+	// clock is set to. Both are fixed for the life of a connection, and the
+	// timezone is the one that decides whether a log line at 03:14 happened in
+	// the middle of the night or the middle of the afternoon.
+	Hostname string `json:"hostname,omitempty"`
+	Timezone string `json:"timezone,omitempty"`
+
 	// Errors that did not stop detection, for the bug report template (§11).
 	Warnings []string `json:"warnings,omitempty"`
 }
@@ -251,6 +258,22 @@ func Detect(ctx context.Context, r Runner) (ServerInfo, error) {
 
 	if res, err := r.Probe(ctx, "cat", "/proc/cpuinfo"); err == nil && res.OK() {
 		info.CPUModel = cpuModel(string(res.Stdout))
+	}
+	if res, err := r.Probe(ctx, "cat", "/proc/sys/kernel/hostname"); err == nil && res.OK() {
+		info.Hostname = strings.TrimSpace(string(res.Stdout))
+	}
+	// /etc/timezone is Debian's; the symlink is what everyone else has. Reading
+	// the file first because it is one read against a readlink plus a trim.
+	if res, err := r.Probe(ctx, "cat", "/etc/timezone"); err == nil && res.OK() {
+		info.Timezone = strings.TrimSpace(string(res.Stdout))
+	}
+	if info.Timezone == "" {
+		if res, err := r.Probe(ctx, "readlink", "-f", "/etc/localtime"); err == nil && res.OK() {
+			// /usr/share/zoneinfo/Asia/Seoul → Asia/Seoul
+			if _, zone, ok := strings.Cut(strings.TrimSpace(string(res.Stdout)), "/zoneinfo/"); ok {
+				info.Timezone = zone
+			}
+		}
 	}
 
 	info.HasDocker = commandExists(ctx, r, "docker")

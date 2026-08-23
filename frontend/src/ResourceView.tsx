@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { CPUSplit, Core, DiskIO, Filesystem, GPU, NetIface, Pressure } from './ipc'
-import { useMetrics, useMetricsHistory } from './metricsStore'
+import { useMetrics, useMetricsHistory, type Sample } from './metricsStore'
 import { TimeChart } from './TimeChart'
 import { shortGPUName } from './gpuName'
 import { t } from './i18n'
@@ -53,7 +53,7 @@ function pct(v: number): string {
   return v < 0 ? '—' : `${Math.round(v)}%`
 }
 
-export function ResourceView({ hostID, cpuModel }: { hostID: string; cpuModel?: string }) {
+export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFacts }) {
   // No poll of its own: the summary bar above is already reading these numbers
   // for this host, and asking again would be a second round trip for the same
   // answer.
@@ -73,46 +73,75 @@ export function ResourceView({ hostID, cpuModel }: { hostID: string; cpuModel?: 
 
   return (
     <div className="res-pane">
-      {/* The strip is for figures that are one number and stay one number.
-          Putting them in panels would give six charts of a flat line and push
-          the things that do move off the screen. */}
-      <div className="res-strip">
-        <Chip label={t('가동 시간')} value={fmtUptime(m.uptimeSeconds)} />
-        {/* r and b are vmstat's, and together they say which of the two a slow
-            machine is short of: tasks queueing for a CPU, or tasks parked in
-            uninterruptible IO. */}
-        <Chip label={t('실행 대기')} value={String(m.runnable ?? 0)} />
-        <Chip
-          label={t('IO 블록')}
-          value={String(m.blocked ?? 0)}
-          warn={(m.blocked ?? 0) > 0}
+      {/* The overview row: every resource as one number with its shape beside
+          it. Text alone made this a list to read; the line makes it a row to
+          scan, and scanning is what somebody opening a monitoring tab is doing.
+          Whatever looks wrong here is what they click into below. */}
+      <div className="res-top">
+        <TopStat
+          label="CPU"
+          value={pct(m.cpu)}
+          sub={cores.length ? t('코어 {n}', { n: cores.length }) : undefined}
+          samples={history}
+          pick={(x) => x.cpu}
+          warn={m.cpu >= 90}
         />
-        {m.switchRate >= 0 && (
-          <Chip label={t('컨텍스트 전환')} value={t('{n}/초', { n: Math.round(m.switchRate) })} />
-        )}
-        {m.fdUsed > 0 && (
-          <Chip
-            label={t('열린 FD')}
-            value={m.fdMax > 0 ? `${m.fdUsed} / ${m.fdMax}` : String(m.fdUsed)}
-            warn={m.fdMax > 0 && m.fdUsed / m.fdMax > 0.8}
+        <TopStat
+          label={t('메모리')}
+          value={pct(m.memPercent)}
+          sub={`${fmtBytes(m.memUsed)} / ${fmtBytes(m.memTotal)}`}
+          samples={history}
+          pick={(x) => x.mem}
+          warn={m.memPercent >= 90}
+        />
+        {m.gpus.map((g) => (
+          <TopStat
+            key={g.index}
+            label={m.gpus.length > 1 ? t('GPU {n}', { n: g.index }) : 'GPU'}
+            value={pct(g.utilization)}
+            sub={shortGPUName(g.name)}
+            samples={history}
+            pick={(x) => x.gpu[g.index] ?? -1}
+            warn={g.utilization >= 95 || g.tempC >= 85}
+          />
+        ))}
+        {(m.diskIO ?? []).length > 0 && (
+          <TopStat
+            label={t('디스크 I/O')}
+            value={fmtRate(diskR)}
+            sub={t('쓰기 {v}', { v: fmtRate(diskW) })}
+            samples={history}
+            pick={(x) => x.diskR}
+            scale="auto"
           />
         )}
-        {m.hasLoad && cores.length > 0 && (
-          // The doc every sysadmin repeats: load only means something against
-          // the core count. 8 on eight cores is busy; 8 on two is drowning.
-          <Chip
-            label={t('로드 / 코어')}
-            value={`${m.load1.toFixed(2)} / ${cores.length}`}
-            warn={m.load1 > cores.length}
+        {(m.net ?? []).length > 0 && (
+          <TopStat
+            label={t('네트워크')}
+            value={fmtRate(netRx)}
+            sub={t('보냄 {v}', { v: fmtRate(netTx) })}
+            samples={history}
+            pick={(x) => x.netRx}
+            scale="auto"
+            warn={netBad > 0}
           />
         )}
+        {m.hasLoad && (
+          <TopStat
+            label={t('로드')}
+            value={m.load1.toFixed(2)}
+            sub={t('1분 평균')}
+            warn={cores.length > 0 && m.load1 > cores.length}
+          />
+        )}
+        <TopStat label={t('가동 시간')} value={fmtUptime(m.uptimeSeconds)} sub={since(m.uptimeSeconds)} />
       </div>
 
       <div className="res-grid">
         <Panel
           label="CPU"
           value={pct(m.cpu)}
-          sub={cpuModel ? [cpuModel] : undefined}
+          sub={facts.cpuModel ? [facts.cpuModel] : undefined}
           warn={m.cpu >= 90}
         >
           <TimeChart
@@ -124,6 +153,17 @@ export function ResourceView({ hostID, cpuModel }: { hostID: string; cpuModel?: 
           />
           <SplitBar split={m.split} />
           {m.hasPSI && <PressureLine kind="cpu" p={m.psiCPU} />}
+          {/* vmstat's r and b. Between them they say which of the two a slow
+              machine is short of: tasks queueing for a CPU, or tasks parked in
+              uninterruptible IO. They went missing when the chip strip became
+              the overview row — which is how a number nobody displays survives
+              being collected. */}
+          <Facts
+            rows={[
+              [t('실행 대기'), String(m.runnable ?? 0)],
+              [t('IO 블록'), String(m.blocked ?? 0)],
+            ]}
+          />
           {cores.length > 1 && <CoreDie cores={cores} />}
         </Panel>
 
@@ -261,6 +301,19 @@ export function ResourceView({ hostID, cpuModel }: { hostID: string; cpuModel?: 
       </div>
 
       <section className="res-block">
+        <h3>{t('시스템')}</h3>
+        <div className="res-panel">
+          <SystemInfo
+            info={facts}
+            uptime={m.uptimeSeconds}
+            fdUsed={m.fdUsed}
+            fdMax={m.fdMax}
+            switchRate={m.switchRate}
+          />
+        </div>
+      </section>
+
+      <section className="res-block">
         <h3>{t('파일시스템')}</h3>
         <FilesystemTable rows={m.filesystems} shown={m.disks} />
       </section>
@@ -302,14 +355,98 @@ function Panel({
   )
 }
 
-/** One number that stays one number. */
-function Chip({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
+/** One resource in the overview row: a number and, where the figure moves, its
+ *  shape. Uptime has no shape and simply does not get a line. */
+function TopStat({
+  label,
+  value,
+  sub,
+  samples,
+  pick,
+  scale,
+  warn,
+}: {
+  label: string
+  value: string
+  sub?: string
+  samples?: Sample[]
+  pick?: (s: Sample) => number
+  scale?: 'percent' | 'auto'
+  warn?: boolean
+}) {
   return (
-    <div className="res-chip" data-warn={warn || undefined}>
-      <span className="res-chip-label">{label}</span>
-      <span className="res-chip-value">{value}</span>
+    <div className="res-top-card" data-warn={warn || undefined}>
+      <div className="res-top-label">{label}</div>
+      <div className="res-top-value">{value}</div>
+      {sub && (
+        <div className="res-top-sub ellipsis" title={sub}>
+          {sub}
+        </div>
+      )}
+      {samples && pick && (
+        <TimeChart samples={samples} pick={pick} height={26} scale={scale} bare label={label} />
+      )}
     </div>
   )
+}
+
+/** What the machine is, as opposed to what it is doing. None of it moves while
+ *  the connection is up, so it is read once by detection rather than polled —
+ *  and it is the half of the answer somebody needs before the numbers above
+ *  mean anything. */
+function SystemInfo({
+  info,
+  uptime,
+  fdUsed,
+  fdMax,
+  switchRate,
+}: {
+  info: SysFacts
+  uptime: number
+  fdUsed: number
+  fdMax: number
+  switchRate: number
+}) {
+  const rows: [string, string][] = []
+  if (info.prettyName) rows.push(['OS', info.prettyName])
+  if (info.kernel) rows.push([t('커널'), info.kernel])
+  if (info.hostname) rows.push([t('호스트명'), info.hostname])
+  rows.push([t('가동 시간'), fmtUptime(uptime)])
+  rows.push([t('부팅 시각'), since(uptime)])
+  if (info.timezone) rows.push([t('시간대'), info.timezone])
+  // Not facts about the machine but counters about the whole of it, and there
+  // is nowhere better: running out of descriptors takes a server down in a way
+  // that looks like nothing else is wrong.
+  if (fdUsed > 0) {
+    rows.push([t('열린 FD'), fdMax > 0 ? `${fdUsed} / ${fdMax}` : String(fdUsed)])
+  }
+  if (switchRate >= 0) {
+    rows.push([t('컨텍스트 전환'), t('{n}/초', { n: Math.round(switchRate) })])
+  }
+  return <Facts rows={rows} />
+}
+
+export interface SysFacts {
+  prettyName?: string
+  kernel?: string
+  hostname?: string
+  /** Shown by the CPU panel, which is where somebody studying the processor is
+   *  already looking — so the facts block does not repeat it. */
+  cpuModel?: string
+  timezone?: string
+}
+
+/** The wall-clock moment the machine came up, from how long it has been up.
+ *  Shown in the reader's own timezone: they are reading it here. */
+function since(uptimeSeconds: number): string {
+  const d = new Date(Date.now() - uptimeSeconds * 1000)
+  return d.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
 /** PSI as one line.
@@ -483,33 +620,20 @@ function Legend({
  */
 function CoreDie({ cores }: { cores: Core[] }) {
   const n = cores.length
-  // The nearest clean rectangle, so 8 is 4×2 and 12 is 4×3 rather than both
-  // being ragged. A prime count has no clean pair, so it falls back to square.
-  let rows = 1
-  for (let d = Math.floor(Math.sqrt(n)); d >= 1; d--) {
-    if (n % d === 0) {
-      rows = d
-      break
-    }
-  }
-  const cols = rows > 1 ? n / rows : Math.ceil(Math.sqrt(n))
 
-  // Columns are fractions so the die grows into the panel instead of sitting in
-  // its corner — but only up to a cell size, and then it centres. Letting them
-  // grow without limit turned a four-core machine in a wide panel into four
-  // strips 220px across and 34 tall, which is a bar chart wearing a grid's
-  // clothes. Squares that stop growing and sit in the middle read better than
-  // rectangles that fill every pixel.
-  const cap = n <= 4 ? 64 : n <= 16 ? 52 : n <= 64 ? 40 : 26
-  const gap = cap >= 40 ? 3 : 2
+  // Let CSS choose the columns from the width it actually has. The fixed
+  // "nearest clean rectangle" put twenty cores in a 5×4 block regardless of
+  // whether the panel was 240px or 450px wide, so a wide panel got a tall
+  // square with empty space either side. auto-fill lays them out flat when
+  // there is room and stacks them when there is not.
+  const cell = n <= 16 ? 34 : n <= 64 ? 24 : 16
 
   return (
     <div
       className="res-die"
       style={{
-        gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-        maxWidth: cols * cap + (cols - 1) * gap,
-        gap,
+        gridTemplateColumns: `repeat(auto-fill, minmax(${cell}px, 1fr))`,
+        gap: cell >= 24 ? 3 : 2,
       }}
       role="img"
       aria-label={t('코어 {n}개', { n })}
@@ -524,7 +648,7 @@ function CoreDie({ cores }: { cores: Core[] }) {
         >
           {/* The number only where it can be read. Below that height it would
               be a smudge, and the tooltip already says which core this is. */}
-          {cap >= 40 && <span className="res-core-n">{c.index}</span>}
+          {cell >= 24 && <span className="res-core-n">{c.index}</span>}
         </div>
       ))}
     </div>

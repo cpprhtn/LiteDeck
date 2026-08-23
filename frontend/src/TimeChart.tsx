@@ -36,6 +36,7 @@ export function TimeChart({
   /** A second series drawn under the first — transmit against receive, write
    *  against read. Two panels for one question reads worse than one. */
   pick2,
+  bare,
 }: {
   samples: Sample[]
   /** The value to plot, or -1 where this sample has none. */
@@ -47,9 +48,14 @@ export function TimeChart({
   scale?: 'percent' | 'auto'
   format?: (v: number) => string
   pick2?: (s: Sample) => number
+  /** No axes, no ticks, no empty-state text: the sparkline inside a stat card,
+   *  where the number beside it already says what the value is and the line is
+   *  only there to say which way it has been going. */
+  bare?: boolean
 }) {
   const usable = samples.filter((s) => pick(s) >= 0)
   if (usable.length < 2) {
+    if (bare) return <div className="chart-bare" style={{ height }} />
     return (
       <div className="chart-empty placeholder small">
         {t('아직 그릴 만큼 모이지 않았습니다.')}
@@ -90,6 +96,20 @@ export function TimeChart({
 
   const hot = warnAt !== undefined && Math.max(...usable.map(pick)) >= warnAt
 
+  // Half and full. Three lines across a 44px panel is a grid; two is a scale.
+  const ticks = [peak / 2, peak]
+  const fmtTick = (v: number) => (format ? format(v) : `${Math.round(v)}%`)
+
+  // Times along the bottom rather than only at the ends: with one label at each
+  // edge the middle of the chart has no time attached to it at all, and "when
+  // did it spike" is most of what anybody asks a chart.
+  const stamps: { at: number; x: number }[] = []
+  const steps = 4
+  for (let i = 0; i <= steps; i++) {
+    const at = t0 + (span * i) / steps
+    stamps.push({ at, x: (i / steps) * 100 })
+  }
+
   // The second series gets the same gap treatment, but silently: one "N gaps"
   // note under the chart covers both.
   const runs2: string[][] = [[]]
@@ -102,7 +122,19 @@ export function TimeChart({
   }
 
   return (
-    <div className="chart">
+    <div className="chart" data-bare={bare || undefined}>
+      {!bare && (
+        <>{/* The scale, printed. A line with no number beside it says only that
+          something moved — and on a fixed 0–100 chart a flat line near the
+          bottom and one near the top mean opposite things. */}
+      <div className="chart-ticks" style={{ height }}>
+        {ticks.map((v) => (
+          <span key={v} style={{ bottom: `${(v / peak) * 100}%` }}>
+            {fmtTick(v)}
+          </span>
+        ))}
+      </div></>
+      )}
       <svg
         viewBox={`0 0 ${w} ${height}`}
         preserveAspectRatio="none"
@@ -110,11 +142,10 @@ export function TimeChart({
         aria-label={label}
         data-warn={hot || undefined}
       >
-        {/* 0–100 fixed. Auto-scaling would make 2% look identical to 90%,
-            which is the distinction the chart exists to show. */}
-        {[25, 50, 75].map((g) => (
-          <line key={g} className="chart-grid" x1="0" x2={w} y1={y(g)} y2={y(g)} />
-        ))}
+        {!bare &&
+          ticks.map((v) => (
+            <line key={v} className="chart-grid" x1="0" x2={w} y1={y(v)} y2={y(v)} />
+          ))}
         {gaps.map((g, i) => (
           <rect
             key={i}
@@ -154,11 +185,19 @@ export function TimeChart({
           ),
         )}
       </svg>
+      {!bare && (
       <div className="chart-axis muted">
-        <span>{clock(t0)}</span>
-        {scale === 'auto' && format && <span>{t('최고 {v}', { v: format(peak) })}</span>}
-        <span>{clock(t1)}</span>
+        {stamps.map((s2, i) => (
+          <span
+            key={i}
+            style={{ left: `${s2.x}%` }}
+            data-edge={i === 0 ? 'first' : i === steps ? 'last' : undefined}
+          >
+            {clock(s2.at)}
+          </span>
+        ))}
       </div>
+      )}
     </div>
   )
 }

@@ -128,6 +128,8 @@ export interface ServerInfo {
    *  it cannot change while the connection is up. Empty where the kernel does
    *  not name one. */
   cpuModel?: string
+  hostname?: string
+  timezone?: string
   warnings?: string[]
   capabilities: Record<string, boolean>
 }
