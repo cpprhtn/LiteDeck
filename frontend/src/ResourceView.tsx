@@ -306,8 +306,11 @@ export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFact
             below them, because it is the half that makes them mean something. */}
         <Panel
           label={t('시스템')}
-          value={facts.hostname ?? '—'}
-          sub={facts.prettyName ? [facts.prettyName] : undefined}
+          // Windows detection does not report a hostname, so the distribution
+          // name stands in rather than the panel wearing a dash for a title —
+          // and then it is not repeated underneath.
+          value={facts.hostname || facts.prettyName || '—'}
+          sub={facts.hostname && facts.prettyName ? [facts.prettyName] : undefined}
         >
           <SystemInfo
             info={facts}
