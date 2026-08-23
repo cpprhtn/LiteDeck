@@ -23,11 +23,14 @@ type Pane = 'resources' | 'events'
 export function MonitorView({
   hostID,
   hasEvents,
+  cpuModel,
   onError,
 }: {
   hostID: string
   /** No systemd, no journal, no event pane. The resource pane still works. */
   hasEvents: boolean
+  /** From detection, not from the poll — it cannot change while connected. */
+  cpuModel?: string
   onError: (msg: string) => void
 }) {
   const [pane, setPane] = useState<Pane>('resources')
@@ -57,7 +60,7 @@ export function MonitorView({
       </div>
 
       {active === 'resources' ? (
-        <ResourceView hostID={hostID} />
+        <ResourceView hostID={hostID} cpuModel={cpuModel} />
       ) : (
         <EventTimeline hostID={hostID} onError={onError} />
       )}

@@ -545,6 +545,7 @@ function renderTab(
         <MonitorView
           hostID={hostID}
           hasEvents={!!info.capabilities?.events}
+          cpuModel={info.cpuModel}
           onError={onError}
         />
       )

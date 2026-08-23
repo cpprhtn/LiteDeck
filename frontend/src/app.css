@@ -2210,209 +2210,6 @@ button.events-unit {
   margin-bottom: 0;
 }
 
-/* ── 모니터링 탭 (§4.7, arch/07) ────────────────────────────────
-   요약 바는 한눈, 이 탭은 자세히. 같은 읽기를 쓰되 바가 자리 때문에
-   접어 둔 것들 — 파일시스템 전부, 카드별 GPU, 로드 세 숫자 — 을 편다. */
-.monitor-pane {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  height: 100%;
-}
-.monitor-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-2) var(--sp-3);
-  border-bottom: 1px solid var(--border);
-}
-
-.res-pane {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: var(--sp-3);
-}
-.res-section {
-  margin-bottom: var(--sp-5);
-}
-.res-section h3 {
-  margin: 0 0 var(--sp-2);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--fg-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.res-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: var(--sp-2);
-}
-.res-stat {
-  padding: var(--sp-2) var(--sp-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-raised);
-  min-width: 0;
-}
-.res-stat-label {
-  font-size: var(--text-xs);
-  color: var(--fg-muted);
-}
-.res-stat-value {
-  font-size: 22px;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.2;
-}
-.res-stat-note {
-  font-size: var(--text-xs);
-  color: var(--fg-muted);
-  font-variant-numeric: tabular-nums;
-}
-.res-gpu .res-stat-label {
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-}
-
-.res-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--text-sm);
-}
-.res-table th {
-  text-align: left;
-  font-weight: 500;
-  color: var(--fg-muted);
-  font-size: var(--text-xs);
-  padding: var(--sp-1) var(--sp-2);
-  border-bottom: 1px solid var(--border);
-}
-.res-table td {
-  padding: var(--sp-1) var(--sp-2);
-  border-bottom: 1px solid var(--border);
-  font-variant-numeric: tabular-nums;
-}
-.res-table .num {
-  text-align: right;
-  white-space: nowrap;
-}
-.res-table .res-bar-col {
-  width: 120px;
-}
-/* tmpfs·overlay 처럼 요약에서 빠졌던 줄. 보여주되 앞으로 나서지는 않는다. */
-.res-table tr[data-dim] td {
-  color: var(--fg-faint);
-}
-.res-bar {
-  position: relative;
-  height: 14px;
-  border-radius: 7px;
-  background: var(--bg-sunken);
-  overflow: hidden;
-}
-.res-bar span {
-  display: block;
-  height: 100%;
-  background: var(--accent);
-}
-.res-bar[data-warn] span {
-  background: var(--danger);
-}
-.res-bar em {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-style: normal;
-  font-size: var(--text-xs);
-  color: var(--fg);
-}
-
-/* CPU 분해. 네 숫자가 아니라 한 막대인 이유는 모양이 곧 읽는 값이기 때문이다 —
-   대부분이 IO 대기인 막대는 대부분이 사용자인 막대와 전혀 다르게 생겼고,
-   퍼센트만 노려봐서는 그게 안 튀어나온다. */
-.res-split {
-  display: flex;
-  height: 20px;
-  border-radius: var(--radius);
-  overflow: hidden;
-  background: var(--bg-sunken);
-  margin-bottom: var(--sp-2);
-}
-.res-split span {
-  height: 100%;
-  transition: width 0.3s ease;
-}
-[data-part='user'] { background: var(--accent); }
-[data-part='system'] { background: #8250df; }
-/* IO 대기와 뺏김은 「바쁨」이 아니라 「막힘」이다. 경고색을 주는 이유다. */
-[data-part='iowait'] { background: var(--warn); }
-[data-part='steal'] { background: var(--danger); }
-[data-part='app'] { background: var(--accent); }
-[data-part='buffers'] { background: #8250df; }
-[data-part='cached'] { background: var(--fg-faint); }
-
-.res-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-3);
-  font-size: var(--text-xs);
-  color: var(--fg-muted);
-  margin-bottom: var(--sp-3);
-}
-.res-legend i {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  margin-right: var(--sp-1);
-}
-
-/* 코어별. 집계는 「코어 하나가 박혀 있다」를 못 보여주는데, 그게 단일 스레드
-   병목의 모양이고 「서버가 느리다」의 가장 흔한 정체다. */
-.res-cores {
-  display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 40px;
-  padding: var(--sp-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-sunken);
-}
-.res-core {
-  flex: 1 1 4px;
-  min-width: 3px;
-  height: 100%;
-  display: flex;
-  align-items: flex-end;
-  background: var(--bg-raised);
-  border-radius: 2px;
-  overflow: hidden;
-}
-.res-core span {
-  width: 100%;
-  background: var(--accent);
-  transition: height 0.3s ease;
-}
-.res-core[data-warn] span {
-  background: var(--danger);
-}
-
-.res-mem {
-  display: flex;
-  height: 20px;
-  border-radius: var(--radius);
-  overflow: hidden;
-  background: var(--bg-sunken);
-  margin-bottom: var(--sp-2);
-}
-.res-mem span {
-  height: 100%;
-}
-
 /* 시간축 차트. x 는 위치가 아니라 시각이다 — 유휴로 벌어진 30초 간격을
    촘촘한 2초처럼 그리면 선의 모양은 그대로인데 축의 축척만 몰래 바뀐다. */
 .chart {
@@ -2467,21 +2264,223 @@ button.events-unit {
   margin-bottom: var(--sp-3);
 }
 
-/* 카드 이름은 자르지 않고 접는다. 「...」 로 끝나는 이름은 정작 구별에 필요한
-   모델 번호를 감춘다 — 그게 이름 끝에 있기 때문이다. */
-.res-gpu-name {
-  white-space: normal;
-  overflow-wrap: anywhere;
-  line-height: 1.35;
-}
 /* 카드 번호는 여러 장일 때만 뜬다. 한 장뿐이면 「0:」 은 아무것도 안 알려준다. */
-.res-gpu-idx {
-  display: inline-block;
-  min-width: 1.4em;
-  margin-right: var(--sp-1);
-  padding: 0 4px;
-  border-radius: 3px;
+
+/* ── 리소스 (§4.7, arch/07) ─────────────────────────────────────
+   전체 너비로 쌓지 않고 패널 격자로 둔다. 이 화면이 답하는 질문은
+   「어디가 이상한가」 인데, 그건 CPU 와 메모리와 디스크를 **견주어** 답하는
+   것이라 나란히 있어야 한다. 세로로 쌓으면 각 숫자는 잘 읽히는데 비교가
+   세 번 스크롤 밖에 있다.
+
+   패널 모양을 전부 같게 둔 것도 의도다 — 라벨, 큰 숫자 하나, 시간축,
+   그 아래 잔글씨. 칸마다 읽는 법이 다른 격자는 아무리 칸 하나가 잘 만들어져
+   있어도 전체로는 느리다. */
+.res-pane {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-3);
+}
+.res-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+.res-panel {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  min-width: 0;
+}
+/* 경고는 테두리로만. 배경까지 칠하면 격자가 신호등이 되어 정작 위험한
+   패널이 안 튄다. */
+.res-panel[data-warn] {
+  border-color: var(--danger);
+}
+.res-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.res-panel-label {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.res-panel-value {
+  font-size: 20px;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.res-panel[data-warn] .res-panel-value {
+  color: var(--danger);
+}
+.res-panel-sub {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  margin-bottom: var(--sp-1);
+}
+.res-note {
+  font-size: var(--text-xs);
+  padding: var(--sp-2) 0;
+}
+
+/* 잔글씨 사실들. 숫자를 오른쪽에 붙여 패널 안에서 세로로 줄이 맞는다. */
+.res-facts {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--text-xs);
+}
+.res-facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: 1px 0;
+}
+.res-facts dt {
+  color: var(--fg-muted);
+}
+.res-facts dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 누적 막대 — CPU 분해와 메모리 분해가 같은 모양을 쓴다. 둘 다 「전체를
+   무엇이 차지하는가」 라는 같은 질문이라서다. */
+.res-split,
+.res-mem {
+  display: flex;
+  height: 8px;
+  margin-top: var(--sp-1);
+  border-radius: 4px;
+  overflow: hidden;
   background: var(--bg-sunken);
-  font-family: var(--font-mono);
-  text-align: center;
+}
+.res-split span,
+.res-mem span {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+[data-part='user'] { background: var(--accent); }
+[data-part='system'] { background: #8250df; }
+/* IO 대기와 뺏김은 「바쁨」이 아니라 「막힘」이다. 경고색을 주는 이유다. */
+[data-part='iowait'] { background: var(--warn); }
+[data-part='steal'] { background: var(--danger); }
+[data-part='app'] { background: var(--accent); }
+[data-part='buffers'] { background: #8250df; }
+[data-part='cached'] { background: var(--fg-faint); }
+
+.res-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-2);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  margin-top: var(--sp-1);
+}
+.res-legend i {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  margin-right: 3px;
+}
+
+.res-block {
+  margin-bottom: var(--sp-4);
+}
+.res-block h3 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.res-cores {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 32px;
+  padding: var(--sp-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+}
+.res-core {
+  flex: 1 1 4px;
+  min-width: 3px;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  background: var(--bg-raised);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.res-core span {
+  width: 100%;
+  background: var(--accent);
+  transition: height 0.3s ease;
+}
+.res-core[data-warn] span {
+  background: var(--danger);
+}
+
+.res-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+.res-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  padding: 2px var(--sp-2);
+  border-bottom: 1px solid var(--border);
+}
+.res-table td {
+  padding: 2px var(--sp-2);
+  border-bottom: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+.res-table .num {
+  text-align: right;
+  white-space: nowrap;
+}
+.res-table .res-bar-col {
+  width: 110px;
+}
+/* tmpfs·overlay 처럼 요약에서 빠졌던 줄. 보여주되 앞으로 나서지는 않는다. */
+.res-table tr[data-dim] td {
+  color: var(--fg-faint);
+}
+.res-bar {
+  position: relative;
+  height: 13px;
+  border-radius: 7px;
+  background: var(--bg-sunken);
+  overflow: hidden;
+}
+.res-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.res-bar[data-warn] span {
+  background: var(--danger);
+}
+.res-bar em {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-style: normal;
+  font-size: var(--text-xs);
+  color: var(--fg);
 }

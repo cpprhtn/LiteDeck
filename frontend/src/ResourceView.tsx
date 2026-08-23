@@ -7,13 +7,19 @@ import { t } from './i18n'
 
 // The resource detail (§4.7, arch/07).
 //
-// The summary bar is the glance: it has to fit above every other tab, so it
-// shows the filtered disk list, folds several GPUs into a badge, and hides the
-// three load figures behind a tooltip. This is the same reading with the room
-// to say all of it.
+// Laid out as a panel grid rather than a stack of full-width sections. The
+// question this answers is "is anything wrong", and that is answered by
+// *comparing* — CPU against memory against disk — which needs them beside each
+// other. Stacked full width, each figure was legible and the comparison was
+// three scrolls away, which is the version of this screen nobody opens twice.
 //
-// The two are deliberately the same call. A detail view that polled separately
-// would double the round trips to show numbers the bar already has.
+// Every panel is the same shape on purpose: label, one big number, a line over
+// time, then the detail in small type. A grid where the eye has to relearn each
+// cell is slower to read than one where it does not, however much better any
+// single cell might be on its own.
+//
+// The readings all come from the summary bar's poll (metricsStore). Nothing
+// here asks the server for anything.
 
 function fmtBytes(n: number): string {
   if (n <= 0) return '0B'
@@ -42,7 +48,7 @@ function pct(v: number): string {
   return v < 0 ? '—' : `${Math.round(v)}%`
 }
 
-export function ResourceView({ hostID }: { hostID: string }) {
+export function ResourceView({ hostID, cpuModel }: { hostID: string; cpuModel?: string }) {
   // No poll of its own: the summary bar above is already reading these numbers
   // for this host, and asking again would be a second round trip for the same
   // answer.
@@ -51,126 +57,192 @@ export function ResourceView({ hostID }: { hostID: string }) {
 
   if (!m) return <div className="placeholder">{t('읽는 중…')}</div>
 
+  const cores = m.cores ?? []
+  const swapPct = m.swapTotal > 0 ? (m.swapUsed / m.swapTotal) * 100 : -1
+
   return (
     <div className="res-pane">
-      <section className="res-section">
-        <h3>{t('CPU')}</h3>
-        {/* The bar says 40%. This says what the 40% is — which is the only
-            version of the number anybody can act on. */}
-        {/* Windows reports one aggregate percentage and no breakdown, so the
-            split says it does not know rather than drawing four zeroes. */}
-        <SplitBar split={m.split} idle={m.cpu} />
-        <TimeChart
-          samples={history}
-          pick={(s) => s.cpu}
-          warnAt={90}
-          label={t('CPU 사용률 추이')}
-        />
-        {(m.cores ?? []).length > 1 && <Cores cores={m.cores} />}
-      </section>
-
-      <section className="res-section">
-        <h3>{t('메모리')}</h3>
-        {(m.memCached > 0 || m.memBuffers > 0) && (
-          <MemoryBar
-            total={m.memTotal}
-            used={m.memUsed}
-            buffers={m.memBuffers}
-            cached={m.memCached}
+      <div className="res-grid">
+        <Panel
+          label="CPU"
+          value={pct(m.cpu)}
+          sub={cpuModel ? [cpuModel] : undefined}
+          warn={m.cpu >= 90}
+        >
+          <TimeChart
+            samples={history}
+            pick={(s) => s.cpu}
+            height={44}
+            warnAt={90}
+            label={t('CPU 사용률 추이')}
           />
-        )}
-        <TimeChart
-          samples={history}
-          pick={(s) => s.mem}
-          warnAt={90}
-          label={t('메모리 사용률 추이')}
-        />
-        <div className="res-grid">
-          <Stat label={t('쓰는 중')} value={fmtBytes(m.memUsed)} note={pct(m.memPercent)} />
-          {/* The breakdown comes from /proc/meminfo. A platform without one
-              reports zeroes, and a tile reading "캐시 0B" is a claim about the
-              machine rather than an absent figure — so it is not drawn. */}
-          {m.memCached > 0 && <Stat label={t('캐시')} value={fmtBytes(m.memCached)} />}
-          {m.memBuffers > 0 && <Stat label={t('버퍼')} value={fmtBytes(m.memBuffers)} />}
-          {m.memShared > 0 && <Stat label={t('공유')} value={fmtBytes(m.memShared)} />}
-          {/* Dirty is pages written but not yet on disk. A number that keeps
-              climbing is a disk that cannot keep up with what is being written
-              to it. */}
-          {m.memDirty > 0 && (
-            <Stat label={t('미기록')} value={fmtBytes(m.memDirty)} note={t('아직 디스크에 안 감')} />
-          )}
-        </div>
-      </section>
+          <SplitBar split={m.split} />
+        </Panel>
 
-      <section className="res-section">
-        <h3>{t('그 밖')}</h3>
-        <div className="res-grid">
-          <Stat
-            label={t('스왑')}
-            value={m.swapTotal > 0 ? pct((m.swapUsed / m.swapTotal) * 100) : '—'}
-            note={
-              m.swapTotal > 0
-                ? `${fmtBytes(m.swapUsed)} / ${fmtBytes(m.swapTotal)}`
-                : t('없음')
-            }
+        <Panel
+          label={t('메모리')}
+          value={pct(m.memPercent)}
+          sub={[`${fmtBytes(m.memUsed)} / ${fmtBytes(m.memTotal)}`]}
+          warn={m.memPercent >= 90}
+        >
+          <TimeChart
+            samples={history}
+            pick={(s) => s.mem}
+            height={44}
+            warnAt={90}
+            label={t('메모리 사용률 추이')}
           />
-          {/* Spelled out rather than hidden in a tooltip: one figure says
-              nothing, and the shape of the three is the whole reading — rising,
-              falling, or a spike that has already passed. */}
-          {m.hasLoad && (
-            <Stat
-              label={t('로드')}
-              value={m.load1.toFixed(2)}
-              note={t('5분 {b} · 15분 {c}', { b: m.load5.toFixed(2), c: m.load15.toFixed(2) })}
-            />
+          {(m.memCached > 0 || m.memBuffers > 0) && (
+            <>
+              <MemoryBar
+                total={m.memTotal}
+                used={m.memUsed}
+                buffers={m.memBuffers}
+                cached={m.memCached}
+              />
+              <Legend
+                items={[
+                  { key: 'app', label: t('프로그램'), text: fmtBytes(Math.max(0, m.memUsed - m.memBuffers - m.memCached)) },
+                  { key: 'buffers', label: t('버퍼'), text: fmtBytes(m.memBuffers) },
+                  { key: 'cached', label: t('캐시'), text: fmtBytes(m.memCached) },
+                ]}
+              />
+            </>
           )}
-          <Stat label={t('가동 시간')} value={fmtUptime(m.uptimeSeconds)} />
-        </div>
-      </section>
+        </Panel>
 
-      <section className="res-section">
-        <h3>{t('파일시스템')}</h3>
-        {/* Every mount, not the shortlist the bar shows. The one that filled up
-            is often exactly the one the shortlist dropped. */}
-        <FilesystemTable rows={m.filesystems} shown={m.disks} />
-      </section>
-
-      {m.gpus.length > 0 && (
-        <section className="res-section">
-          <h3>{t('GPU')}</h3>
-          <div className="res-grid">
-            {m.gpus.map((g) => (
-              <GPUCard key={g.index} gpu={g} showIndex={m.gpus.length > 1} />
-            ))}
-          </div>
-          {m.gpus.map((g) => (
+        {m.gpus.map((g) => (
+          <Panel
+            key={g.index}
+            label={m.gpus.length > 1 ? t('GPU {n}', { n: g.index }) : 'GPU'}
+            value={pct(g.utilization)}
+            sub={[shortGPUName(g.name)]}
+            title={g.name}
+            warn={g.utilization >= 95 || g.tempC >= 85}
+          >
             <TimeChart
-              key={g.index}
               samples={history}
               pick={(s) => s.gpu[g.index] ?? -1}
+              height={44}
               warnAt={95}
               label={t('GPU {n} 사용률 추이', { n: g.index })}
             />
-          ))}
+            <Facts
+              rows={[
+                // A fan reading of "—" is a passively cooled card, not a stopped
+                // fan. Showing 0 there would be alarming and wrong.
+                [t('팬'), pct(g.fan)],
+                [t('온도'), g.tempC < 0 ? '—' : `${Math.round(g.tempC)}°C`],
+                ['VRAM', `${fmtBytes(g.memUsed)} / ${fmtBytes(g.memTotal)}`],
+              ]}
+            />
+          </Panel>
+        ))}
+
+        {m.hasLoad && (
+          <Panel label={t('로드')} value={m.load1.toFixed(2)} warn={cores.length > 0 && m.load1 > cores.length}>
+            {/* Three numbers, because one says nothing: the shape is the
+                reading — climbing, falling, or a spike already over. */}
+            <Facts
+              rows={[
+                [t('1분'), m.load1.toFixed(2)],
+                [t('5분'), m.load5.toFixed(2)],
+                [t('15분'), m.load15.toFixed(2)],
+                ...(cores.length ? [[t('코어'), String(cores.length)] as [string, string]] : []),
+              ]}
+            />
+          </Panel>
+        )}
+
+        <Panel
+          label={t('스왑')}
+          value={swapPct < 0 ? '—' : pct(swapPct)}
+          sub={[m.swapTotal > 0 ? `${fmtBytes(m.swapUsed)} / ${fmtBytes(m.swapTotal)}` : t('없음')]}
+          warn={swapPct >= 50}
+        >
+          <Facts rows={[[t('가동 시간'), fmtUptime(m.uptimeSeconds)]]} />
+        </Panel>
+      </div>
+
+      {cores.length > 1 && (
+        <section className="res-block">
+          <h3>
+            {t('코어')} <span className="muted">{cores.length}</span>
+          </h3>
+          {/* The aggregate cannot tell "every core half busy" from "one core
+              pinned", and the second is what a single-threaded bottleneck looks
+              like — the most common shape of "the server is slow". */}
+          <Cores cores={cores} />
         </section>
       )}
+
+      <section className="res-block">
+        <h3>{t('파일시스템')}</h3>
+        <FilesystemTable rows={m.filesystems} shown={m.disks} />
+      </section>
     </div>
   )
 }
 
-/** The CPU breakdown as one bar. Stacked rather than four numbers, because the
- *  shape is the reading: a bar that is mostly iowait looks nothing like one
- *  that is mostly user, and no amount of staring at percentages makes that
- *  jump out. */
-function SplitBar({ split, idle }: { split: CPUSplit; idle: number }) {
-  if (split.user < 0) {
-    return (
-      <div className="muted small">
-        {t('두 번째 표본을 기다리는 중 — 누적 카운터라 한 번만으로는 알 수 없습니다')}
+/** Every panel is the same shape: label, one big number, then whatever detail
+ *  that particular resource has. Consistency is the point — a grid the eye has
+ *  to relearn per cell reads slower than one it does not. */
+function Panel({
+  label,
+  value,
+  sub,
+  title,
+  warn,
+  children,
+}: {
+  label: string
+  value: string
+  sub?: string[]
+  title?: string
+  warn?: boolean
+  children?: React.ReactNode
+}) {
+  return (
+    <div className="res-panel" data-warn={warn || undefined}>
+      <div className="res-panel-head">
+        <span className="res-panel-label">{label}</span>
+        <span className="res-panel-value">{value}</span>
       </div>
-    )
+      {sub?.map((line, i) => (
+        <div className="res-panel-sub ellipsis" key={i} title={title ?? line}>
+          {line}
+        </div>
+      ))}
+      {children}
+    </div>
+  )
+}
+
+/** key/value pairs on one line each, tight. Small type and tabular numbers so
+ *  the values line up down the panel. */
+function Facts({ rows }: { rows: [string, string][] }) {
+  return (
+    <dl className="res-facts">
+      {rows.map(([k, v]) => (
+        <div key={k}>
+          <dt>{k}</dt>
+          <dd>{v}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+/** The CPU breakdown as one stacked bar with an inline legend.
+ *
+ *  Stacked rather than four numbers because the shape is the reading: a bar
+ *  that is mostly IO wait looks nothing like one that is mostly user, and no
+ *  amount of staring at percentages makes that jump out. */
+function SplitBar({ split }: { split: CPUSplit }) {
+  if (split.user < 0) {
+    return <div className="res-note muted">{t('두 번째 표본을 기다리는 중')}</div>
   }
-  const parts: { key: string; label: string; v: number; hint: string }[] = [
+  const parts = [
     { key: 'user', label: t('사용자 시간'), v: split.user, hint: t('프로그램이 직접 쓴 시간') },
     { key: 'system', label: t('커널 시간'), v: split.system, hint: t('커널이 그 프로그램을 대신해 쓴 시간') },
     { key: 'iowait', label: t('IO 대기'), v: split.iowait, hint: t('디스크를 기다린 시간 — 높으면 CPU 가 아니라 디스크가 문제입니다') },
@@ -188,24 +260,35 @@ function SplitBar({ split, idle }: { split: CPUSplit; idle: number }) {
           />
         ))}
       </div>
-      <div className="res-legend">
-        {parts.map((p) => (
-          <span key={p.key} title={p.hint}>
-            <i data-part={p.key} />
-            {p.label} {p.v.toFixed(1)}%
-          </span>
-        ))}
-        <span className="muted">
-          {t('한가함')} {Math.max(0, 100 - (idle < 0 ? 0 : idle)).toFixed(1)}%
-        </span>
-      </div>
+      <Legend
+        items={parts.map((p) => ({
+          key: p.key,
+          label: p.label,
+          text: `${p.v.toFixed(0)}%`,
+          hint: p.hint,
+        }))}
+      />
     </>
   )
 }
 
-/** One block per core. The aggregate cannot tell "every core half busy" from
- *  "one core pinned", and the second is what a single-threaded bottleneck looks
- *  like — the most common shape of "the server is slow". */
+function Legend({
+  items,
+}: {
+  items: { key: string; label: string; text: string; hint?: string }[]
+}) {
+  return (
+    <div className="res-legend">
+      {items.map((it) => (
+        <span key={it.key} title={it.hint ?? it.label}>
+          <i data-part={it.key} />
+          {it.label} {it.text}
+        </span>
+      ))}
+    </div>
+  )
+}
+
 function Cores({ cores }: { cores: Core[] }) {
   return (
     <div className="res-cores">
@@ -239,52 +322,12 @@ function MemoryBar({
 }) {
   if (total <= 0) return null
   const w = (n: number) => `${Math.max(0, Math.min(100, (n / total) * 100))}%`
-  // used already excludes what the kernel would reclaim, so cache and buffers
-  // are drawn beside it rather than inside it.
   const app = Math.max(0, used - buffers - cached)
   return (
     <div className="res-mem">
-      <span data-part="app" style={{ width: w(app) }} title={t('프로그램이 쥐고 있는 메모리')} />
-      <span data-part="buffers" style={{ width: w(buffers) }} title={t('버퍼')} />
-      <span data-part="cached" style={{ width: w(cached) }} title={t('캐시')} />
-    </div>
-  )
-}
-
-function Stat({ label, value, note }: { label: string; value: string; note?: string }) {
-  return (
-    <div className="res-stat">
-      <div className="res-stat-label">{label}</div>
-      <div className="res-stat-value">{value}</div>
-      {note && <div className="res-stat-note">{note}</div>}
-    </div>
-  )
-}
-
-function GPUCard({ gpu, showIndex }: { gpu: GPU; showIndex: boolean }) {
-  return (
-    <div className="res-stat res-gpu">
-      {/* Wraps rather than truncating. A card name ending in "..." withholds
-          the one part that identifies it — the model number is at the end. */}
-      <div className="res-stat-label res-gpu-name" title={gpu.name}>
-        {showIndex && <span className="res-gpu-idx">{gpu.index}</span>}
-        {shortGPUName(gpu.name)}
-      </div>
-      <div className="res-stat-value">{pct(gpu.utilization)}</div>
-      <div className="res-stat-note">
-        {/* A fan reading of "—" is a passively cooled card, not a stopped fan.
-            Showing 0 there would be alarming and wrong. */}
-        {t('팬 {fan} · {temp}', {
-          fan: pct(gpu.fan),
-          temp: gpu.tempC < 0 ? '—' : `${Math.round(gpu.tempC)}°C`,
-        })}
-      </div>
-      <div className="res-stat-note">
-        {t('VRAM {used} / {total}', {
-          used: fmtBytes(gpu.memUsed),
-          total: fmtBytes(gpu.memTotal),
-        })}
-      </div>
+      <span data-part="app" style={{ width: w(app) }} />
+      <span data-part="buffers" style={{ width: w(buffers) }} />
+      <span data-part="cached" style={{ width: w(cached) }} />
     </div>
   )
 }
@@ -328,9 +371,7 @@ function FilesystemTable({ rows, shown }: { rows: Filesystem[]; shown: Filesyste
       </table>
       {hidden > 0 && (
         <button className="ghost small" onClick={() => setAll((v) => !v)}>
-          {all
-            ? t('요약만 보기')
-            : t('나머지 {n}개도 보기 — tmpfs·overlay 등', { n: hidden })}
+          {all ? t('요약만 보기') : t('나머지 {n}개도 보기 — tmpfs·overlay 등', { n: hidden })}
         </button>
       )}
     </>

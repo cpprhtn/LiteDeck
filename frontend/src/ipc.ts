@@ -124,6 +124,10 @@ export interface ServerInfo {
   groups?: string[]
   /** false when this user sees only their own journal messages. */
   canReadJournal: boolean
+  /** What the processor calls itself. Read once per connection, not per poll —
+   *  it cannot change while the connection is up. Empty where the kernel does
+   *  not name one. */
+  cpuModel?: string
   warnings?: string[]
   capabilities: Record<string, boolean>
 }

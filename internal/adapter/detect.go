@@ -93,6 +93,12 @@ type ServerInfo struct {
 	Groups         []string `json:"groups,omitempty"`
 	CanReadJournal bool     `json:"canReadJournal"`
 
+	// CPUModel is what the processor calls itself. It belongs here rather than
+	// in the metrics poll because it cannot change while the connection is up,
+	// and a string that never changes has no business riding a two second
+	// round trip. Empty where the kernel does not name one.
+	CPUModel string `json:"cpuModel,omitempty"`
+
 	// Errors that did not stop detection, for the bug report template (§11).
 	Warnings []string `json:"warnings,omitempty"`
 }
@@ -241,6 +247,10 @@ func Detect(ctx context.Context, r Runner) (ServerInfo, error) {
 		if g == "systemd-journal" || g == "adm" || g == "wheel" {
 			info.CanReadJournal = true
 		}
+	}
+
+	if res, err := r.Probe(ctx, "cat", "/proc/cpuinfo"); err == nil && res.OK() {
+		info.CPUModel = cpuModel(string(res.Stdout))
 	}
 
 	info.HasDocker = commandExists(ctx, r, "docker")
@@ -475,6 +485,39 @@ func osReleaseField(content, key string) string {
 		k, v, ok := strings.Cut(strings.TrimSpace(line), "=")
 		if ok && k == key {
 			return strings.Trim(v, `"`)
+		}
+	}
+	return ""
+}
+
+// cpuModel picks the processor's own name out of /proc/cpuinfo.
+//
+// The key is not the same everywhere. x86 writes "model name"; arm64 usually
+// writes nothing a person would recognise and the useful line is "Model" (the
+// board) or "Hardware" (the SoC), which is why several are tried rather than
+// one. A machine that names itself in none of them keeps an empty string, and
+// the view simply does not show a name.
+func cpuModel(cpuinfo string) string {
+	keys := []string{"model name", "Model", "Hardware", "cpu model", "cpu"}
+	found := make(map[string]string, len(keys))
+	for _, line := range strings.Split(cpuinfo, "\n") {
+		key, val, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		key, val = strings.TrimSpace(key), strings.TrimSpace(val)
+		if val == "" {
+			continue
+		}
+		// First writer wins: /proc/cpuinfo repeats the block once per core and
+		// they say the same thing.
+		if _, seen := found[key]; !seen {
+			found[key] = val
+		}
+	}
+	for _, k := range keys {
+		if v := found[k]; v != "" {
+			return v
 		}
 	}
 	return ""

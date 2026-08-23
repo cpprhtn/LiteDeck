@@ -257,6 +257,15 @@ export const en: Record<string, string> = {
   '세션 슬롯을 기다린 시간': 'Time spent waiting for a session slot',
   // 모니터링 탭 (arch/07)
   // CPU·메모리 분해
+  '1분': '1 min',
+  '5분': '5 min',
+  '15분': '15 min',
+  '코어': 'Cores',
+  '온도': 'Temp',
+  '팬': 'Fan',
+  '프로그램': 'Programs',
+  '두 번째 표본을 기다리는 중': 'Waiting for a second sample',
+  'GPU {n}': 'GPU {n}',
   // 시간축 차트
   'CPU 사용률 추이': 'CPU over time',
   '메모리 사용률 추이': 'Memory over time',
