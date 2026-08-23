@@ -1,7 +1,9 @@
 package app
 
 import (
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -162,4 +164,58 @@ func TestGPUScriptsAgreeOnColumns(t *testing.T) {
 			t.Errorf("format drifted in:\n%s", s)
 		}
 	}
+}
+
+// A card list must not grow on its own.
+//
+// The fallback index a row gets when its index column will not parse is its
+// position in the batch, which rises with every row — so an unreadable index
+// meant the boundary never fired, the batch never closed, and the summary bar
+// grew a new card every two seconds for as long as the app stayed open. That is
+// exactly what "it used to show several GPUs" looks like from the outside.
+func TestGPUFeedDoesNotInventCards(t *testing.T) {
+	f := &gpuFeed{started: time.Now()}
+	// Seven fields, so the row parses — but the index column is not a number.
+	const bad = "x, NVIDIA GeForce GTX 1050, 0, 48, 38, 2048, 0"
+	for range 500 {
+		f.row(bad)
+	}
+	if got := len(f.latest); got > maxGPUsPerSample {
+		t.Fatalf("%d cards from one card's worth of rows", got)
+	}
+	// And a real single-card feed still reports exactly one.
+	g := &gpuFeed{started: time.Now()}
+	for range 100 {
+		g.row("0, NVIDIA GeForce GTX 1050, 0, 48, 38, 2048, 0")
+	}
+	if got := len(g.latest); got != 1 {
+		t.Errorf("%d cards for a single-GPU host, want 1", got)
+	}
+}
+
+// The reader goroutine and the poll goroutine touch the same feed.
+//
+// This does not currently catch anything — sample() happens not to read the one
+// field the parse touches outside the lock — but the two goroutines are real
+// and the next field either of them grows would land in that gap silently.
+func TestGPUFeedRowsAndSamplesAreConcurrencySafe(t *testing.T) {
+	w := newGPUWatcher()
+	f := &gpuFeed{started: time.Now()}
+	w.byID["h"] = f
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for i := range 2000 {
+			f.row(fmt.Sprintf("%d, NVIDIA A100, 10, 50, 40, 40960, 1024", i%4))
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for range 2000 {
+			w.sample("h")
+		}
+	}()
+	wg.Wait()
 }
