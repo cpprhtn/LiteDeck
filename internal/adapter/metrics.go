@@ -845,6 +845,15 @@ const diskSectorBytes = 512
 // Partitions are dropped: they double-count against the disk they sit on, so a
 // machine with sda1..sda3 would appear to be doing four times the IO it is.
 func parseDiskstats(lines []string) []DiskIO {
+	// Names first, so a partition can be recognised by the disk it belongs to
+	// rather than by guessing from its spelling.
+	all := make(map[string]bool, len(lines))
+	for _, line := range lines {
+		if f := strings.Fields(line); len(f) >= 3 {
+			all[f[2]] = true
+		}
+	}
+
 	out := []DiskIO{}
 	seen := map[string]bool{}
 	for _, line := range lines {
@@ -853,7 +862,7 @@ func parseDiskstats(lines []string) []DiskIO {
 			continue
 		}
 		name := f[2]
-		if skipDisk(name) {
+		if skipDisk(name, all) {
 			continue
 		}
 		read, err1 := strconv.ParseUint(f[5], 10, 64)
@@ -883,24 +892,38 @@ func parseDiskstats(lines []string) []DiskIO {
 
 // skipDisk drops partitions and virtual devices.
 //
-// A partition's name is its disk's name plus digits (sda1, nvme0n1p1), and its
-// traffic is already counted against the disk. loop and ram devices are not
-// storage anybody is watching.
-func skipDisk(name string) bool {
+// A partition's traffic is already counted against the disk it sits on, so
+// keeping both reports several times the IO that happened.
+//
+// It is recognised by finding the disk, not by reading the name. "ends in a
+// digit" was the first attempt and it is wrong on every device that is named
+// with one: md0 is a RAID array, nbd0 a network block device, and both were
+// being dropped — the array in particular is exactly the disk somebody wants
+// to watch. A name is a partition only when some *other* device in the same
+// listing is a prefix of it and the rest is digits, optionally after the "p"
+// that nvme and mmc use as a separator.
+func skipDisk(name string, all map[string]bool) bool {
 	switch {
 	case strings.HasPrefix(name, "loop"), strings.HasPrefix(name, "ram"),
-		strings.HasPrefix(name, "zram"), strings.HasPrefix(name, "dm-"):
+		strings.HasPrefix(name, "zram"):
+		// Not storage anybody is watching.
+		return true
+	case strings.HasPrefix(name, "dm-"):
+		// Device mapper stacks on a physical device that is already in this
+		// list, so counting both doubles the traffic. The name it would show
+		// ("dm-0") is not one anybody recognises either.
 		return true
 	}
-	// nvme0n1p1 → partition; nvme0n1 → disk.
-	if i := strings.LastIndex(name, "p"); i > 0 && i < len(name)-1 &&
-		strings.HasPrefix(name, "nvme") && isDigits(name[i+1:]) {
-		return true
-	}
-	// sda1 → partition; sda → disk. Only for names that do not end in a digit
-	// natively, which is why nvme is handled above.
-	if !strings.HasPrefix(name, "nvme") && len(name) > 0 && isDigits(name[len(name)-1:]) {
-		return true
+	for i := 1; i < len(name); i++ {
+		rest := name[i:]
+		if strings.HasPrefix(rest, "p") && len(rest) > 1 {
+			if all[name[:i]] && isDigits(rest[1:]) {
+				return true // nvme0n1p1 under nvme0n1
+			}
+		}
+		if all[name[:i]] && isDigits(rest) {
+			return true // sda1 under sda
+		}
 	}
 	return false
 }

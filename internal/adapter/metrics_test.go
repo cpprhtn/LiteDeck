@@ -474,14 +474,38 @@ func TestParseMetricsGoldenFull(t *testing.T) {
 // Partitions are counted against the disk they sit on, so keeping both would
 // report several times the traffic that happened.
 func TestSkipDiskDropsPartitions(t *testing.T) {
-	for _, name := range []string{"sda1", "sda2", "nvme0n1p1", "loop3", "ram0", "dm-0", "zram0"} {
-		if !skipDisk(name) {
+	// The listing a real machine produces: disks, their partitions, and the
+	// virtual devices nobody watches.
+	all := map[string]bool{}
+	for _, n := range []string{
+		"sda", "sda1", "sda2", "sdb", "nvme0n1", "nvme0n1p1", "nvme0n1p2",
+		"loop3", "ram0", "dm-0", "zram0", "md0", "nbd0", "vda", "vda1", "xvda",
+	} {
+		all[n] = true
+	}
+
+	for _, name := range []string{"sda1", "sda2", "nvme0n1p1", "vda1", "loop3", "ram0", "dm-0", "zram0"} {
+		if !skipDisk(name, all) {
 			t.Errorf("%s should be skipped", name)
 		}
 	}
-	for _, name := range []string{"sda", "sdb", "nvme0n1", "vda", "xvda"} {
-		if skipDisk(name) {
-			t.Errorf("%s is a whole disk and should be kept", name)
+	// md0 is a RAID array and nbd0 a network block device. Both end in a digit
+	// and neither is a partition — the first attempt read the name and dropped
+	// exactly the disk somebody most wants to watch.
+	for _, name := range []string{"sda", "sdb", "nvme0n1", "vda", "xvda", "md0", "nbd0"} {
+		if skipDisk(name, all) {
+			t.Errorf("%s is a whole device and should be kept", name)
+		}
+	}
+}
+
+// A partition is only a partition when its disk is in the same listing. A
+// machine that exposes md0 and nothing named "md" must keep it.
+func TestSkipDiskNeedsTheParentPresent(t *testing.T) {
+	lonely := map[string]bool{"md0": true, "nbd0": true, "sda1": true}
+	for name := range lonely {
+		if skipDisk(name, lonely) {
+			t.Errorf("%s has no parent in this listing and should be kept", name)
 		}
 	}
 }

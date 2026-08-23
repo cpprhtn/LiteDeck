@@ -197,7 +197,7 @@ RUN set -eux; \
       '[Service]' 'ExecStart=/bin/bash -c "while :; do sleep 30; done"' 'Restart=always' \
       '[Install]' 'WantedBy=multi-user.target' > /etc/systemd/system/orders-api.service; \
     printf '%s\n' '[Unit]' 'Description=Order fulfilment worker' \
-      '[Service]' 'ExecStart=/bin/bash -c "while :; do sleep 30; done"' 'Restart=always' \
+      '[Service]' 'ExecStart=/usr/local/bin/orders-worker-loop' 'Restart=always' \
       '[Install]' 'WantedBy=multi-user.target' > /etc/systemd/system/orders-worker.service; \
     printf '%s\n' '[Unit]' 'Description=Prometheus node exporter' \
       '[Service]' 'ExecStart=/bin/bash -c "while :; do sleep 30; done"' 'Restart=always' \
@@ -209,6 +209,39 @@ RUN set -eux; \
       '[Service]' 'Type=oneshot' 'ExecStart=/bin/false' \
       '[Install]' 'WantedBy=multi-user.target' > /etc/systemd/system/certbot-renew.service; \
     systemctl enable orders-api orders-worker node-exporter
+
+# ── The worker actually works ─────────────────────────────────────────────
+#
+# The other units sleep, which is fine for a service list: what that screen
+# shows is names, states and unit files. The monitoring tab shows *movement*,
+# and a container where nothing happens draws four flat lines along the bottom
+# — a screenshot of that sells the opposite of what the tab does.
+#
+# So the one unit whose name promises work does some. Bursts rather than a
+# steady burn, because a flat 40% line says as little as a flat 0% one: what
+# the charts are for is showing that the shape changed and roughly when.
+#
+# Deliberately modest — a demo fixture that pins the recording machine's fans
+# is a fixture nobody runs twice. One core for a couple of seconds at a time,
+# a few megabytes of file writes, then idle.
+RUN printf '%s\n' \
+      '#!/bin/bash' \
+      '# Demo workload. See the comment in testdata/demo/Dockerfile.' \
+      'set -u' \
+      'work=/var/tmp/orders-worker' \
+      'mkdir -p "$work"' \
+      'while :; do' \
+      '  # A batch: some arithmetic, then write and re-read what it produced.' \
+      '  end=$((SECONDS + 2 + RANDOM % 3))' \
+      '  while [ $SECONDS -lt $end ]; do :; done' \
+      '  dd if=/dev/urandom of="$work/batch.tmp" bs=1M count=8 status=none' \
+      '  cat "$work/batch.tmp" > /dev/null' \
+      '  sync' \
+      '  rm -f "$work/batch.tmp"' \
+      '  # Idle between batches, so the charts have somewhere to come back to.' \
+      '  sleep $((6 + RANDOM % 10))' \
+      'done' > /usr/local/bin/orders-worker-loop \
+ && chmod +x /usr/local/bin/orders-worker-loop
 
 # Docker inside Docker cannot stack overlay on overlay — every `docker run` in
 # here dies on "mount source: overlay ... invalid argument" with the default
