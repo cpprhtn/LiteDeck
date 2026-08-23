@@ -1,3 +1,6 @@
-PRETTY_NAME="Ubuntu 22.04.5 LTS"
-NAME="Ubuntu"
-VERSION_ID="22.04"
+OS: Ubuntu 24.04.4 LTS
+kernel: 6.8.0-137-generic
+cores: 20
+captured: 2026-08-23
+command: MetricsScript (adapter/metrics.go) verbatim
+note: eno1 carries a real rx-drop count (200793) — a live example of the counter the network panel exists to surface.

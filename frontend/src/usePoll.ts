@@ -19,6 +19,15 @@ import { idleFactor, onWake } from './idle'
  * Between those two states is the one `document.hidden` cannot see — a window
  * left open and untouched — so the interval is stretched by idle.ts and snaps
  * back the moment the mouse moves.
+ *
+ * The next tick is scheduled from when the last one **finished**, never from
+ * when it started, and never sooner than the last one took. A view whose query
+ * is slower than its interval would otherwise restart the moment it returned
+ * and hold an Exec channel continuously — and there are three of those for the
+ * whole connection (A-1), so one slow view makes every other command queue
+ * behind it. Observed on a host where `docker ps -a` took 19.8 seconds against
+ * a 5 second interval: nothing overlapped, because the view guards that, but
+ * the channel was never free.
  */
 export function usePoll(tick: () => unknown, everyMs: number, active = true) {
   // Held in a ref so a caller that rebuilds its closure every render does not
@@ -39,21 +48,37 @@ export function usePoll(tick: () => unknown, everyMs: number, active = true) {
         timer = 0
       }
     }
-    const schedule = () => {
+    let stopped = false
+    const schedule = (tookMs: number) => {
       clear()
-      timer = window.setTimeout(fire, everyMs * idleFactor())
+      if (stopped) return
+      // Never ask again sooner than the last answer took. At the interval this
+      // is a no-op; past it, it is what keeps a slow query from owning a
+      // channel end to end.
+      const gap = Math.max(everyMs * idleFactor(), tookMs)
+      timer = window.setTimeout(fire, gap)
+    }
+    /** Run one tick and schedule the next from when this one settles. */
+    const run = async () => {
+      const began = Date.now()
+      try {
+        await latest.current()
+      } catch {
+        // A failing view reports its own error; the timer must survive it, or
+        // one bad answer stops the view refreshing for the rest of the session.
+      }
+      schedule(Date.now() - began)
     }
     const fire = () => {
       timer = 0
       if (document.hidden) return // start() will resume it
-      void latest.current()
-      schedule()
+      void run()
     }
     /** Tick now and restart the clock. */
     const start = () => {
       if (document.hidden) return
-      void latest.current()
-      schedule()
+      clear()
+      void run()
     }
 
     const onVisibility = () => (document.hidden ? clear() : start())
@@ -62,6 +87,7 @@ export function usePoll(tick: () => unknown, everyMs: number, active = true) {
     document.addEventListener('visibilitychange', onVisibility)
     start()
     return () => {
+      stopped = true
       document.removeEventListener('visibilitychange', onVisibility)
       offWake()
       clear()

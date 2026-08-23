@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { EventTimeline } from './EventTimeline'
-import { ResourceView } from './ResourceView'
+import { ResourceView, type SysFacts } from './ResourceView'
 import { t } from './i18n'
 
 // The monitoring tab (§4.7, arch/07).
@@ -23,33 +23,34 @@ type Pane = 'resources' | 'events'
 export function MonitorView({
   hostID,
   hasEvents,
+  facts,
   onError,
 }: {
   hostID: string
   /** No systemd, no journal, no event pane. The resource pane still works. */
   hasEvents: boolean
+  /** From detection, not from the poll — none of it can change while the
+   *  connection is up. */
+  facts: SysFacts
   onError: (msg: string) => void
 }) {
   const [pane, setPane] = useState<Pane>('resources')
   const active = pane === 'events' && !hasEvents ? 'resources' : pane
 
   return (
-    <div className="monitor-pane">
+    <div className="view monitor-pane">
       <div className="monitor-bar">
-        <div className="seg">
+        {/* The same control the container tab uses for its two panes, so the
+            two read as the same kind of switch. */}
+        <div className="segmented">
           <button
-            className="ghost"
             data-on={active === 'resources' || undefined}
             onClick={() => setPane('resources')}
           >
             {t('리소스')}
           </button>
           {hasEvents && (
-            <button
-              className="ghost"
-              data-on={active === 'events' || undefined}
-              onClick={() => setPane('events')}
-            >
+            <button data-on={active === 'events' || undefined} onClick={() => setPane('events')}>
               {t('이벤트')}
             </button>
           )}
@@ -57,7 +58,7 @@ export function MonitorView({
       </div>
 
       {active === 'resources' ? (
-        <ResourceView hostID={hostID} />
+        <ResourceView hostID={hostID} facts={facts} />
       ) : (
         <EventTimeline hostID={hostID} onError={onError} />
       )}

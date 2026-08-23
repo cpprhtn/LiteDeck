@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -324,12 +325,25 @@ func TestParseMetricsBreaksMemoryDown(t *testing.T) {
 }
 
 // /proc/stat's intr line carries one number per interrupt vector — hundreds of
-// them on a real machine. Reading the whole file to get the cpu rows would put
-// that on the wire every two seconds.
+// them on a real machine, and softirq is another. Reading the whole file to get
+// the handful of rows that are wanted would put all of that on the wire every
+// two seconds.
+//
+// Asserted as "filtered, and not for intr" rather than against the exact
+// pattern, so that adding a row to the filter is not a test failure while
+// dropping the filter still is.
 func TestMetricsScriptDoesNotShipTheInterruptTable(t *testing.T) {
 	for _, s := range []string{MetricsScript, MetricsScriptWithGPU} {
-		if !strings.Contains(s, "grep '^cpu' /proc/stat") {
-			t.Errorf("the stat line reads more than the cpu rows:\n%s", s)
+		if strings.Contains(s, "cat /proc/stat") {
+			t.Errorf("the whole of /proc/stat is being read:\n%s", s)
+		}
+		if !strings.Contains(s, "grep") || !strings.Contains(s, "/proc/stat") {
+			t.Errorf("/proc/stat is not filtered:\n%s", s)
+		}
+		for _, huge := range []string{"intr", "softirq"} {
+			if strings.Contains(s, "|"+huge) || strings.Contains(s, huge+"|") {
+				t.Errorf("%s is in the filter; that line is hundreds of numbers", huge)
+			}
 		}
 	}
 }
@@ -368,5 +382,145 @@ func TestLinuxSplitStartsUnknown(t *testing.T) {
 	}
 	if m.Split.User != -1 {
 		t.Errorf("split %+v with no stat section at all", m.Split)
+	}
+}
+
+// The whole script, against output captured from a real Ubuntu 24.04 host.
+// See testdata/golden/metrics/provenance.txt.
+func TestParseMetricsGoldenFull(t *testing.T) {
+	b, err := os.ReadFile("../../testdata/golden/metrics/ubuntu-24.04-full.txt")
+	if err != nil {
+		t.Fatalf("golden: %v", err)
+	}
+	m, err := ParseMetrics(b, CPUTimes{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 20 cores on that machine, per provenance.
+	if len(m.Cores) != 20 {
+		t.Errorf("%d cores, want 20", len(m.Cores))
+	}
+	if m.MemTotal == 0 || m.Load1 < 0 || m.UptimeSeconds == 0 {
+		t.Errorf("basics missing: mem=%d load=%v up=%d", m.MemTotal, m.Load1, m.UptimeSeconds)
+	}
+
+	// Inodes ride a second df and are joined on the mount point.
+	var withInodes int
+	for _, f := range m.Filesystems {
+		if f.InodesTotal > 0 {
+			withInodes++
+			if f.InodesUsed > f.InodesTotal {
+				t.Errorf("%s: %d inodes used of %d", f.MountPoint, f.InodesUsed, f.InodesTotal)
+			}
+		}
+	}
+	if withInodes == 0 {
+		t.Error("no filesystem carries an inode count; the df -i join failed")
+	}
+
+	// Loopback is dropped: it always carries traffic and never says anything
+	// about the network.
+	for _, n := range m.Net {
+		if n.Name == "lo" {
+			t.Error("loopback is in the interface list")
+		}
+	}
+	if len(m.Net) == 0 {
+		t.Fatal("no interfaces parsed")
+	}
+	// That host has a genuine rx-drop count on eno1. Reading it as zero would
+	// be the whole feature failing quietly.
+	var drops uint64
+	for _, n := range m.Net {
+		drops += n.RxDrop
+	}
+	if drops == 0 {
+		t.Error("every interface reports zero drops; the column offset is wrong")
+	}
+
+	// Partitions double-count against their disk.
+	for _, d := range m.DiskIO {
+		if strings.HasPrefix(d.Name, "sda") && d.Name != "sda" {
+			t.Errorf("%s is a partition and would double-count", d.Name)
+		}
+		if d.ReadBytes == 0 && d.WriteBytes == 0 {
+			t.Errorf("%s has no traffic and should have been dropped", d.Name)
+		}
+	}
+	if len(m.DiskIO) == 0 {
+		t.Error("no disks parsed")
+	}
+
+	if m.FDUsed == 0 {
+		t.Error("no file descriptors in use, which cannot be true of a running host")
+	}
+	// That kernel reports 2^63-1, which is not a limit anybody is approaching.
+	if m.FDMax != 0 {
+		t.Errorf("FDMax = %d; an unlimited ceiling should arrive as none", m.FDMax)
+	}
+
+	if !m.HasPSI {
+		t.Error("PSI missing from a 6.8 kernel")
+	}
+	if m.Runnable < 1 {
+		t.Errorf("procs_running = %d; the shell reading /proc/stat is itself runnable", m.Runnable)
+	}
+	if m.ContextSwitches == 0 {
+		t.Error("ctxt is zero")
+	}
+}
+
+// Partitions are counted against the disk they sit on, so keeping both would
+// report several times the traffic that happened.
+func TestSkipDiskDropsPartitions(t *testing.T) {
+	for _, name := range []string{"sda1", "sda2", "nvme0n1p1", "loop3", "ram0", "dm-0", "zram0"} {
+		if !skipDisk(name) {
+			t.Errorf("%s should be skipped", name)
+		}
+	}
+	for _, name := range []string{"sda", "sdb", "nvme0n1", "vda", "xvda"} {
+		if skipDisk(name) {
+			t.Errorf("%s is a whole disk and should be kept", name)
+		}
+	}
+}
+
+// A filesystem can run out of inodes with bytes to spare, and every tool then
+// says "no space left on device" — the same words as running out of room.
+func TestInodesJoinOnMountPoint(t *testing.T) {
+	out := []byte("#df\nFilesystem 1024-blocks Used Available Capacity Mounted on\n" +
+		"/dev/sda2 100 40 60 40% /\n" +
+		"#di\nFilesystem Inodes IUsed IFree IUse% Mounted on\n" +
+		"/dev/sda2 1000 999 1 100% /\n")
+	m, err := ParseMetrics(out, CPUTimes{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Filesystems) != 1 {
+		t.Fatalf("%d filesystems", len(m.Filesystems))
+	}
+	f := m.Filesystems[0]
+	if f.InodesTotal != 1000 || f.InodesUsed != 999 {
+		t.Fatalf("inodes %d/%d", f.InodesUsed, f.InodesTotal)
+	}
+	if f.InodesPercent < 99 {
+		t.Errorf("inode use %v%%, want ~100 — a disk that cannot create a file", f.InodesPercent)
+	}
+}
+
+// btrfs and several network filesystems have no inode table and report "-".
+// That is not an error and must not become a zero that reads as "empty".
+func TestInodesTolerateFilesystemsWithout(t *testing.T) {
+	out := []byte("#df\nFilesystem 1024-blocks Used Available Capacity Mounted on\n" +
+		"/dev/sda2 100 40 60 40% /\n" +
+		"#di\nFilesystem Inodes IUsed IFree IUse% Mounted on\n" +
+		"/dev/sda2 - - - - /\n")
+	m, err := ParseMetrics(out, CPUTimes{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := m.Filesystems[0].InodesTotal; got != 0 {
+		t.Errorf("InodesTotal = %d for a filesystem with no inode table", got)
 	}
 }

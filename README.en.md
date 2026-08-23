@@ -94,13 +94,14 @@ All the server does is **run commands it already had and hand back text**. Which
 | **Sessions** | Who is logged in to this server, and cutting any of them off |
 | **Scheduled jobs** | systemd timers. Next and last run |
 | **Terminal** | xterm.js PTY, multiple tabs. `code .` and `vi foo.conf` are **caught by the app** and open in the file tab. They are never sent to the server, so neither VS Code nor vi needs to exist there |
-| **Monitoring** | The bar is the glance, the monitoring tab is the detail. CPU is **split into user, kernel, IO wait and steal** — 90% that is all IO wait means the disk, and all steal means the hypervisor. **Per-core bars**, memory with cache and buffers separated out, every filesystem, and NVIDIA cards add **utilisation, fan, temperature and VRAM** (nvidia-smi) |
+| **Monitoring** | The bar is the glance, the monitoring tab is a dashboard. CPU is **split into user, kernel, IO wait and steal** — 90% that is all IO wait means the disk, and all steal means the hypervisor. **A core die**, memory with cache and buffers separated out, and NVIDIA cards add **utilisation, fan, temperature and VRAM** (nvidia-smi) |
+| **Infrastructure metrics** | **Inodes** (a disk with room that cannot create a file), **network error and drop** counters, **disk I/O**, **PSI** — how long things waited rather than how much was used — runnable and blocked counts, open descriptors. All of it read from `/proc` and `df`, so **there is still nothing installed on the server** |
 | **Trends** | CPU, memory and GPU over time for as long as the app was watching. **Stretches it did not see are drawn as breaks**, never joined up |
 | **Events** | What happened, and when. **OOM kills**, failed units, core dumps, scheduled restarts, reboot boundaries. Read from the systemd journal and classified by `MESSAGE_ID` rather than by wording, so the server's language does not matter |
 | **Command Log** | **Every command the GUI runs, live.** Click to copy |
 | **MCP** | Claude Code and Claude Desktop read and change your servers through this app. Per-server opt-in, changes are approved, **and can be undone** |
 | **Connecting** | Password, key, agent, 2FA. Import from `~/.ssh/config`. One **ProxyJump** hop |
-| **Language** | English and Korean. Follows your OS on first run; switch with `KO`/`EN` at the bottom of the sidebar |
+| **Language** | English and Korean. Uses whichever you last chose, or your OS language if you never have. Switch with `KO`/`EN` at the bottom of the sidebar |
 
 ### It does not hide what it ran
 

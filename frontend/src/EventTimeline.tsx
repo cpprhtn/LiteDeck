@@ -85,11 +85,10 @@ export function EventTimeline({
   return (
     <div className="events-pane">
       <div className="events-bar">
-        <div className="seg">
+        <div className="segmented">
           {RANGES.map((r) => (
             <button
               key={r.id}
-              className="ghost"
               data-on={r.id === range || undefined}
               onClick={() => setRange(r.id)}
             >
@@ -174,7 +173,7 @@ function AccessNotice({
         <p>
           {t('이 사용자는 systemd-journal·adm 그룹에 없어 시스템 저널이 비어 보입니다. 사건이 없는 것이 아니라 보이지 않는 것입니다.')}
         </p>
-        <div className="row">
+        <div className="events-notice-actions">
           <button className="primary" disabled={busy} onClick={onElevate}>
             {t('관리자 권한으로 읽기')}
           </button>

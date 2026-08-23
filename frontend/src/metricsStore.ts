@@ -38,6 +38,12 @@ export interface Sample {
   mem: number
   /** Utilisation per GPU, in nvidia-smi's card order. */
   gpu: number[]
+  /** Bytes per second, summed across interfaces and devices. -1 before there
+   *  were two samples to difference. */
+  netRx: number
+  netTx: number
+  diskR: number
+  diskW: number
 }
 
 /** How long a sample is kept. An hour is roughly 1,800 readings at the active
@@ -73,12 +79,22 @@ export function publishMetrics(hostID: string, m: MetricsView) {
   // compares snapshots by reference, so a list mutated in place is a list React
   // is entitled to believe did not change — and the chart would sit still while
   // the readings kept arriving.
+  // Summed rather than per-interface: the chart answers "is this box moving
+  // traffic", and which card carried it is a question the panel's own list
+  // answers. A single unknown rate makes the total unknown — adding a -1 in
+  // would quietly subtract a byte per second.
+  const sum = (xs: number[]) => (xs.some((v) => v < 0) ? -1 : xs.reduce((a, b) => a + b, 0))
+
   const next = rows.slice(drop)
   next.push({
     t: now,
     cpu: m.cpu,
     mem: m.memPercent,
     gpu: m.gpus.map((g) => g.utilization),
+    netRx: sum((m.net ?? []).map((n) => n.rxRate)),
+    netTx: sum((m.net ?? []).map((n) => n.txRate)),
+    diskR: sum((m.diskIO ?? []).map((d) => d.readRate)),
+    diskW: sum((m.diskIO ?? []).map((d) => d.writeRate)),
   })
   history.set(hostID, next)
 

@@ -30,12 +30,26 @@ type cpuHistory struct {
 	// otherwise difference two different cores against each other and draw a
 	// number that never happened.
 	cores map[string]map[int]adapter.CPUTimes
+	// counters holds the cumulative figures that only mean something as a rate
+	// — network bytes, disk bytes, context switches — with the moment they were
+	// taken. Unlike CPU, these are not fractions of a fixed total, so the
+	// elapsed time has to be divided out or the number changes meaning every
+	// time idle backoff stretches the interval.
+	counters map[string]counterSample
+}
+
+type counterSample struct {
+	at       time.Time
+	net      map[string][2]uint64 // iface → rx, tx
+	disk     map[string][2]uint64 // device → read, written
+	switches uint64
 }
 
 func newCPUHistory() *cpuHistory {
 	return &cpuHistory{
-		byID:  make(map[string]adapter.CPUTimes),
-		cores: make(map[string]map[int]adapter.CPUTimes),
+		byID:     make(map[string]adapter.CPUTimes),
+		cores:    make(map[string]map[int]adapter.CPUTimes),
+		counters: make(map[string]counterSample),
 	}
 }
 
@@ -76,6 +90,60 @@ func (h *cpuHistory) forget(hostID string) {
 	defer h.mu.Unlock()
 	delete(h.byID, hostID)
 	delete(h.cores, hostID)
+	delete(h.counters, hostID)
+}
+
+// rates fills in the per-second figures and stores this sample for the next
+// call. Everything stays -1 until there are two samples to difference, and a
+// counter that went backwards — a reboot, an interface recreated, a device
+// renamed — is reported as unknown rather than as a negative or a huge spike.
+func (h *cpuHistory) rates(hostID string, m *adapter.Metrics) {
+	now := time.Now()
+	cur := counterSample{
+		at:       now,
+		net:      make(map[string][2]uint64, len(m.Net)),
+		disk:     make(map[string][2]uint64, len(m.DiskIO)),
+		switches: m.ContextSwitches,
+	}
+	for _, n := range m.Net {
+		cur.net[n.Name] = [2]uint64{n.RxBytes, n.TxBytes}
+	}
+	for _, d := range m.DiskIO {
+		cur.disk[d.Name] = [2]uint64{d.ReadBytes, d.WriteBytes}
+	}
+
+	h.mu.Lock()
+	prev, had := h.counters[hostID]
+	h.counters[hostID] = cur
+	h.mu.Unlock()
+
+	if !had {
+		return
+	}
+	secs := now.Sub(prev.at).Seconds()
+	if secs <= 0 {
+		return
+	}
+	per := func(now, before uint64) float64 {
+		if now < before {
+			return -1 // counter reset
+		}
+		return float64(now-before) / secs
+	}
+
+	for i := range m.Net {
+		if p, ok := prev.net[m.Net[i].Name]; ok {
+			m.Net[i].RxRate = per(m.Net[i].RxBytes, p[0])
+			m.Net[i].TxRate = per(m.Net[i].TxBytes, p[1])
+		}
+	}
+	for i := range m.DiskIO {
+		if p, ok := prev.disk[m.DiskIO[i].Name]; ok {
+			m.DiskIO[i].ReadRate = per(m.DiskIO[i].ReadBytes, p[0])
+			m.DiskIO[i].WriteRate = per(m.DiskIO[i].WriteBytes, p[1])
+		}
+	}
+	m.SwitchRate = per(m.ContextSwitches, prev.switches)
 }
 
 // MetricsView is what the summary bar renders.
@@ -153,6 +221,7 @@ func (a *App) HostMetrics(hostID string) (MetricsView, error) {
 		m.Cores[i].Usage = m.Cores[i].Times.Usage(a.cpu.previousCore(hostID, m.Cores[i].Index))
 	}
 	a.cpu.recordCores(hostID, m.Cores)
+	a.cpu.rates(hostID, &m)
 	if gpuLive {
 		// Never nil: the bar maps over this, and a host with no card has to
 		// arrive as an empty list rather than as a missing one.
