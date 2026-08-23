@@ -44,6 +44,8 @@ file chooser have not.
 | **Debian, RHEL/Rocky 8** | Share the systemd 245 table-parsing path, so they should work, but untested |
 | **Podman** | Docker-compatible CLI, so the parser is shared, but never run |
 | **Windows containers** | The test machine had no Docker |
+| **OOM and core-dump events** | Classification goes by systemd's `MESSAGE_ID` and those IDs were checked against the catalogue, but **no real OOM or core dump has ever been seen through this.** A container cannot produce one — the kernel's OOM message goes to the host's journal |
+| **The monitoring tab on Windows** | Resources appear, but there is **no CPU split, no per-core view and no memory breakdown** — those read `/proc`, which Windows does not have. The events pane does not appear at all; the Windows event log sits where journald does, but nothing reads it yet |
 | **More than one NVIDIA card** | Confirmed on real hardware with a single card. The multi-card path is covered by tests for the parser and the sample boundary, but has not run against a machine with several |
 | **Compose v1 and `podman compose`** | Only the Compose v2 plugin was tried. The standalone `docker-compose` (v1) cannot address a project without its file and is not supported. `podman compose` takes the same code path but was never run |
 | **ProxyJump against a real bastion** | Verified against two containers (bastion + target). Never tried against an actual bastion. Multi-hop is not implemented and is refused |
