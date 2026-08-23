@@ -546,7 +546,8 @@ function FilesystemTable({ rows, shown }: { rows: Filesystem[]; shown: Filesyste
 
   return (
     <>
-      <table className="res-table">
+      <div className="res-scroll">
+        <table className="res-table">
         <thead>
           <tr>
             <th>{t('마운트')}</th>
@@ -582,7 +583,8 @@ function FilesystemTable({ rows, shown }: { rows: Filesystem[]; shown: Filesyste
             </tr>
           ))}
         </tbody>
-      </table>
+        </table>
+      </div>
       {hidden > 0 && (
         <button className="ghost small" onClick={() => setAll((v) => !v)}>
           {all ? t('요약만 보기') : t('나머지 {n}개도 보기 — tmpfs·overlay 등', { n: hidden })}

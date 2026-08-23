@@ -37,22 +37,19 @@ export function MonitorView({
   const active = pane === 'events' && !hasEvents ? 'resources' : pane
 
   return (
-    <div className="monitor-pane">
+    <div className="view monitor-pane">
       <div className="monitor-bar">
-        <div className="seg">
+        {/* The same control the container tab uses for its two panes, so the
+            two read as the same kind of switch. */}
+        <div className="segmented">
           <button
-            className="ghost"
             data-on={active === 'resources' || undefined}
             onClick={() => setPane('resources')}
           >
             {t('리소스')}
           </button>
           {hasEvents && (
-            <button
-              className="ghost"
-              data-on={active === 'events' || undefined}
-              onClick={() => setPane('events')}
-            >
+            <button data-on={active === 'events' || undefined} onClick={() => setPane('events')}>
               {t('이벤트')}
             </button>
           )}

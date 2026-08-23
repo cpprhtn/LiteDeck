@@ -2209,6 +2209,12 @@ button.events-unit {
 .events-notice p:last-child {
   margin-bottom: 0;
 }
+.events-notice-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
 
 /* 시간축 차트. x 는 위치가 아니라 시각이다 — 유휴로 벌어진 30초 간격을
    촘촘한 2초처럼 그리면 선의 모양은 그대로인데 축의 축척만 몰래 바뀐다. */
@@ -2265,6 +2271,22 @@ button.events-unit {
 }
 
 /* 카드 번호는 여러 장일 때만 뜬다. 한 장뿐이면 「0:」 은 아무것도 안 알려준다. */
+
+/* ── 모니터링 탭 (§4.7, arch/07) ────────────────────────────────
+   .view 가 flex 열과 min-height:0 을 이미 준다 — .main 이 탭에 높이를
+   건네는 계약이 그것이고, 다른 탭은 전부 그 클래스를 달고 있다. 여기만
+   빠져 있어서 이 창이 내용 높이만큼 늘어났고, 접힌 곳의 파일시스템 표에
+   스크롤로 닿을 수가 없었다. */
+.monitor-pane {
+  height: 100%;
+}
+.monitor-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
 
 /* ── 리소스 (§4.7, arch/07) ─────────────────────────────────────
    전체 너비로 쌓지 않고 패널 격자로 둔다. 이 화면이 답하는 질문은
@@ -2451,8 +2473,14 @@ button.events-unit {
   opacity: 0.7;
 }
 
+/* 창이 좁아지면 열이 눌려 사용률 막대가 다음 줄로 넘어간다. 표는 자기
+   안에서 가로로 스크롤하고, 페이지 자체는 가로로 밀리지 않게 둔다. */
+.res-scroll {
+  overflow-x: auto;
+}
 .res-table {
   width: 100%;
+  min-width: 460px;
   border-collapse: collapse;
   font-size: var(--text-sm);
 }
