@@ -130,7 +130,7 @@ type CPUTimes struct {
 // Split reports where the time between two samples went, in percent.
 func (c CPUTimes) Split(prev CPUTimes) CPUSplit {
 	if prev.Total == 0 || c.Total <= prev.Total {
-		return CPUSplit{User: -1, System: -1, IOWait: -1, Steal: -1}
+		return UnknownSplit()
 	}
 	total := float64(c.Total - prev.Total)
 	pct := func(now, before uint64) float64 {
@@ -145,6 +145,15 @@ func (c CPUTimes) Split(prev CPUTimes) CPUSplit {
 		IOWait: pct(c.IOWait, prev.IOWait),
 		Steal:  pct(c.Steal, prev.Steal),
 	}
+}
+
+// UnknownSplit is the breakdown of a platform that does not report one, or of
+// a first sample with nothing to difference against. Not a zero value: four
+// zeroes draw a bar that says the machine is doing nothing, which is a claim,
+// and the whole point of these figures is that they are the difference between
+// "idle", "waiting on a disk" and "not being given any CPU at all".
+func UnknownSplit() CPUSplit {
+	return CPUSplit{User: -1, System: -1, IOWait: -1, Steal: -1}
 }
 
 // CPUSplit is the breakdown between two samples. -1 where it cannot be computed
@@ -272,7 +281,13 @@ type Metrics struct {
 //
 // prev is the previous CPU sample; pass a zero value on the first call.
 func ParseMetrics(data []byte, prev CPUTimes) (Metrics, error) {
-	m := Metrics{CPU: -1, Filesystems: []Filesystem{}, GPUs: []GPU{}, Cores: []Core{}}
+	m := Metrics{
+		CPU:         -1,
+		Filesystems: []Filesystem{},
+		GPUs:        []GPU{},
+		Cores:       []Core{},
+		Split:       UnknownSplit(),
+	}
 
 	sections := splitSections(data)
 

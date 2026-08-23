@@ -333,3 +333,40 @@ func TestMetricsScriptDoesNotShipTheInterruptTable(t *testing.T) {
 		}
 	}
 }
+
+// Every platform has to answer with the same shape.
+//
+// Windows has no per-core breakdown and no user/system/iowait/steal split. A
+// nil core list reaches the frontend as JSON null and the view maps over it; a
+// zeroed split draws a bar claiming the machine is doing nothing at all, which
+// is a statement rather than an absence.
+func TestWindowsMetricsFillTheSameShape(t *testing.T) {
+	m, err := ParseWindowsMetrics([]byte(""), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Cores == nil {
+		t.Error("Cores is nil — it reaches the view as null and the map throws")
+	}
+	if m.GPUs == nil || m.Filesystems == nil {
+		t.Error("a list arrived as nil")
+	}
+	if m.Split.User != -1 || m.Split.Steal != -1 {
+		t.Errorf("split %+v — zeroes say the machine is idle, which is a claim "+
+			"Windows cannot make here", m.Split)
+	}
+}
+
+// The Linux path has to say the same thing before its second sample.
+func TestLinuxSplitStartsUnknown(t *testing.T) {
+	m, err := ParseMetrics([]byte("#mem\nMemTotal: 1024 kB\n"), CPUTimes{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Cores == nil {
+		t.Error("Cores is nil")
+	}
+	if m.Split.User != -1 {
+		t.Errorf("split %+v with no stat section at all", m.Split)
+	}
+}

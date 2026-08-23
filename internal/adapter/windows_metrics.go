@@ -78,6 +78,12 @@ func ParseWindowsMetrics(data []byte, nowMillis int64) (Metrics, error) {
 		CPU:         -1,
 		Filesystems: []Filesystem{},
 		GPUs:        []GPU{},
+		// Windows reports one aggregate percentage. There is no per-core
+		// breakdown here and no user/system/iowait/steal split, so both say so
+		// rather than arriving as an empty list of cores and four zeroes — the
+		// zeroes would draw a machine doing nothing at all.
+		Cores: []Core{},
+		Split: UnknownSplit(),
 		// Windows has no load average. Nothing here approximates it: the
 		// processor queue length counter measures something else, and reporting
 		// zero would read as an idle machine rather than as an absent figure. The

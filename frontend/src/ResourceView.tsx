@@ -56,6 +56,8 @@ export function ResourceView({ hostID }: { hostID: string }) {
         <h3>{t('CPU')}</h3>
         {/* The bar says 40%. This says what the 40% is — which is the only
             version of the number anybody can act on. */}
+        {/* Windows reports one aggregate percentage and no breakdown, so the
+            split says it does not know rather than drawing four zeroes. */}
         <SplitBar split={m.split} idle={m.cpu} />
         <TimeChart
           samples={history}
@@ -63,17 +65,19 @@ export function ResourceView({ hostID }: { hostID: string }) {
           warnAt={90}
           label={t('CPU 사용률 추이')}
         />
-        {m.cores.length > 1 && <Cores cores={m.cores} />}
+        {(m.cores ?? []).length > 1 && <Cores cores={m.cores} />}
       </section>
 
       <section className="res-section">
         <h3>{t('메모리')}</h3>
-        <MemoryBar
-          total={m.memTotal}
-          used={m.memUsed}
-          buffers={m.memBuffers}
-          cached={m.memCached}
-        />
+        {(m.memCached > 0 || m.memBuffers > 0) && (
+          <MemoryBar
+            total={m.memTotal}
+            used={m.memUsed}
+            buffers={m.memBuffers}
+            cached={m.memCached}
+          />
+        )}
         <TimeChart
           samples={history}
           pick={(s) => s.mem}
@@ -82,8 +86,11 @@ export function ResourceView({ hostID }: { hostID: string }) {
         />
         <div className="res-grid">
           <Stat label={t('쓰는 중')} value={fmtBytes(m.memUsed)} note={pct(m.memPercent)} />
-          <Stat label={t('캐시')} value={fmtBytes(m.memCached)} />
-          <Stat label={t('버퍼')} value={fmtBytes(m.memBuffers)} />
+          {/* The breakdown comes from /proc/meminfo. A platform without one
+              reports zeroes, and a tile reading "캐시 0B" is a claim about the
+              machine rather than an absent figure — so it is not drawn. */}
+          {m.memCached > 0 && <Stat label={t('캐시')} value={fmtBytes(m.memCached)} />}
+          {m.memBuffers > 0 && <Stat label={t('버퍼')} value={fmtBytes(m.memBuffers)} />}
           {m.memShared > 0 && <Stat label={t('공유')} value={fmtBytes(m.memShared)} />}
           {/* Dirty is pages written but not yet on disk. A number that keeps
               climbing is a disk that cannot keep up with what is being written
