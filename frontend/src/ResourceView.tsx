@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { CPUSplit, Core, Filesystem, GPU } from './ipc'
+import type { CPUSplit, Core, DiskIO, Filesystem, GPU, NetIface, Pressure } from './ipc'
 import { useMetrics, useMetricsHistory } from './metricsStore'
 import { TimeChart } from './TimeChart'
 import { shortGPUName } from './gpuName'
@@ -42,6 +42,11 @@ function fmtUptime(sec: number): string {
   return t('{m}분', { m })
 }
 
+/** Bytes per second. -1 is "not known yet", never a real zero. */
+function fmtRate(v: number): string {
+  return v < 0 ? '—' : `${fmtBytes(v)}/s`
+}
+
 /** A percentage that may be unknown. -1 is "no second sample yet" for CPU and
  *  "this card does not report it" for a fan — never a real zero. */
 function pct(v: number): string {
@@ -60,8 +65,49 @@ export function ResourceView({ hostID, cpuModel }: { hostID: string; cpuModel?: 
   const cores = m.cores ?? []
   const swapPct = m.swapTotal > 0 ? (m.swapUsed / m.swapTotal) * 100 : -1
 
+  const netRx = sumRate(m.net?.map((n) => n.rxRate))
+  const netTx = sumRate(m.net?.map((n) => n.txRate))
+  const diskR = sumRate(m.diskIO?.map((d) => d.readRate))
+  const diskW = sumRate(m.diskIO?.map((d) => d.writeRate))
+  const netBad = (m.net ?? []).reduce((a, n) => a + n.rxErrs + n.txErrs + n.rxDrop + n.txDrop, 0)
+
   return (
     <div className="res-pane">
+      {/* The strip is for figures that are one number and stay one number.
+          Putting them in panels would give six charts of a flat line and push
+          the things that do move off the screen. */}
+      <div className="res-strip">
+        <Chip label={t('가동 시간')} value={fmtUptime(m.uptimeSeconds)} />
+        {/* r and b are vmstat's, and together they say which of the two a slow
+            machine is short of: tasks queueing for a CPU, or tasks parked in
+            uninterruptible IO. */}
+        <Chip label={t('실행 대기')} value={String(m.runnable ?? 0)} />
+        <Chip
+          label={t('IO 블록')}
+          value={String(m.blocked ?? 0)}
+          warn={(m.blocked ?? 0) > 0}
+        />
+        {m.switchRate >= 0 && (
+          <Chip label={t('컨텍스트 전환')} value={t('{n}/초', { n: Math.round(m.switchRate) })} />
+        )}
+        {m.fdUsed > 0 && (
+          <Chip
+            label={t('열린 FD')}
+            value={m.fdMax > 0 ? `${m.fdUsed} / ${m.fdMax}` : String(m.fdUsed)}
+            warn={m.fdMax > 0 && m.fdUsed / m.fdMax > 0.8}
+          />
+        )}
+        {m.hasLoad && cores.length > 0 && (
+          // The doc every sysadmin repeats: load only means something against
+          // the core count. 8 on eight cores is busy; 8 on two is drowning.
+          <Chip
+            label={t('로드 / 코어')}
+            value={`${m.load1.toFixed(2)} / ${cores.length}`}
+            warn={m.load1 > cores.length}
+          />
+        )}
+      </div>
+
       <div className="res-grid">
         <Panel
           label="CPU"
@@ -77,6 +123,7 @@ export function ResourceView({ hostID, cpuModel }: { hostID: string; cpuModel?: 
             label={t('CPU 사용률 추이')}
           />
           <SplitBar split={m.split} />
+          {m.hasPSI && <PressureLine label={t('CPU 압력')} p={m.psiCPU} />}
           {cores.length > 1 && <CoreDie cores={cores} />}
         </Panel>
 
@@ -110,6 +157,7 @@ export function ResourceView({ hostID, cpuModel }: { hostID: string; cpuModel?: 
               />
             </>
           )}
+          {m.hasPSI && <PressureLine label={t('메모리 압력')} p={m.psiMemory} />}
         </Panel>
 
         {m.gpus.map((g) => (
@@ -139,6 +187,53 @@ export function ResourceView({ hostID, cpuModel }: { hostID: string; cpuModel?: 
             />
           </Panel>
         ))}
+
+        {(m.net ?? []).length > 0 && (
+          <Panel
+            label={t('네트워크')}
+            value={fmtRate(netRx)}
+            sub={[t('보냄 {v}', { v: fmtRate(netTx) })]}
+            warn={netBad > 0}
+          >
+            <TimeChart
+              samples={history}
+              pick={(s) => s.netRx}
+              pick2={(s) => s.netTx}
+              height={44}
+              scale="auto"
+              format={fmtRate}
+              label={t('네트워크 처리량 추이')}
+            />
+            <IfaceList ifaces={m.net} />
+          </Panel>
+        )}
+
+        {(m.diskIO ?? []).length > 0 && (
+          <Panel
+            label={t('디스크 I/O')}
+            value={fmtRate(diskR)}
+            sub={[t('쓰기 {v}', { v: fmtRate(diskW) })]}
+          >
+            {/* iowait says the machine is waiting on storage. It does not say
+                which storage, and on a host with a fast root disk and a slow
+                array that is the whole question. */}
+            <TimeChart
+              samples={history}
+              pick={(s) => s.diskR}
+              pick2={(s) => s.diskW}
+              height={44}
+              scale="auto"
+              format={fmtRate}
+              label={t('디스크 처리량 추이')}
+            />
+            {m.hasPSI && <PressureLine label={t('IO 압력')} p={m.psiIO} />}
+            <Facts
+              rows={(m.diskIO ?? [])
+                .slice(0, 4)
+                .map((d) => [d.name, `${fmtRate(d.readRate)} / ${fmtRate(d.writeRate)}`] as [string, string])}
+            />
+          </Panel>
+        )}
 
         {m.hasLoad && (
           <Panel label={t('로드')} value={m.load1.toFixed(2)} warn={cores.length > 0 && m.load1 > cores.length}>
@@ -205,6 +300,82 @@ function Panel({
       {children}
     </div>
   )
+}
+
+/** One number that stays one number. */
+function Chip({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
+  return (
+    <div className="res-chip" data-warn={warn || undefined}>
+      <span className="res-chip-label">{label}</span>
+      <span className="res-chip-value">{value}</span>
+    </div>
+  )
+}
+
+/** PSI as one line.
+ *
+ *  Utilisation says how much of a thing is being used; pressure says how much
+ *  time was lost waiting for it. A box at 100% CPU can be perfectly happy —
+ *  that is a machine doing its job — while one at 40% with rising pressure has
+ *  tasks queueing. The kernel keeps the averages itself, so a connection that
+ *  opened a second ago already carries the last five minutes. */
+function PressureLine({ label, p }: { label: string; p: Pressure }) {
+  const worst = Math.max(p.some10, p.some60, p.some300)
+  return (
+    <div
+      className="res-psi"
+      data-warn={worst >= 10 || undefined}
+      title={t('일부 작업이 기다린 시간 비율 — 사용률과 달리 모자란지를 말합니다')}
+    >
+      <span className="res-psi-label">{label}</span>
+      <span className="res-psi-v">{p.some10.toFixed(1)}</span>
+      <span className="muted">·</span>
+      <span className="res-psi-v">{p.some60.toFixed(1)}</span>
+      <span className="muted">·</span>
+      <span className="res-psi-v">{p.some300.toFixed(1)}</span>
+      <span className="muted res-psi-note">{t('10초·1분·5분 %')}</span>
+    </div>
+  )
+}
+
+/** Interfaces, with the counters that only matter when they climb: a card that
+ *  dropped four hundred packets last March is not a problem, one dropping four
+ *  a second is. */
+function IfaceList({ ifaces }: { ifaces: NetIface[] }) {
+  return (
+    <dl className="res-facts">
+      {ifaces.slice(0, 4).map((n) => {
+        const bad = n.rxErrs + n.txErrs + n.rxDrop + n.txDrop
+        return (
+          <div key={n.name}>
+            <dt className="mono">{n.name}</dt>
+            <dd>
+              {fmtRate(n.rxRate)} / {fmtRate(n.txRate)}
+              {bad > 0 && (
+                <span
+                  className="res-bad"
+                  title={t('오류 {e} · 버림 {d}', {
+                    e: n.rxErrs + n.txErrs,
+                    d: n.rxDrop + n.txDrop,
+                  })}
+                >
+                  {' '}
+                  ⚠ {bad.toLocaleString()}
+                </span>
+              )}
+            </dd>
+          </div>
+        )
+      })}
+    </dl>
+  )
+}
+
+/** A total that one unknown makes unknown — adding a -1 in would quietly
+ *  subtract a byte per second. */
+function sumRate(xs?: number[]): number {
+  if (!xs || xs.length === 0) return -1
+  return xs.some((v) => v < 0) ? -1 : xs.reduce((a, b) => a + b, 0)
 }
 
 /** key/value pairs on one line each, tight. Small type and tabular numbers so
@@ -383,6 +554,7 @@ function FilesystemTable({ rows, shown }: { rows: Filesystem[]; shown: Filesyste
             <th className="num">{t('사용')}</th>
             <th className="num">{t('전체')}</th>
             <th className="num">{t('여유')}</th>
+            <th className="num">inode</th>
             <th className="res-bar-col" />
           </tr>
         </thead>
@@ -394,6 +566,13 @@ function FilesystemTable({ rows, shown }: { rows: Filesystem[]; shown: Filesyste
               <td className="num">{fmtBytes(f.used)}</td>
               <td className="num">{fmtBytes(f.size)}</td>
               <td className="num">{fmtBytes(f.available)}</td>
+              {/* A filesystem with room and no inodes left cannot create a
+                  file, and every tool then says "no space left on device" —
+                  the same words as running out of bytes. Blank where the
+                  filesystem has no inode table, which is normal for btrfs. */}
+              <td className="num" data-warn={(f.inodesPercent ?? 0) >= 90 || undefined}>
+                {!f.inodesTotal ? '—' : `${Math.round(f.inodesPercent ?? 0)}%`}
+              </td>
               <td>
                 <div className="res-bar" data-warn={f.percent >= 90 || undefined}>
                   <span style={{ width: `${Math.min(100, Math.max(0, f.percent))}%` }} />

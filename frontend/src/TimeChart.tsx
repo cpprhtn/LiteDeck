@@ -21,6 +21,15 @@ export function TimeChart({
   height = 72,
   warnAt,
   label,
+  /** Percent charts share a fixed 0–100 scale so that 2% and 90% cannot draw
+   *  the same picture. Rates have no ceiling to share, so they scale to their
+   *  own peak — and the peak is printed on the axis, because a line without a
+   *  number beside it says only "something happened". */
+  scale = 'percent',
+  format,
+  /** A second series drawn under the first — transmit against receive, write
+   *  against read. Two panels for one question reads worse than one. */
+  pick2,
 }: {
   samples: Sample[]
   /** The value to plot, or -1 where this sample has none. */
@@ -29,6 +38,9 @@ export function TimeChart({
   /** Above this the line turns to the warning colour. */
   warnAt?: number
   label: string
+  scale?: 'percent' | 'auto'
+  format?: (v: number) => string
+  pick2?: (s: Sample) => number
 }) {
   const usable = samples.filter((s) => pick(s) >= 0)
   if (usable.length < 2) {
@@ -44,7 +56,18 @@ export function TimeChart({
   const t1 = usable[usable.length - 1].t
   const span = Math.max(1, t1 - t0)
   const x = (s: Sample) => ((s.t - t0) / span) * w
-  const y = (v: number) => height - (Math.min(100, Math.max(0, v)) / 100) * height
+
+  // A flat zero would fill the panel with a line at the top if the ceiling were
+  // taken from the data alone, so an all-quiet chart keeps a floor.
+  const peak =
+    scale === 'percent'
+      ? 100
+      : Math.max(
+          1,
+          ...usable.map(pick),
+          ...(pick2 ? usable.map(pick2).filter((v) => v >= 0) : []),
+        )
+  const y = (v: number) => height - (Math.min(peak, Math.max(0, v)) / peak) * height
 
   // One polyline per unbroken run. Splitting on the gap rather than drawing a
   // single line with holes keeps the break honest even when the renderer would
@@ -59,8 +82,18 @@ export function TimeChart({
     runs[runs.length - 1].push(`${x(s).toFixed(1)},${y(pick(s)).toFixed(1)}`)
   })
 
-  const peak = Math.max(...usable.map(pick))
-  const hot = warnAt !== undefined && peak >= warnAt
+  const hot = warnAt !== undefined && Math.max(...usable.map(pick)) >= warnAt
+
+  // The second series gets the same gap treatment, but silently: one "N gaps"
+  // note under the chart covers both.
+  const runs2: string[][] = [[]]
+  if (pick2) {
+    const u2 = samples.filter((s) => pick2(s) >= 0)
+    u2.forEach((s, i) => {
+      if (i > 0 && s.t - u2[i - 1].t > GAP_MS) runs2.push([])
+      runs2[runs2.length - 1].push(`${x(s).toFixed(1)},${y(pick2(s)).toFixed(1)}`)
+    })
+  }
 
   return (
     <div className="chart">
@@ -86,6 +119,11 @@ export function TimeChart({
             height={height}
           />
         ))}
+        {runs2.map((pts, i) =>
+          pts.length >= 2 ? (
+            <polyline key={`b${i}`} className="chart-line2" points={pts.join(' ')} />
+          ) : null,
+        )}
         {runs.map((pts, i) =>
           pts.length < 2 ? (
             // A run of one is a single reading marooned between two gaps. Drawn
@@ -107,6 +145,7 @@ export function TimeChart({
       </svg>
       <div className="chart-axis muted">
         <span>{clock(t0)}</span>
+        {scale === 'auto' && format && <span>{t('최고 {v}', { v: format(peak) })}</span>}
         {gaps.length > 0 && (
           <span title={t('이 구간은 앱이 보고 있지 않아 기록이 없습니다')}>
             {t('빈 구간 {n}곳', { n: gaps.length })}

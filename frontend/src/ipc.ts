@@ -333,6 +333,46 @@ export interface Filesystem {
   used: number
   available: number
   percent: number
+  /** The other way a filesystem fills up. A disk with room and no inodes left
+   *  cannot create a file, and says "no space left on device" either way.
+   *  Absent on filesystems with no inode table, such as btrfs. */
+  inodesTotal?: number
+  inodesUsed?: number
+  inodesPercent?: number
+}
+
+/** One interface. Rates are bytes per second since the last sample, -1 before
+ *  there were two. Errors and drops are raw totals: what matters is whether
+ *  they are climbing. */
+export interface NetIface {
+  name: string
+  rxBytes: number
+  txBytes: number
+  rxErrs: number
+  txErrs: number
+  rxDrop: number
+  txDrop: number
+  rxRate: number
+  txRate: number
+}
+
+/** One block device. iowait says the machine is waiting on storage; this says
+ *  which storage. */
+export interface DiskIO {
+  name: string
+  readBytes: number
+  writeBytes: number
+  readRate: number
+  writeRate: number
+}
+
+/** Pressure stall information. Utilisation says how much of a thing is used;
+ *  pressure says how much time was lost waiting for it. */
+export interface Pressure {
+  some10: number
+  some60: number
+  some300: number
+  full10: number
 }
 
 /** One NVIDIA card (§4.7). NVIDIA only: nvidia-smi ships with every driver and
@@ -413,6 +453,22 @@ export interface MetricsView {
   memCached: number
   memShared: number
   memDirty: number
+  /** vmstat's r and b: tasks wanting a CPU, and tasks stuck in uninterruptible
+   *  IO. Between them they say which of the two a slow machine is short of. */
+  runnable: number
+  blocked: number
+  /** Context switches per second, -1 before a second sample. */
+  switchRate: number
+  net: NetIface[]
+  diskIO: DiskIO[]
+  /** In-use descriptors. fdMax is 0 where the kernel reports no real ceiling. */
+  fdUsed: number
+  fdMax: number
+  /** False on a kernel without CONFIG_PSI or older than 4.20. */
+  hasPSI: boolean
+  psiCPU: Pressure
+  psiIO: Pressure
+  psiMemory: Pressure
   memTotal: number
   memAvailable: number
   memUsed: number

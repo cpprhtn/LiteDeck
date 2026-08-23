@@ -34,11 +34,16 @@ import (
 // normal condition would show up in the Command Log as a red row with a failure
 // count climbing behind it. That log is the one place this app asks to be
 // believed, so a normal condition must not appear there as a failure.
-const MetricsScript = `echo '#stat'; grep '^cpu' /proc/stat 2>/dev/null
+const MetricsScript = `echo '#stat'; grep -E '^(cpu|procs_|ctxt)' /proc/stat 2>/dev/null
 echo '#mem'; cat /proc/meminfo 2>/dev/null
 echo '#load'; cat /proc/loadavg 2>/dev/null
 echo '#up'; cat /proc/uptime 2>/dev/null
 echo '#df'; df -P -B1 2>/dev/null
+echo '#di'; df -P -i 2>/dev/null
+echo '#net'; cat /proc/net/dev 2>/dev/null
+echo '#io'; cat /proc/diskstats 2>/dev/null
+echo '#fd'; cat /proc/sys/fs/file-nr 2>/dev/null
+echo '#psi'; for z in cpu io memory; do echo "@$z"; cat /proc/pressure/$z 2>/dev/null; done
 :`
 
 // MetricsScriptWithGPU is MetricsScript with the card read inline, one
@@ -60,11 +65,16 @@ echo '#df'; df -P -B1 2>/dev/null
 //
 // Windows has no cheap equivalent — a PowerShell job per poll is worse than the
 // problem — so WindowsMetricsScript keeps only its Get-Command guard.
-const MetricsScriptWithGPU = `echo '#stat'; grep '^cpu' /proc/stat 2>/dev/null
+const MetricsScriptWithGPU = `echo '#stat'; grep -E '^(cpu|procs_|ctxt)' /proc/stat 2>/dev/null
 echo '#mem'; cat /proc/meminfo 2>/dev/null
 echo '#load'; cat /proc/loadavg 2>/dev/null
 echo '#up'; cat /proc/uptime 2>/dev/null
 echo '#df'; df -P -B1 2>/dev/null
+echo '#di'; df -P -i 2>/dev/null
+echo '#net'; cat /proc/net/dev 2>/dev/null
+echo '#io'; cat /proc/diskstats 2>/dev/null
+echo '#fd'; cat /proc/sys/fs/file-nr 2>/dev/null
+echo '#psi'; for z in cpu io memory; do echo "@$z"; cat /proc/pressure/$z 2>/dev/null; done
 echo '#gpu'; GPUTO=; command -v timeout >/dev/null 2>&1 && GPUTO='timeout 5'
 $GPUTO nvidia-smi --query-gpu=` + gpuQueryFields + ` --format=csv,noheader,nounits 2>/dev/null
 :`
@@ -201,6 +211,70 @@ type Filesystem struct {
 	Used       int64   `json:"used"`
 	Available  int64   `json:"available"`
 	Percent    float64 `json:"percent"`
+
+	// Inodes are the other way a filesystem fills up, and the one nobody
+	// checks. A disk with room and no inodes left cannot create a file, and
+	// every tool that reports "no space left on device" says exactly the same
+	// thing as if it were out of bytes. Servers that write many small files —
+	// logs, mail queues, session stores — hit this first. Zero where the
+	// filesystem does not have inodes at all, which is normal for btrfs.
+	InodesTotal   int64   `json:"inodesTotal,omitempty"`
+	InodesUsed    int64   `json:"inodesUsed,omitempty"`
+	InodesPercent float64 `json:"inodesPercent,omitempty"`
+}
+
+// NetIface is one interface's counters.
+//
+// The counters are cumulative since boot, so the rates are differences between
+// samples — the same shape as CPU, and for the same reason.
+//
+// Errors and drops are kept as raw totals rather than rates because what
+// matters is whether they are *climbing*: a card that dropped four hundred
+// packets last March is not a problem, and one dropping four a second is.
+type NetIface struct {
+	Name    string `json:"name"`
+	RxBytes uint64 `json:"rxBytes"`
+	TxBytes uint64 `json:"txBytes"`
+	RxErrs  uint64 `json:"rxErrs"`
+	TxErrs  uint64 `json:"txErrs"`
+	RxDrop  uint64 `json:"rxDrop"`
+	TxDrop  uint64 `json:"txDrop"`
+
+	// Bytes per second between the last two samples. -1 before the second.
+	RxRate float64 `json:"rxRate"`
+	TxRate float64 `json:"txRate"`
+}
+
+// DiskIO is one block device's traffic.
+//
+// CPU's iowait says the machine is waiting on storage. It does not say which
+// storage, and on a host with a fast root disk and a slow array that is the
+// whole question.
+type DiskIO struct {
+	Name       string `json:"name"`
+	ReadBytes  uint64 `json:"readBytes"`
+	WriteBytes uint64 `json:"writeBytes"`
+	// Bytes per second between the last two samples. -1 before the second.
+	ReadRate  float64 `json:"readRate"`
+	WriteRate float64 `json:"writeRate"`
+}
+
+// Pressure is one PSI resource (§/proc/pressure).
+//
+// Utilisation says how much of a thing is being used; pressure says how much
+// time was lost waiting for it. A machine can sit at 100% CPU and be perfectly
+// happy — that is a machine doing its job — while one at 40% with rising
+// pressure has tasks queueing. The kernel keeps the averages itself, so a
+// freshly opened connection gets the last five minutes for free.
+//
+// Some is "at least one task was stalled"; Full is "every task was", which on
+// CPU is never reported and on memory or IO means the machine did nothing at
+// all for that fraction of the time.
+type Pressure struct {
+	Some10  float64 `json:"some10"`
+	Some60  float64 `json:"some60"`
+	Some300 float64 `json:"some300"`
+	Full10  float64 `json:"full10"`
 }
 
 // GPU is one NVIDIA card.
@@ -272,6 +346,33 @@ type Metrics struct {
 	MemShared  int64 `json:"memShared"`
 	MemDirty   int64 `json:"memDirty"`
 
+	// Runnable and Blocked are vmstat's r and b: tasks wanting a CPU and tasks
+	// stuck waiting on IO. Between them they say which of the two a slow
+	// machine is short of, and both come out of the /proc/stat this already
+	// reads — they were being thrown away.
+	Runnable int `json:"runnable"`
+	Blocked  int `json:"blocked"`
+	// ContextSwitches is cumulative since boot; the app differences it.
+	ContextSwitches uint64  `json:"-"`
+	SwitchRate      float64 `json:"switchRate"`
+
+	// Net and DiskIO carry cumulative counters plus the rate since the last
+	// sample.
+	Net    []NetIface `json:"net"`
+	DiskIO []DiskIO   `json:"diskIO"`
+
+	// FDUsed and FDMax are /proc/sys/fs/file-nr. Running out of file
+	// descriptors takes a server down in a way that looks like nothing else is
+	// wrong, and the limit is invisible until it is reached.
+	FDUsed int64 `json:"fdUsed"`
+	FDMax  int64 `json:"fdMax"`
+
+	// PSI is zero on a kernel built without it (CONFIG_PSI) or older than 4.20.
+	HasPSI    bool     `json:"hasPSI"`
+	PSICPU    Pressure `json:"psiCPU"`
+	PSIIO     Pressure `json:"psiIO"`
+	PSIMemory Pressure `json:"psiMemory"`
+
 	// GPUs is empty on the overwhelming majority of servers, which is why the
 	// summary bar treats it as an optional section rather than a fixed tile.
 	GPUs []GPU `json:"gpus"`
@@ -286,7 +387,10 @@ func ParseMetrics(data []byte, prev CPUTimes) (Metrics, error) {
 		Filesystems: []Filesystem{},
 		GPUs:        []GPU{},
 		Cores:       []Core{},
+		Net:         []NetIface{},
+		DiskIO:      []DiskIO{},
 		Split:       UnknownSplit(),
+		SwitchRate:  -1,
 	}
 
 	sections := splitSections(data)
@@ -346,6 +450,34 @@ func ParseMetrics(data []byte, prev CPUTimes) (Metrics, error) {
 
 	m.Filesystems = parseDF(sections["df"])
 	m.GPUs = parseGPUs(sections["gpu"])
+
+	// procs_running counts tasks that want a CPU right now; procs_blocked
+	// counts tasks parked in uninterruptible IO. These lines ride the /proc/stat
+	// section the CPU figures already come from.
+	for _, line := range sections["stat"] {
+		key, val, ok := strings.Cut(line, " ")
+		if !ok {
+			continue
+		}
+		n, err := strconv.ParseUint(strings.TrimSpace(val), 10, 64)
+		if err != nil {
+			continue
+		}
+		switch key {
+		case "procs_running":
+			m.Runnable = int(n)
+		case "procs_blocked":
+			m.Blocked = int(n)
+		case "ctxt":
+			m.ContextSwitches = n
+		}
+	}
+
+	applyInodes(&m, sections["di"])
+	m.Net = parseNetDev(sections["net"])
+	m.DiskIO = parseDiskstats(sections["io"])
+	m.FDUsed, m.FDMax = parseFileNr(sections["fd"])
+	m.HasPSI, m.PSICPU, m.PSIIO, m.PSIMemory = parsePSI(sections["psi"])
 
 	if m.MemTotal == 0 && len(m.Filesystems) == 0 {
 		return m, fmt.Errorf("adapter: metrics output had nothing usable")
@@ -628,4 +760,239 @@ func clampPercent(v float64) float64 {
 		return 100
 	}
 	return v
+}
+
+// applyInodes folds `df -P -i` onto the filesystems already parsed from
+// `df -P -B1`. Two commands rather than one because df cannot report bytes and
+// inodes together, and joining on the mount point is safe: a mount point is
+// unique within one df run by definition.
+func applyInodes(m *Metrics, lines []string) {
+	byMount := make(map[string][3]int64, len(lines))
+	for i, line := range lines {
+		if i == 0 && strings.HasPrefix(line, "Filesystem") {
+			continue
+		}
+		f := strings.Fields(line)
+		if len(f) < 6 {
+			continue
+		}
+		// Mount point is the last field: it can contain spaces, and everything
+		// before it is fixed-width columns.
+		mount := strings.Join(f[5:], " ")
+		total, err1 := strconv.ParseInt(f[1], 10, 64)
+		used, err2 := strconv.ParseInt(f[2], 10, 64)
+		if err1 != nil || err2 != nil {
+			// btrfs and some network filesystems report "-" here. Not an error;
+			// they genuinely have no inode table to run out of.
+			continue
+		}
+		byMount[mount] = [3]int64{total, used, 0}
+	}
+	for i := range m.Filesystems {
+		v, ok := byMount[m.Filesystems[i].MountPoint]
+		if !ok || v[0] <= 0 {
+			continue
+		}
+		m.Filesystems[i].InodesTotal = v[0]
+		m.Filesystems[i].InodesUsed = v[1]
+		m.Filesystems[i].InodesPercent = clampPercent(float64(v[1]) / float64(v[0]) * 100)
+	}
+}
+
+// parseNetDev reads /proc/net/dev.
+//
+// The header is two lines and the interface name is followed by a colon that
+// may or may not have a space after it — "eth0: 123" and "eth0:123" are both
+// produced, the second when the byte count is wide enough to fill the column.
+func parseNetDev(lines []string) []NetIface {
+	out := []NetIface{}
+	for _, line := range lines {
+		name, rest, ok := strings.Cut(line, ":")
+		if !ok {
+			continue // the two header lines
+		}
+		name = strings.TrimSpace(name)
+		f := strings.Fields(rest)
+		if name == "" || len(f) < 16 {
+			continue
+		}
+		// The loopback interface always carries traffic and never says anything
+		// about the network, so it is dropped rather than shown at the top of
+		// every list.
+		if name == "lo" {
+			continue
+		}
+		num := func(i int) uint64 {
+			v, _ := strconv.ParseUint(f[i], 10, 64)
+			return v
+		}
+		out = append(out, NetIface{
+			Name:    name,
+			RxBytes: num(0), RxErrs: num(2), RxDrop: num(3),
+			TxBytes: num(8), TxErrs: num(10), TxDrop: num(11),
+			RxRate: -1, TxRate: -1,
+		})
+	}
+	return out
+}
+
+// diskSectorBytes is the unit /proc/diskstats counts in. It is 512 regardless
+// of the device's real sector size — the kernel normalises it.
+const diskSectorBytes = 512
+
+// parseDiskstats reads /proc/diskstats, keeping whole disks.
+//
+// Partitions are dropped: they double-count against the disk they sit on, so a
+// machine with sda1..sda3 would appear to be doing four times the IO it is.
+func parseDiskstats(lines []string) []DiskIO {
+	out := []DiskIO{}
+	seen := map[string]bool{}
+	for _, line := range lines {
+		f := strings.Fields(line)
+		if len(f) < 10 {
+			continue
+		}
+		name := f[2]
+		if skipDisk(name) {
+			continue
+		}
+		read, err1 := strconv.ParseUint(f[5], 10, 64)
+		written, err2 := strconv.ParseUint(f[9], 10, 64)
+		if err1 != nil || err2 != nil {
+			continue
+		}
+		if read == 0 && written == 0 {
+			// Devices that have never been touched are noise: a host with
+			// twenty unused loop devices would bury the disk that matters.
+			continue
+		}
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, DiskIO{
+			Name:       name,
+			ReadBytes:  read * diskSectorBytes,
+			WriteBytes: written * diskSectorBytes,
+			ReadRate:   -1,
+			WriteRate:  -1,
+		})
+	}
+	return out
+}
+
+// skipDisk drops partitions and virtual devices.
+//
+// A partition's name is its disk's name plus digits (sda1, nvme0n1p1), and its
+// traffic is already counted against the disk. loop and ram devices are not
+// storage anybody is watching.
+func skipDisk(name string) bool {
+	switch {
+	case strings.HasPrefix(name, "loop"), strings.HasPrefix(name, "ram"),
+		strings.HasPrefix(name, "zram"), strings.HasPrefix(name, "dm-"):
+		return true
+	}
+	// nvme0n1p1 → partition; nvme0n1 → disk.
+	if i := strings.LastIndex(name, "p"); i > 0 && i < len(name)-1 &&
+		strings.HasPrefix(name, "nvme") && isDigits(name[i+1:]) {
+		return true
+	}
+	// sda1 → partition; sda → disk. Only for names that do not end in a digit
+	// natively, which is why nvme is handled above.
+	if !strings.HasPrefix(name, "nvme") && len(name) > 0 && isDigits(name[len(name)-1:]) {
+		return true
+	}
+	return false
+}
+
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// parseFileNr reads /proc/sys/fs/file-nr: allocated, free, maximum.
+//
+// The middle figure is descriptors allocated but no longer in use, which the
+// kernel keeps for reuse — so the number in use is the first minus the second.
+func parseFileNr(lines []string) (used, max int64) {
+	f := strings.Fields(firstNonEmpty(lines))
+	if len(f) < 3 {
+		return 0, 0
+	}
+	alloc, _ := strconv.ParseInt(f[0], 10, 64)
+	unused, _ := strconv.ParseInt(f[1], 10, 64)
+	max, _ = strconv.ParseInt(f[2], 10, 64)
+	if used = alloc - unused; used < 0 {
+		used = 0
+	}
+	// Modern kernels put an effectively infinite number here — 2^63-1 was what
+	// a real Ubuntu 24.04 host reported. A percentage against that is always
+	// zero and a "2,864 / 9223372036854775807" is worse than saying nothing, so
+	// an absurd ceiling is reported as no ceiling and the view shows the count
+	// alone.
+	if max > fdMaxSane {
+		max = 0
+	}
+	return used, max
+}
+
+// fdMaxSane is the largest file-max worth treating as a limit. Well above any
+// real tuning — a busy server sets a few million — and far below the 2^63-1
+// that means "no limit".
+const fdMaxSane = 1 << 32
+
+// parsePSI reads the three /proc/pressure files, which the script tags with
+// "@cpu", "@io" and "@memory" because they are separate files sharing one
+// section.
+func parsePSI(lines []string) (has bool, cpu, io, mem Pressure) {
+	var cur *Pressure
+	for _, line := range lines {
+		if zone, ok := strings.CutPrefix(strings.TrimSpace(line), "@"); ok {
+			switch zone {
+			case "cpu":
+				cur = &cpu
+			case "io":
+				cur = &io
+			case "memory":
+				cur = &mem
+			default:
+				cur = nil
+			}
+			continue
+		}
+		if cur == nil {
+			continue
+		}
+		f := strings.Fields(line)
+		if len(f) < 4 {
+			continue
+		}
+		kind := f[0] // "some" or "full"
+		get := func(key string) float64 {
+			for _, kv := range f[1:] {
+				if k, v, ok := strings.Cut(kv, "="); ok && k == key {
+					n, err := strconv.ParseFloat(v, 64)
+					if err == nil {
+						return n
+					}
+				}
+			}
+			return 0
+		}
+		has = true
+		switch kind {
+		case "some":
+			cur.Some10, cur.Some60, cur.Some300 = get("avg10"), get("avg60"), get("avg300")
+		case "full":
+			cur.Full10 = get("avg10")
+		}
+	}
+	return has, cpu, io, mem
 }

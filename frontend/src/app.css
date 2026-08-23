@@ -2505,3 +2505,79 @@ button.events-unit {
   font-size: var(--text-xs);
   color: var(--fg);
 }
+
+/* 한 숫자로 끝나는 값들의 띠. 이걸 패널로 만들면 평평한 선 여섯 개가
+   생기고, 정작 움직이는 것들이 화면 밖으로 밀린다. */
+.res-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+.res-chip {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: 3px var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+.res-chip[data-warn] {
+  border-color: var(--danger);
+}
+.res-chip-label {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+.res-chip-value {
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.res-chip[data-warn] .res-chip-value {
+  color: var(--danger);
+}
+
+/* PSI. 사용률이 「얼마나 쓰는가」 라면 압력은 「얼마나 기다렸는가」 다 —
+   100% 인데 멀쩡한 기계와 40% 인데 줄이 선 기계를 가르는 값이다. */
+.res-psi {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-top: var(--sp-1);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+.res-psi-label {
+  margin-right: auto;
+}
+.res-psi-v {
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+.res-psi[data-warn] .res-psi-v {
+  color: var(--warn);
+}
+.res-psi-note {
+  margin-left: var(--sp-1);
+}
+
+/* 오류·버림 카운터. 지난 3월에 400개 버린 카드는 문제가 아니고,
+   초당 4개씩 버리는 카드가 문제다 — 그래서 값이 아니라 존재를 알린다. */
+.res-bad {
+  color: var(--warn);
+  font-variant-numeric: tabular-nums;
+}
+.res-table td[data-warn] {
+  color: var(--danger);
+}
+/* 두 번째 계열 — 받기 아래 보내기, 읽기 아래 쓰기. 한 질문에 패널 둘보다
+   패널 하나가 낫다. */
+.chart-line2 {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-dasharray: 3 2;
+  opacity: 0.55;
+  vector-effect: non-scaling-stroke;
+}

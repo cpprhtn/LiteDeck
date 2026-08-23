@@ -84,6 +84,12 @@ func ParseWindowsMetrics(data []byte, nowMillis int64) (Metrics, error) {
 		// zeroes would draw a machine doing nothing at all.
 		Cores: []Core{},
 		Split: UnknownSplit(),
+		// None of these have a Windows source yet. Empty lists rather than nil
+		// so the view can map over them, and -1 for the rate so it reads as
+		// absent instead of idle.
+		Net:        []NetIface{},
+		DiskIO:     []DiskIO{},
+		SwitchRate: -1,
 		// Windows has no load average. Nothing here approximates it: the
 		// processor queue length counter measures something else, and reporting
 		// zero would read as an idle machine rather than as an absent figure. The
