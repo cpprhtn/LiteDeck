@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { HostMetrics, type GPU, type MetricsView } from './ipc'
 import { usePoll } from './usePoll'
+import { forgetMetrics, publishMetrics } from './metricsStore'
 import { t } from './i18n'
 
 // The summary bar (§4.7). Shown above every tab for the connected host, so
@@ -151,6 +152,7 @@ export function MetricsBar({ hostID }: { hostID: string }) {
 
   useEffect(() => {
     // Host changed: the previous host's history says nothing about this one.
+    forgetMetrics(hostID)
     setM(null)
     setCpuHist([])
     setMemHist([])
@@ -169,6 +171,9 @@ export function MetricsBar({ hostID }: { hostID: string }) {
     try {
       const next = await HostMetrics(hostID)
       setM(next)
+      // Anything else that wants these numbers reads them from here rather
+      // than polling for its own copy — see metricsStore.
+      publishMetrics(hostID, next)
       setFailed(null)
       // CPU is -1 until a second sample exists; plotting that would draw a
       // spike down to zero on every connect.

@@ -2209,3 +2209,122 @@ button.events-unit {
 .events-notice p:last-child {
   margin-bottom: 0;
 }
+
+/* ── 모니터링 탭 (§4.7, arch/07) ────────────────────────────────
+   요약 바는 한눈, 이 탭은 자세히. 같은 읽기를 쓰되 바가 자리 때문에
+   접어 둔 것들 — 파일시스템 전부, 카드별 GPU, 로드 세 숫자 — 을 편다. */
+.monitor-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+.monitor-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.res-pane {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-3);
+}
+.res-section {
+  margin-bottom: var(--sp-5);
+}
+.res-section h3 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.res-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--sp-2);
+}
+.res-stat {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  min-width: 0;
+}
+.res-stat-label {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+.res-stat-value {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+.res-stat-note {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+.res-gpu .res-stat-label {
+  font-family: var(--font-mono);
+}
+
+.res-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+.res-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  padding: var(--sp-1) var(--sp-2);
+  border-bottom: 1px solid var(--border);
+}
+.res-table td {
+  padding: var(--sp-1) var(--sp-2);
+  border-bottom: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+.res-table .num {
+  text-align: right;
+  white-space: nowrap;
+}
+.res-table .res-bar-col {
+  width: 120px;
+}
+/* tmpfs·overlay 처럼 요약에서 빠졌던 줄. 보여주되 앞으로 나서지는 않는다. */
+.res-table tr[data-dim] td {
+  color: var(--fg-faint);
+}
+.res-bar {
+  position: relative;
+  height: 14px;
+  border-radius: 7px;
+  background: var(--bg-sunken);
+  overflow: hidden;
+}
+.res-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.res-bar[data-warn] span {
+  background: var(--danger);
+}
+.res-bar em {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-style: normal;
+  font-size: var(--text-xs);
+  color: var(--fg);
+}

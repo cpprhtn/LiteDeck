@@ -11,7 +11,7 @@ import { MetricsBar } from './MetricsBar'
 import { NetworkView } from './NetworkView'
 import { ProcessView } from './ProcessView'
 import { SessionView } from './SessionView'
-import { EventTimeline } from './EventTimeline'
+import { MonitorView } from './MonitorView'
 import { ServiceView } from './ServiceView'
 
 // xterm.js is ~340KB — more than the rest of the app combined. The terminal is
@@ -58,7 +58,7 @@ type Tab =
   | 'containers'
   | 'network'
   | 'sessions'
-  | 'events'
+  | 'monitor'
   | 'terminal'
 
 // files and terminal have no capability because they need nothing but SSH
@@ -71,7 +71,7 @@ const TABS: { id: Tab; label: string; capability?: string }[] = [
   { id: 'containers', label: k('컨테이너'), capability: 'containers' },
   { id: 'network', label: k('네트워크'), capability: 'network' },
   { id: 'sessions', label: k('세션'), capability: 'sessions' },
-  { id: 'events', label: k('사건'), capability: 'events' },
+  { id: 'monitor', label: k('모니터링'), capability: 'metrics' },
   { id: 'terminal', label: k('터미널') },
 ]
 
@@ -528,21 +528,26 @@ function renderTab(
       }
       return <SessionView hostID={hostID} visible onError={onError} />
 
-    case 'events':
-      if (!info.capabilities?.events) {
+    case 'monitor':
+      if (!info.capabilities?.metrics) {
         return (
           <Unavailable
-            title={t('이 서버에는 읽을 사건 기록이 없습니다')}
-            detail={
-              info.platform === 'windows'
-                ? t('Windows 이벤트 로그가 journald 자리에 대응되지만, 아직 읽지 않습니다.')
-                : t('{os} — systemd 저널이 없습니다.', { os: info.prettyName || t('이 서버') })
-            }
+            title={t('이 서버의 상태를 읽을 수 없습니다')}
+            detail={t('{os} — /proc 을 읽지 못했습니다.', { os: info.prettyName || t('이 서버') })}
             hint={t('다른 탭은 그대로 쓸 수 있습니다.')}
           />
         )
       }
-      return <EventTimeline hostID={hostID} onError={onError} />
+      // The event pane needs a journal; the resource pane does not. So the tab
+      // is gated on metrics and the pane hides itself, rather than the whole
+      // tab disappearing on a host that simply has no systemd.
+      return (
+        <MonitorView
+          hostID={hostID}
+          hasEvents={!!info.capabilities?.events}
+          onError={onError}
+        />
+      )
 
     case 'terminal':
       return (
