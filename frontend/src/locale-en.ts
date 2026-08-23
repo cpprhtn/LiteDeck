@@ -257,9 +257,6 @@ export const en: Record<string, string> = {
   '세션 슬롯을 기다린 시간': 'Time spent waiting for a session slot',
   // 모니터링 탭 (arch/07)
   // CPU·메모리 분해
-  '1분': '1 min',
-  '5분': '5 min',
-  '15분': '15 min',
   '코어': 'Cores',
   '코어 {n}개': '{n} cores',
   '온도': 'Temp',
@@ -286,6 +283,7 @@ export const en: Record<string, string> = {
   '코어 {n}': '{n} cores',
   '1분 평균': '1 min avg',
   '시스템': 'System',
+  '가장 찬 곳': 'fullest',
   '커널': 'Kernel',
   '호스트명': 'Hostname',
   '부팅 시각': 'Booted',
@@ -324,7 +322,6 @@ export const en: Record<string, string> = {
   '{os} — /proc 을 읽지 못했습니다.': '{os} — /proc could not be read.',
   '지금': 'Now',
   '가동 시간': 'Uptime',
-  '5분 {b} · 15분 {c}': '5 min {b} · 15 min {c}',
   '파일시스템': 'Filesystems',
   '마운트': 'Mount',
   '장치': 'Device',

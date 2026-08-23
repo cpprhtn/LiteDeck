@@ -70,6 +70,10 @@ export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFact
   const diskR = sumRate(m.diskIO?.map((d) => d.readRate))
   const diskW = sumRate(m.diskIO?.map((d) => d.writeRate))
   const netBad = (m.net ?? []).reduce((a, n) => a + n.rxErrs + n.txErrs + n.rxDrop + n.txDrop, 0)
+  // The panel's headline is the fullest of them: that is the one that stops the
+  // machine, and it is the number somebody scanning the grid needs to see
+  // without opening the table.
+  const worstDisk = (m.disks ?? []).reduce((a, d) => Math.max(a, d.percent), -1)
 
   return (
     <div className="res-pane">
@@ -142,7 +146,7 @@ export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFact
           label="CPU"
           value={pct(m.cpu)}
           sub={facts.cpuModel ? [facts.cpuModel] : undefined}
-          warn={m.cpu >= 90}
+          warn={m.cpu >= 90 || (m.hasLoad && cores.length > 0 && m.load1 > cores.length)}
         >
           <TimeChart
             samples={history}
@@ -160,6 +164,15 @@ export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFact
               being collected. */}
           <Facts
             rows={[
+              // Load only means something against the core count: 8 on eight
+              // cores is busy, 8 on two is drowning. Three figures because one
+              // says nothing — the shape is the reading.
+              [
+                t('로드'),
+                m.hasLoad
+                  ? `${m.load1.toFixed(2)} · ${m.load5.toFixed(2)} · ${m.load15.toFixed(2)}`
+                  : '—',
+              ],
               [t('실행 대기'), String(m.runnable ?? 0)],
               [t('IO 블록'), String(m.blocked ?? 0)],
             ]}
@@ -171,7 +184,7 @@ export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFact
           label={t('메모리')}
           value={pct(m.memPercent)}
           sub={[`${fmtBytes(m.memUsed)} / ${fmtBytes(m.memTotal)}`]}
-          warn={m.memPercent >= 90}
+          warn={m.memPercent >= 90 || swapPct >= 50}
         >
           <TimeChart
             samples={history}
@@ -198,6 +211,18 @@ export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFact
             </>
           )}
           {m.hasPSI && <PressureLine kind="memory" p={m.psiMemory} />}
+          {/* Swap is memory that ran out, so it belongs to memory rather than
+              to a tile of its own that reads 0% on every healthy machine. */}
+          <Facts
+            rows={[
+              [
+                t('스왑'),
+                m.swapTotal > 0
+                  ? `${fmtBytes(m.swapUsed)} / ${fmtBytes(m.swapTotal)}`
+                  : t('없음'),
+              ],
+            ]}
+          />
         </Panel>
 
         {m.gpus.map((g) => (
@@ -275,34 +300,15 @@ export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFact
           </Panel>
         )}
 
-        {m.hasLoad && (
-          <Panel label={t('로드')} value={m.load1.toFixed(2)} warn={cores.length > 0 && m.load1 > cores.length}>
-            {/* Three numbers, because one says nothing: the shape is the
-                reading — climbing, falling, or a spike already over. */}
-            <Facts
-              rows={[
-                [t('1분'), m.load1.toFixed(2)],
-                [t('5분'), m.load5.toFixed(2)],
-                [t('15분'), m.load15.toFixed(2)],
-                ...(cores.length ? [[t('코어'), String(cores.length)] as [string, string]] : []),
-              ]}
-            />
-          </Panel>
-        )}
-
+        {/* Facts about the machine rather than about what it is doing. None
+            of it moves while the connection is up, so it is read once by
+            detection — but it belongs beside the numbers, not in a section
+            below them, because it is the half that makes them mean something. */}
         <Panel
-          label={t('스왑')}
-          value={swapPct < 0 ? '—' : pct(swapPct)}
-          sub={[m.swapTotal > 0 ? `${fmtBytes(m.swapUsed)} / ${fmtBytes(m.swapTotal)}` : t('없음')]}
-          warn={swapPct >= 50}
+          label={t('시스템')}
+          value={facts.hostname ?? '—'}
+          sub={facts.prettyName ? [facts.prettyName] : undefined}
         >
-          <Facts rows={[[t('가동 시간'), fmtUptime(m.uptimeSeconds)]]} />
-        </Panel>
-      </div>
-
-      <section className="res-block">
-        <h3>{t('시스템')}</h3>
-        <div className="res-panel">
           <SystemInfo
             info={facts}
             uptime={m.uptimeSeconds}
@@ -310,13 +316,21 @@ export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFact
             fdMax={m.fdMax}
             switchRate={m.switchRate}
           />
-        </div>
-      </section>
+        </Panel>
 
-      <section className="res-block">
-        <h3>{t('파일시스템')}</h3>
-        <FilesystemTable rows={m.filesystems} shown={m.disks} />
-      </section>
+        {/* Two columns: this one is a table. A quarter of the row would make it
+            scroll sideways to say what a wider cell says at a glance. */}
+        <Panel
+          label={t('파일시스템')}
+          value={worstDisk < 0 ? '—' : pct(worstDisk)}
+          sub={[t('가장 찬 곳')]}
+          warn={worstDisk >= 90}
+          wide
+        >
+          <FilesystemTable rows={m.filesystems} shown={m.disks} />
+        </Panel>
+      </div>
+
     </div>
   )
 }
@@ -330,6 +344,7 @@ function Panel({
   sub,
   title,
   warn,
+  wide,
   children,
 }: {
   label: string
@@ -337,10 +352,14 @@ function Panel({
   sub?: string[]
   title?: string
   warn?: boolean
+  /** Two columns. For the panels whose content is a table or a list of facts
+   *  rather than a number and a line — squeezing those into a quarter of the
+   *  row makes them scroll sideways to say what a wider cell says at a glance. */
+  wide?: boolean
   children?: React.ReactNode
 }) {
   return (
-    <div className="res-panel" data-warn={warn || undefined}>
+    <div className="res-panel" data-warn={warn || undefined} data-wide={wide || undefined}>
       <div className="res-panel-head">
         <span className="res-panel-label">{label}</span>
         <span className="res-panel-value">{value}</span>

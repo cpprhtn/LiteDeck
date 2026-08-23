@@ -2356,6 +2356,11 @@ button.events-unit {
 .res-panel[data-warn] {
   border-color: var(--danger);
 }
+/* 표나 사실 목록이 든 패널은 두 칸을 쓴다. 네 칸 중 하나에 밀어 넣으면
+   더 넓은 칸이 한눈에 말하는 것을 가로 스크롤로 말하게 된다. */
+.res-panel[data-wide] {
+  grid-column: span 2;
+}
 .res-panel-head {
   display: flex;
   align-items: baseline;
