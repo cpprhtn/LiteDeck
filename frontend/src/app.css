@@ -2223,7 +2223,8 @@ button.events-unit {
 }
 .chart svg {
   width: 100%;
-  height: 72px;
+  /* 높이는 인라인으로 온다. 여기에 고정값을 두면 눈금 칸(44px)과 실제로
+     그려지는 높이(72px)가 어긋나, 50% 라벨이 50% 선에 안 붙는다. */
   display: block;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -2268,16 +2269,19 @@ button.events-unit {
   position: absolute;
   left: 0;
   transform: translateY(50%);
-}
-/* 맨 위 눈금은 선 위에 걸치면 절반이 차트 밖으로 나간다. 안쪽으로 앉힌다. */
-.chart-ticks span:last-child {
-  transform: none;
   font-size: 9px;
+  line-height: 1.2;
   color: var(--fg-faint);
   font-variant-numeric: tabular-nums;
+  /* 격자선 위에 앉으므로 바탕을 깔아야 읽힌다. */
   background: var(--bg-sunken);
   padding: 0 2px;
   border-radius: 2px;
+}
+/* 맨 위 눈금만 통째로 안쪽으로. 절반만 걸치면 나머지 절반이 차트 위로 나가
+   패널 부제(CPU 모델명)를 덮는다. */
+.chart-ticks span:last-child {
+  transform: translateY(100%);
 }
 /* 양끝에만 시각이 있으면 차트 한가운데에는 아무 시각도 안 붙는다 —
    「언제 튀었나」 가 차트에 묻는 것의 대부분인데도. */
@@ -2695,7 +2699,6 @@ button.events-unit {
   margin-bottom: 0;
 }
 .chart[data-bare] svg {
-  height: 26px;
   border: 0;
   background: none;
   border-radius: 0;

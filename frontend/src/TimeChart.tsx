@@ -140,6 +140,10 @@ export function TimeChart({
       )}
       <svg
         viewBox={`0 0 ${w} ${height}`}
+        // The rendered height has to be the same number the viewBox and the
+        // tick column use, or the labels sit at fractions of one height while
+        // the lines sit at fractions of another.
+        style={{ height }}
         preserveAspectRatio="none"
         role="img"
         aria-label={label}

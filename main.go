@@ -39,6 +39,18 @@ func main() {
 		MinWidth:  900,
 		MinHeight: 600,
 
+		// Opens filling the screen. Width and Height above stay as the size the
+		// window returns to when un-maximised, and as the fallback wherever the
+		// platform cannot honour this. The monitoring grid is the reason: it
+		// lays panels out in as many columns as it is given, so on a 1280 window
+		// a machine's resources arrive stacked two-and-two when the display
+		// could have shown them in one row.
+		//
+		// Maximised rather than Fullscreen: fullscreen on macOS takes over a
+		// space and hides the menu bar, which is a thing to ask for and not a
+		// thing to be given.
+		WindowStartState: options.Maximised,
+
 		AssetServer: &assetserver.Options{Assets: assets},
 
 		// Dropping local files onto the file explorer uploads them (§4.2).
