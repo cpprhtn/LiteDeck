@@ -2272,6 +2272,7 @@ button.events-unit {
 }
 .res-gpu .res-stat-label {
   font-family: var(--font-mono);
+  font-size: var(--text-sm);
 }
 
 .res-table {
@@ -2464,4 +2465,23 @@ button.events-unit {
   border: 1px dashed var(--border);
   border-radius: var(--radius);
   margin-bottom: var(--sp-3);
+}
+
+/* 카드 이름은 자르지 않고 접는다. 「...」 로 끝나는 이름은 정작 구별에 필요한
+   모델 번호를 감춘다 — 그게 이름 끝에 있기 때문이다. */
+.res-gpu-name {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+/* 카드 번호는 여러 장일 때만 뜬다. 한 장뿐이면 「0:」 은 아무것도 안 알려준다. */
+.res-gpu-idx {
+  display: inline-block;
+  min-width: 1.4em;
+  margin-right: var(--sp-1);
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--bg-sunken);
+  font-family: var(--font-mono);
+  text-align: center;
 }

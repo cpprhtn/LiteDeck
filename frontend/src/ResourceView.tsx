@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { CPUSplit, Core, Filesystem, GPU } from './ipc'
 import { useMetrics, useMetricsHistory } from './metricsStore'
 import { TimeChart } from './TimeChart'
+import { shortGPUName } from './gpuName'
 import { t } from './i18n'
 
 // The resource detail (§4.7, arch/07).
@@ -139,7 +140,7 @@ export function ResourceView({ hostID }: { hostID: string }) {
           <h3>{t('GPU')}</h3>
           <div className="res-grid">
             {m.gpus.map((g) => (
-              <GPUCard key={g.index} gpu={g} />
+              <GPUCard key={g.index} gpu={g} showIndex={m.gpus.length > 1} />
             ))}
           </div>
           {m.gpus.map((g) => (
@@ -260,11 +261,14 @@ function Stat({ label, value, note }: { label: string; value: string; note?: str
   )
 }
 
-function GPUCard({ gpu }: { gpu: GPU }) {
+function GPUCard({ gpu, showIndex }: { gpu: GPU; showIndex: boolean }) {
   return (
     <div className="res-stat res-gpu">
-      <div className="res-stat-label ellipsis" title={gpu.name}>
-        {gpu.index}: {gpu.name}
+      {/* Wraps rather than truncating. A card name ending in "..." withholds
+          the one part that identifies it — the model number is at the end. */}
+      <div className="res-stat-label res-gpu-name" title={gpu.name}>
+        {showIndex && <span className="res-gpu-idx">{gpu.index}</span>}
+        {shortGPUName(gpu.name)}
       </div>
       <div className="res-stat-value">{pct(gpu.utilization)}</div>
       <div className="res-stat-note">

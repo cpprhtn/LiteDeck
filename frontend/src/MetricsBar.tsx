@@ -8,6 +8,7 @@ import {
   useMetricsHistory,
   type Sample,
 } from './metricsStore'
+import { shortGPUName } from './gpuName'
 import { t } from './i18n'
 
 // The summary bar (§4.7). Shown above every tab for the connected host, so
@@ -300,7 +301,7 @@ export function MetricsBar({ hostID }: { hostID: string }) {
                 <div className="gpu-row" key={g.index} data-warn={gpuWarn(g) || undefined}>
                   <span className="gpu-idx">#{g.index}</span>
                   <span className="gpu-name" title={g.name}>
-                    {g.name}
+                    {shortGPUName(g.name)}
                   </span>
                   <span className="gpu-num metric-value">
                     {g.utilization < 0 ? '—' : `${fmtPct(g.utilization)}%`}
