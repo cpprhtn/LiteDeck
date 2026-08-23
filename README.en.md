@@ -50,24 +50,6 @@
 >
 > The documentation is primarily maintained in Korean; this file is kept in step with it.
 
-## It does not stream your screen
-
-RDP, VNC and TeamViewer **stream the server's screen as video**. LiteDeck does not.
-
-```
-[GUI action]              [LiteDeck]                  [server · nothing installed]
-double-click a folder ──→  SFTP ReadDir          ───→  sftp-server subsystem
-restart a service     ──→  systemctl restart     ───→  systemd runs it
-remove a container    ──→  docker rm -f <id>     ───→  dockerd runs it
-                      ←──  structured text/JSON  ←───
-rendering: 100% on your machine
-```
-
-All the server does is **run commands it already had and hand back text**. Which means:
-
-- **No server load** except during the instant a command runs
-- **Nothing installed, no extra ports, no relay.** The SSH port you already have open, and nothing else
-
 ## Five principles
 
 1. **Zero server install.** No agent, no daemon, no package. What is left on the server is whatever you asked it to do
