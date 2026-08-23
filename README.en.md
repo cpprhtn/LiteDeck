@@ -24,7 +24,7 @@
 
 <p align="center">
   <a href="#install">Download</a> ·
-  <a href="#features">Features</a> ·
+  <a href="docs/features.en.md">Features</a> ·
   <a href="docs/security.en.md">Security</a> ·
   <a href="docs/mcp.en.md">MCP</a> ·
   <a href="docs/support.en.md">What's verified</a> ·
@@ -63,29 +63,7 @@
 > success nothing is left behind. If the `rename` fails, the temp file's path is shown on screen and
 > the file is deliberately not deleted, which beats losing the edit.
 
-## Features
-
-| | |
-|---|---|
-| **Files** | Browse as a tree, **filter by name**, upload, download (with progress, cancel and **resume after an interruption**), whole folders, rename, delete, permissions (checkboxes or `chmod 755` typed directly). Files the editor will not open come up **read-only** — images are drawn, anything else shows its opening bytes as hex |
-| **Code editing** | Split view beside the tree, file tabs, syntax highlighting for 24 languages, find/replace, **a diff before every save**, **atomic saves** (temp file + rename) |
-| **Services** | systemd units / Windows services. List, filter, start/stop/restart, set start-at-boot, **live log tailing** (Linux) |
-| **Processes** | A task-manager table. Sort, search, tree view, terminate (TERM then KILL), change priority |
-| **Containers** | Docker and Podman cards. Start/stop/restart/remove, **live log tailing**, image and volume cleanup. Anything Compose started is **grouped by project** and can be started, stopped or restarted as one |
-| **Network** | Interfaces and listening ports. **Flags which ones are reachable from outside**. Reviews the sshd configuration |
-| **Sessions** | Who is logged in to this server, and cutting any of them off |
-| **Scheduled jobs** | systemd timers. Next and last run |
-| **Terminal** | xterm.js PTY, multiple tabs. `code .` and `vi foo.conf` are **caught by the app** and open in the file tab. They are never sent to the server, so neither VS Code nor vi needs to exist there |
-| **Monitoring** | The bar is the glance, the monitoring tab is a dashboard. CPU is **split into user, kernel, IO wait and steal** — 90% that is all IO wait means the disk, and all steal means the hypervisor. **A core die**, memory with cache and buffers separated out, and NVIDIA cards add **utilisation, fan, temperature and VRAM** (nvidia-smi) |
-| **Infrastructure metrics** | **Inodes** (a disk with room that cannot create a file), **network error and drop** counters, **disk I/O**, **PSI** — how long things waited rather than how much was used — runnable and blocked counts, open descriptors. All of it read from `/proc` and `df`, so **there is still nothing installed on the server** |
-| **Trends** | CPU, memory and GPU over time for as long as the app was watching. **Stretches it did not see are drawn as breaks**, never joined up |
-| **Events** | What happened, and when. **OOM kills**, failed units, core dumps, scheduled restarts, reboot boundaries. Read from the systemd journal and classified by `MESSAGE_ID` rather than by wording, so the server's language does not matter |
-| **Command Log** | **Every command the GUI runs, live.** Click to copy |
-| **MCP** | Claude Code and Claude Desktop read and change your servers through this app. Per-server opt-in, changes are approved, **and can be undone** |
-| **Connecting** | Password, key, agent, 2FA. Import from `~/.ssh/config`. One **ProxyJump** hop |
-| **Language** | English and Korean. Uses whichever you last chose, or your OS language if you never have. Switch with `KO`/`EN` at the bottom of the sidebar |
-
-### The monitoring tab <sub>v1.5.0</sub>
+## The monitoring tab <sub>v1.5.0</sub>
 
 <p align="center">
   <img src="docs/media/06-monitoring.png" width="880" alt="Monitoring tab: CPU breakdown, per-core, memory, GPU, network, disk I/O, system facts, filesystems">
@@ -105,28 +83,7 @@ All of it read from `/proc` and `df`. **There is still nothing installed on the 
 
 > The screenshot is a demo container ([`testdata/demo`](testdata/demo)). The GPU in it is a stand-in; every other figure came out of that container.
 
-### It does not hide what it ran
-
-<p align="center">
-  <img src="docs/media/03-command-log.gif" width="820" alt="Command Log">
-</p>
-
-<p align="center"><sub>A restart is refused for lack of privileges and the app <b>asks</b>. The command that ran is shown as it ran; the password went over stdin and is nowhere on screen.</sub></p>
-
-A GUI that touches production is asking you to trust it. LiteDeck earns that by **showing you exactly
-what it just ran**. Passwords only ever travel over stdin, which is why showing the command line is
-safe, and the log stays on your machine.
-
-### The editor is installed on neither end
-
-No `vscode-server` (hundreds of MB) on the server, and no using the server's `vi` through a terminal.
-Files are read and written over the SFTP that SSH already provides, and the editor lives inside the
-app. Typing `code .` or `vi foo.conf` in the terminal is **caught before the line reaches the
-server** and opens the file tab instead. Saving shows a diff against the server's current copy first.
-
-→ [Features in detail](docs/features.en.md)
-
-### Claude works your servers through this app
+## Claude works your servers through this app
 
 MCP clients like Claude Code and Claude Desktop **sit where the GUI sat**: the same adapter, the same
 already-authenticated SSH connection, the same Command Log. They get 12 read tools and 5 write tools,
@@ -184,7 +141,7 @@ something else is better. Which cases those are is written down in
 | [Security](docs/security.en.md) | Host key verification, authentication, credential storage, sudo, the MCP endpoint. **What it cannot do comes first** |
 | [What is and is not verified](docs/support.en.md) | What was checked where, and what was not. Plus when this is not the right tool, and the non-goals |
 | [MCP integration](docs/mcp.en.md) | 17 tools, the approval policy, undo, the safeguards |
-| [Features in detail](docs/features.en.md) | The Command Log and the editor |
+| [Features in detail](docs/features.en.md) | **The full feature list**, plus the Command Log, the editor, transfers, Compose, the sshd check and ProxyJump |
 | [Install and server setup](docs/install.en.md) | Getting past the first-launch warning, enabling OpenSSH on Windows |
 | [Reaching a machine over Tailscale](docs/remote-access.en.md) | Your home machine without port forwarding. Tailscale SSH, MCP, subnet routers, and doing it without an account |
 | [Build from source](docs/building.en.md) | Building and testing |
