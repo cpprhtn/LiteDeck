@@ -305,6 +305,7 @@ export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFact
             detection — but it belongs beside the numbers, not in a section
             below them, because it is the half that makes them mean something. */}
         <Panel
+          name
           label={t('시스템')}
           // Windows detection does not report a hostname, so the distribution
           // name stands in rather than the panel wearing a dash for a title —
@@ -348,6 +349,7 @@ function Panel({
   title,
   warn,
   wide,
+  name,
   children,
 }: {
   label: string
@@ -359,13 +361,19 @@ function Panel({
    *  rather than a number and a line — squeezing those into a quarter of the
    *  row makes them scroll sideways to say what a wider cell says at a glance. */
   wide?: boolean
+  /** The headline is a name rather than a measurement. Names run long — a
+   *  hostname like "115-U26-hojun-Hwpkit-18" set at the size of a percentage
+   *  wraps onto three lines and pushes its own label into a stack beside it. */
+  name?: boolean
   children?: React.ReactNode
 }) {
   return (
     <div className="res-panel" data-warn={warn || undefined} data-wide={wide || undefined}>
       <div className="res-panel-head">
         <span className="res-panel-label">{label}</span>
-        <span className="res-panel-value">{value}</span>
+        <span className="res-panel-value" data-name={name || undefined} title={name ? value : undefined}>
+          {value}
+        </span>
       </div>
       {sub?.map((line, i) => (
         <div className="res-panel-sub ellipsis" key={i} title={title ?? line}>
