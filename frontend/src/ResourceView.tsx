@@ -304,16 +304,22 @@ function CoreDie({ cores }: { cores: Core[] }) {
   }
   const cols = rows > 1 ? n / rows : Math.ceil(Math.sqrt(n))
 
-  // Cells shrink as the count grows so that a 128-thread server still fits the
-  // panel it shares with every other machine.
-  const cell = n <= 16 ? 20 : n <= 64 ? 13 : 8
+  // Columns are fractions so the die grows into the panel instead of sitting in
+  // its corner — but only up to a cell size, and then it centres. Letting them
+  // grow without limit turned a four-core machine in a wide panel into four
+  // strips 220px across and 34 tall, which is a bar chart wearing a grid's
+  // clothes. Squares that stop growing and sit in the middle read better than
+  // rectangles that fill every pixel.
+  const cap = n <= 4 ? 64 : n <= 16 ? 52 : n <= 64 ? 40 : 26
+  const gap = cap >= 40 ? 3 : 2
 
   return (
     <div
       className="res-die"
       style={{
-        gridTemplateColumns: `repeat(${cols}, ${cell}px)`,
-        gap: cell >= 13 ? 3 : 2,
+        gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+        maxWidth: cols * cap + (cols - 1) * gap,
+        gap,
       }}
       role="img"
       aria-label={t('코어 {n}개', { n })}
@@ -326,9 +332,9 @@ function CoreDie({ cores }: { cores: Core[] }) {
           style={{ ['--fill' as string]: `${c.usage < 0 ? 0 : Math.min(100, c.usage)}%` }}
           title={t('코어 {n} — {v}', { n: c.index, v: pct(c.usage) })}
         >
-          {/* The number only where it can be read. Below that size it would be
-              a smudge, and the tooltip already says which core this is. */}
-          {cell >= 20 && <span className="res-core-n">{c.index}</span>}
+          {/* The number only where it can be read. Below that height it would
+              be a smudge, and the tooltip already says which core this is. */}
+          {cap >= 40 && <span className="res-core-n">{c.index}</span>}
         </div>
       ))}
     </div>

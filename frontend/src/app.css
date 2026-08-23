@@ -2406,8 +2406,11 @@ button.events-unit {
    순서가 없으므로 순서를 암시하는 모양은 오해를 부른다. */
 .res-die {
   display: grid;
-  width: fit-content;
-  margin-top: var(--sp-2);
+  /* 패널 폭까지 자라되 칸 크기에서 멈추고, 남으면 가운데로 간다.
+     fit-content 로 두면 넓은 패널에서 왼쪽 구석에 몰려 보이고, 반대로
+     무한히 늘리면 4 코어가 220×34 짜리 띠 넉 장이 된다. */
+  width: 100%;
+  margin: var(--sp-2) auto 0;
   padding: 3px;
   border: 1px solid var(--border);
   border-radius: 4px;
