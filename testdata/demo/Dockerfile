@@ -243,6 +243,52 @@ RUN printf '%s\n' \
       'done' > /usr/local/bin/orders-worker-loop \
  && chmod +x /usr/local/bin/orders-worker-loop
 
+# ── A stand-in nvidia-smi ─────────────────────────────────────────────────
+#
+# ⚠ There is no GPU in this container. This script answers the query the app
+# makes and nothing else, so that the monitoring tab's GPU panel appears in the
+# README recording. Every other fake in this file is a real thing with an
+# invented name — orders-api is a systemd unit that genuinely runs. This one is
+# different: it reports hardware that is not here.
+#
+# It earns its place because GPU monitoring is a feature verified against real
+# cards (a GTX 1050 and an RTX 3060, over SSH), and the fixture exists so that
+# recording it does not mean pointing a camera at somebody's actual machine.
+# Anyone regenerating the media should know which of the two kinds of fake they
+# are looking at, which is why this comment is longer than the script.
+#
+# The numbers walk rather than sit still, because a flat line in a GIF of a
+# monitoring tab argues against the tab.
+RUN printf '%s\n' \
+      '#!/bin/bash' \
+      '# STAND-IN. No GPU here — see the comment in testdata/demo/Dockerfile.' \
+      'set -u' \
+      'state=/var/tmp/.gpu-demo' \
+      '[ -f "$state" ] || echo "18 46 41 1740" > "$state"' \
+      'emit() {' \
+      '  read -r u f t m < "$state"' \
+      '  u=$(( u + RANDOM % 25 - 11 )); [ $u -lt 0 ] && u=0; [ $u -gt 97 ] && u=97' \
+      '  t=$(( t + RANDOM % 5 - 2 ));  [ $t -lt 34 ] && t=34; [ $t -gt 78 ] && t=78' \
+      '  f=$(( 30 + t / 2 ));          [ $f -gt 88 ] && f=88' \
+      '  m=$(( m + RANDOM % 260 - 120 )); [ $m -lt 900 ] && m=900; [ $m -gt 11200 ] && m=11200' \
+      '  echo "$u $f $t $m" > "$state"' \
+      '  echo "0, NVIDIA GeForce RTX 5070, $u, $f, $t, 12282, $m"' \
+      '}' \
+      'loop=0' \
+      'while [ $# -gt 0 ]; do' \
+      '  case "$1" in' \
+      '    -l|--loop) loop="${2:-2}"; shift 2 ;;' \
+      '    -l*)       loop="${1#-l}"; shift ;;' \
+      '    *)         shift ;;' \
+      '  esac' \
+      'done' \
+      'if [ "$loop" -gt 0 ] 2>/dev/null; then' \
+      '  while :; do emit; sleep "$loop"; done' \
+      'else' \
+      '  emit' \
+      'fi' > /usr/local/bin/nvidia-smi \
+ && chmod +x /usr/local/bin/nvidia-smi
+
 # Docker inside Docker cannot stack overlay on overlay — every `docker run` in
 # here dies on "mount source: overlay ... invalid argument" with the default
 # driver. vfs is slow and wastes disk, which is the correct trade for a fixture

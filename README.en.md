@@ -33,7 +33,7 @@
 
 <p align="center">
   <img src="docs/media/01-tour.gif" width="880"
-       alt="LiteDeck: files, editor, services, processes, containers, network, sessions and terminal in one window">
+       alt="LiteDeck: files, editor, services, processes, containers, network, sessions, monitoring and terminal in one window">
 </p>
 
 <p align="center">
@@ -102,6 +102,26 @@ All the server does is **run commands it already had and hand back text**. Which
 | **MCP** | Claude Code and Claude Desktop read and change your servers through this app. Per-server opt-in, changes are approved, **and can be undone** |
 | **Connecting** | Password, key, agent, 2FA. Import from `~/.ssh/config`. One **ProxyJump** hop |
 | **Language** | English and Korean. Uses whichever you last chose, or your OS language if you never have. Switch with `KO`/`EN` at the bottom of the sidebar |
+
+### The monitoring tab <sub>v1.5.0</sub>
+
+<p align="center">
+  <img src="docs/media/06-monitoring.png" width="880" alt="Monitoring tab: CPU breakdown, per-core, memory, GPU, network, disk I/O, system facts, filesystems">
+</p>
+
+When the summary bar says **CPU 40%**, this tab says **what the 40% is**.
+
+- **CPU split into user, kernel, IO wait and steal.** 90% that is all IO wait is not short of CPU, it is waiting for a disk; all steal is not busy at all, its hypervisor is handing the time to somebody else. Before they are separated, all three read as "busy"
+- **A core die.** Thirty-two cores at "40%" is either every core half busy or **one pinned and the rest idle**, and the second is what a single-threaded bottleneck looks like
+- **Inodes.** A disk with room that cannot create a file — and every tool then says `no space left on device`, the same words as running out of bytes
+- **Network errors and drops**, **disk I/O**, **PSI** (how long things waited, rather than how much was used), runnable and blocked counts, open descriptors
+- **NVIDIA cards** add utilisation, fan, temperature and VRAM
+
+Trends are drawn over real time for as long as the app was watching, and **stretches it did not see are drawn as breaks.** It does not join up a reading nobody took.
+
+All of it read from `/proc` and `df`. **There is still nothing installed on the server.**
+
+> The screenshot is a demo container ([`testdata/demo`](testdata/demo)). The GPU in it is a stand-in; every other figure came out of that container.
 
 ### It does not hide what it ran
 
