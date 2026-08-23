@@ -145,6 +145,28 @@ func PSArgsContainers() []string {
 	return []string{"ps", "-a", "--no-trunc", "--format", "{{json .}}"}
 }
 
+// PSArgsRunningContainers asks the same question, restricted to what is up.
+//
+// `-a` is the expensive word. It makes the daemon walk every container it has
+// ever been left holding, and on a host that runs CI or `docker run` without
+// `--rm` that is thousands of dead ones. Measured against a local daemon while
+// only one container was running:
+//
+//	containers   ps      ps -a     ps -a output
+//	        75   20ms     70ms          ~55 KB
+//	       575   23ms    120ms         ~420 KB
+//	     1,325   23ms    187ms         ~975 KB
+//
+// `ps` is flat because it enumerates what is running; `ps -a` is not, in time
+// or in bytes, and both of those cross the SSH connection before anything can
+// be drawn.
+//
+// Same columns and same labels, so Compose grouping is untouched — this is a
+// narrower question, not a different one.
+func PSArgsRunningContainers() []string {
+	return []string{"ps", "--no-trunc", "--format", "{{json .}}"}
+}
+
 // ComposeArgs returns the argv for a lifecycle verb on a compose project.
 //
 // Addressed by project name alone. Compose v2 resolves the project from the

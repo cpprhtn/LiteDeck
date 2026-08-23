@@ -7,6 +7,7 @@ import {
   ContainerAction,
   FollowContainerLog,
   ListContainers,
+  ListRunningContainers,
   RemoveContainer,
   StopLogStream,
   type Container,
@@ -121,14 +122,44 @@ export function ContainerView({
     null,
   )
   const inFlight = useRef(false)
+  /**
+   * Nothing correct has been drawn yet, so the tab is showing its spinner.
+   *
+   * A ref rather than `containers.length === 0`: a host with no containers at
+   * all is a correct empty table, and reading it off the length would make
+   * that case pay for the fast pass on every single poll.
+   *
+   * The view is remounted when the host changes (App keys it by host), so this
+   * cannot carry one host's answer into another's.
+   */
+  const blank = useRef(true)
 
   const refresh = useCallback(async () => {
     if (inFlight.current) return
     inFlight.current = true
     try {
+      // The full listing asks the daemon to walk every container the host has
+      // ever kept. On a box that runs CI, or `docker run` without `--rm`, that
+      // is thousands of dead ones — tens of seconds during which this tab has
+      // nothing to show. Running containers are a far cheaper question and are
+      // what the tab is usually opened for, so they go up first.
+      //
+      // Only while the table is blank. Once something correct is on screen,
+      // putting a running-only list over it would make every stopped container
+      // blink out and back once per poll.
+      if (blank.current) {
+        try {
+          setContainers((await ListRunningContainers(hostID)) ?? [])
+          setLoading(false)
+        } catch {
+          // Whatever is wrong here, the full listing below meets it too and
+          // reports it. Reporting from both would say it twice.
+        }
+      }
       // `?? []` is belt and braces: the Go side now guarantees a non-nil
       // slice, but a future binding that forgets would blank the window again.
       setContainers((await ListContainers(hostID)) ?? [])
+      blank.current = false
     } catch (e) {
       onError(String(e))
     } finally {

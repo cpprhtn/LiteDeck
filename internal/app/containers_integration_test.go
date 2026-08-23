@@ -205,6 +205,30 @@ func TestContainerView(t *testing.T) {
 		t.Errorf("exit code = %d, want 7 (status %q)", crashed.ExitCode, crashed.Status)
 	}
 
+	// The fast pass the view draws first must answer the narrower question and
+	// no more: everything that is up, nothing that is down. If it ever returned
+	// the whole list it would still look right on screen and cost exactly what
+	// it was added to avoid.
+	running, err := a.ListRunningContainers("dind")
+	if err != nil {
+		t.Fatalf("ListRunningContainers: %v", err)
+	}
+	if _, ok := findContainer(running, "litedeck-live"); !ok {
+		t.Errorf("ListRunningContainers omitted the running container: %+v", running)
+	}
+	if _, ok := findContainer(running, "litedeck-crashed"); ok {
+		t.Error("ListRunningContainers returned an exited container")
+	}
+	// And the full listing still has both — the fast pass is a head start, not
+	// a filter the user is stuck with.
+	all, err := a.ListContainers("dind")
+	if err != nil {
+		t.Fatalf("ListContainers: %v", err)
+	}
+	if _, ok := findContainer(all, "litedeck-crashed"); !ok {
+		t.Error("ListContainers lost the exited container")
+	}
+
 	// Lifecycle: stop, start, restart.
 	if res := a.ContainerAction("dind", live.ID, "stop", false); !res.OK {
 		t.Fatalf("stop: %+v", res)
