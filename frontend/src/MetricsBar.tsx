@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { HostMetrics, type GPU, type MetricsView } from './ipc'
 import { usePoll } from './usePoll'
-import { forgetMetrics, publishMetrics } from './metricsStore'
+import {
+  GAP_MS,
+  forgetMetrics,
+  publishMetrics,
+  useMetricsHistory,
+  type Sample,
+} from './metricsStore'
 import { t } from './i18n'
 
 // The summary bar (§4.7). Shown above every tab for the connected host, so
@@ -11,7 +17,6 @@ import { t } from './i18n'
 // monitoring stack does the rest, and §1.5 keeps LiteDeck out of that business.
 
 const POLL_MS = 2000
-const HISTORY = 60 // two minutes at the poll rate
 
 function fmtBytes(n: number): string {
   if (n >= 1 << 30) return `${(n / (1 << 30)).toFixed(1)}G`
@@ -36,25 +41,52 @@ function fmtUptime(sec: number): string {
  * it scales with the container for free, and it inherits `currentColor` so the
  * theme applies without a redraw.
  */
-function Sparkline({ values, warn }: { values: number[]; warn?: boolean }) {
+function Sparkline({
+  samples,
+  pick,
+  warn,
+}: {
+  samples: Sample[]
+  pick: (s: Sample) => number
+  warn?: boolean
+}) {
   const w = 56
   const h = 16
-  if (values.length < 2) return <svg className="spark" width={w} height={h} />
+  const usable = samples.filter((s) => pick(s) >= 0)
+  if (usable.length < 2) return <svg className="spark" width={w} height={h} />
+
+  // x is time, not index. Spacing the points evenly drew half an hour of idle
+  // polling as though it were two minutes of active polling — the shape stayed
+  // while the axis under it quietly changed scale (A-45).
+  const t0 = usable[0].t
+  const span = Math.max(1, usable[usable.length - 1].t - t0)
 
   // Fixed 0–100 scale. Auto-scaling would make 2% CPU look identical to 90%,
   // which is exactly the distinction the bar exists to show.
-  const step = w / (HISTORY - 1)
-  const points = values
-    .map((v, i) => {
-      const x = (i + (HISTORY - values.length)) * step
-      const y = h - (Math.max(0, Math.min(100, v)) / 100) * h
-      return `${x.toFixed(1)},${y.toFixed(1)}`
-    })
-    .join(' ')
+  const at = (s: Sample) =>
+    `${(((s.t - t0) / span) * w).toFixed(1)},${(h - (Math.max(0, Math.min(100, pick(s))) / 100) * h).toFixed(1)}`
+
+  // One run per stretch that was actually recorded. A gap is the app having
+  // been away, and drawing through it invents a reading nobody took.
+  const runs: string[][] = [[]]
+  usable.forEach((s, i) => {
+    if (i > 0 && s.t - usable[i - 1].t > GAP_MS) runs.push([])
+    runs[runs.length - 1].push(at(s))
+  })
 
   return (
     <svg className="spark" width={w} height={h} data-warn={warn || undefined}>
-      <polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.5" />
+      {runs
+        .filter((r) => r.length >= 2)
+        .map((r, i) => (
+          <polyline
+            key={i}
+            points={r.join(' ')}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+          />
+        ))}
     </svg>
   )
 }
@@ -88,7 +120,8 @@ function Stat({
   value,
   unit,
   note,
-  history,
+  samples,
+  pick,
   warn,
   title,
 }: {
@@ -99,7 +132,8 @@ function Stat({
   // load here rather than taking a tile of its own: it is the number you check
   // after the load, not instead of it.
   note?: string
-  history?: number[]
+  samples?: Sample[]
+  pick?: (s: Sample) => number
   warn?: boolean
   title?: string
 }) {
@@ -112,7 +146,7 @@ function Stat({
           {unit && <span className="metric-unit">{unit}</span>}
         </span>
         {note && <span className="metric-note">{note}</span>}
-        {history && <Sparkline values={history} warn={warn} />}
+        {samples && pick && <Sparkline samples={samples} pick={pick} warn={warn} />}
       </div>
     </div>
   )
@@ -120,14 +154,8 @@ function Stat({
 
 export function MetricsBar({ hostID }: { hostID: string }) {
   const [m, setM] = useState<MetricsView | null>(null)
-  const [cpuHist, setCpuHist] = useState<number[]>([])
-  const [memHist, setMemHist] = useState<number[]>([])
-  // One row per card, in the order nvidia-smi listed them, plus the busiest
-  // card per sample for the collapsed tile — following one card's line there
-  // would make the line jump between cards as the lead changes.
-  const [gpuHist, setGpuHist] = useState<number[][]>([])
-  const [gpuMaxHist, setGpuMaxHist] = useState<number[]>([])
   const [gpuOpen, setGpuOpen] = useState(false)
+  const samples = useMetricsHistory(hostID)
   const [failed, setFailed] = useState<string | null>(null)
   const inFlight = useRef(false)
   const gpuPopRef = useRef<HTMLDivElement | null>(null)
@@ -152,12 +180,10 @@ export function MetricsBar({ hostID }: { hostID: string }) {
 
   useEffect(() => {
     // Host changed: the previous host's history says nothing about this one.
+    // History lives in the store, which forgetMetrics clears — the bar keeps
+    // no second copy to fall out of step with it.
     forgetMetrics(hostID)
     setM(null)
-    setCpuHist([])
-    setMemHist([])
-    setGpuHist([])
-    setGpuMaxHist([])
     setGpuOpen(false)
     setFailed(null)
   }, [hostID])
@@ -175,25 +201,6 @@ export function MetricsBar({ hostID }: { hostID: string }) {
       // than polling for its own copy — see metricsStore.
       publishMetrics(hostID, next)
       setFailed(null)
-      // CPU is -1 until a second sample exists; plotting that would draw a
-      // spike down to zero on every connect.
-      if (next.cpu >= 0) {
-        setCpuHist((h) => [...h, next.cpu].slice(-HISTORY))
-      }
-      setMemHist((h) => [...h, next.memPercent].slice(-HISTORY))
-      // Same rule as the CPU: a card that did not report utilisation keeps the
-      // history it has rather than plotting a -1 as a dive to the floor. Rows
-      // are rebuilt from the current list so a card appearing or disappearing
-      // cannot leave a stale line behind.
-      setGpuHist((h) =>
-        (next.gpus ?? []).map((g, i) =>
-          g.utilization < 0 ? h[i] ?? [] : [...(h[i] ?? []), g.utilization].slice(-HISTORY),
-        ),
-      )
-      const busiest = (next.gpus ?? []).reduce((a, g) => Math.max(a, g.utilization), -1)
-      if (busiest >= 0) {
-        setGpuMaxHist((h) => [...h, busiest].slice(-HISTORY))
-      }
     } catch (e) {
       // The bar must never interrupt what the user is doing: a failure here is
       // shown in place, not raised as an app-level error.
@@ -233,7 +240,8 @@ export function MetricsBar({ hostID }: { hostID: string }) {
         label="CPU"
         value={m.cpu < 0 ? '—' : m.cpu.toFixed(0)}
         unit={m.cpu < 0 ? undefined : '%'}
-        history={cpuHist}
+        samples={samples}
+        pick={(s) => s.cpu}
         warn={m.cpu >= 85}
         title={m.cpu < 0 ? t('두 번째 샘플을 기다리는 중 — 누적 카운터라 한 번만으로는 알 수 없습니다') : undefined}
       />
@@ -241,7 +249,8 @@ export function MetricsBar({ hostID }: { hostID: string }) {
         label={t('메모리')}
         value={m.memPercent.toFixed(0)}
         unit="%"
-        history={memHist}
+        samples={samples}
+        pick={(s) => s.mem}
         warn={m.memPercent >= 90}
         title={`${fmtBytes(m.memUsed)} / ${fmtBytes(m.memTotal)}`}
       />
@@ -253,7 +262,8 @@ export function MetricsBar({ hostID }: { hostID: string }) {
           value={fmtPct(gpus[0].utilization)}
           unit={gpus[0].utilization < 0 ? undefined : '%'}
           note={gpus[0].fan < 0 ? fmtTemp(gpus[0].tempC) : t('팬 {f}%', { f: fmtPct(gpus[0].fan) })}
-          history={gpuHist[0]}
+          samples={samples}
+          pick={(s) => s.gpu[0] ?? -1}
           warn={gpuWarn(gpus[0])}
           title={gpuTitle(gpus[0])}
         />
@@ -274,7 +284,10 @@ export function MetricsBar({ hostID }: { hostID: string }) {
               value={fmtPct(gpuBusy)}
               unit={gpuBusy < 0 ? undefined : '%'}
               note={gpuFan < 0 ? undefined : t('팬 {f}%', { f: fmtPct(gpuFan) })}
-              history={gpuMaxHist}
+              samples={samples}
+              // The busiest card per sample, not one chosen card: following a
+              // single line would make it jump as the lead changes hands.
+              pick={(s) => (s.gpu.length ? Math.max(...s.gpu) : -1)}
               warn={gpus.some(gpuWarn)}
             />
             <span className="metric-caret" aria-hidden="true">
@@ -292,7 +305,11 @@ export function MetricsBar({ hostID }: { hostID: string }) {
                   <span className="gpu-num metric-value">
                     {g.utilization < 0 ? '—' : `${fmtPct(g.utilization)}%`}
                   </span>
-                  <Sparkline values={gpuHist[i] ?? []} warn={gpuWarn(g)} />
+                  <Sparkline
+                    samples={samples}
+                    pick={(sm) => sm.gpu[i] ?? -1}
+                    warn={gpuWarn(g)}
+                  />
                   <span className="gpu-num muted">
                     {g.fan < 0 ? t('팬 —') : t('팬 {f}%', { f: fmtPct(g.fan) })}
                   </span>

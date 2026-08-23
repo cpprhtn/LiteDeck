@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { CPUSplit, Core, Filesystem, GPU } from './ipc'
-import { useMetrics } from './metricsStore'
+import { useMetrics, useMetricsHistory } from './metricsStore'
+import { TimeChart } from './TimeChart'
 import { t } from './i18n'
 
 // The resource detail (§4.7, arch/07).
@@ -45,6 +46,7 @@ export function ResourceView({ hostID }: { hostID: string }) {
   // for this host, and asking again would be a second round trip for the same
   // answer.
   const m = useMetrics(hostID)
+  const history = useMetricsHistory(hostID)
 
   if (!m) return <div className="placeholder">{t('읽는 중…')}</div>
 
@@ -55,6 +57,12 @@ export function ResourceView({ hostID }: { hostID: string }) {
         {/* The bar says 40%. This says what the 40% is — which is the only
             version of the number anybody can act on. */}
         <SplitBar split={m.split} idle={m.cpu} />
+        <TimeChart
+          samples={history}
+          pick={(s) => s.cpu}
+          warnAt={90}
+          label={t('CPU 사용률 추이')}
+        />
         {m.cores.length > 1 && <Cores cores={m.cores} />}
       </section>
 
@@ -66,13 +74,15 @@ export function ResourceView({ hostID }: { hostID: string }) {
           buffers={m.memBuffers}
           cached={m.memCached}
         />
+        <TimeChart
+          samples={history}
+          pick={(s) => s.mem}
+          warnAt={90}
+          label={t('메모리 사용률 추이')}
+        />
         <div className="res-grid">
           <Stat label={t('쓰는 중')} value={fmtBytes(m.memUsed)} note={pct(m.memPercent)} />
-          <Stat
-            label={t('캐시')}
-            value={fmtBytes(m.memCached)}
-            note={t('필요하면 돌려받습니다')}
-          />
+          <Stat label={t('캐시')} value={fmtBytes(m.memCached)} />
           <Stat label={t('버퍼')} value={fmtBytes(m.memBuffers)} />
           {m.memShared > 0 && <Stat label={t('공유')} value={fmtBytes(m.memShared)} />}
           {/* Dirty is pages written but not yet on disk. A number that keeps
@@ -125,6 +135,15 @@ export function ResourceView({ hostID }: { hostID: string }) {
               <GPUCard key={g.index} gpu={g} />
             ))}
           </div>
+          {m.gpus.map((g) => (
+            <TimeChart
+              key={g.index}
+              samples={history}
+              pick={(s) => s.gpu[g.index] ?? -1}
+              warnAt={95}
+              label={t('GPU {n} 사용률 추이', { n: g.index })}
+            />
+          ))}
         </section>
       )}
     </div>
@@ -219,7 +238,7 @@ function MemoryBar({
     <div className="res-mem">
       <span data-part="app" style={{ width: w(app) }} title={t('프로그램이 쥐고 있는 메모리')} />
       <span data-part="buffers" style={{ width: w(buffers) }} title={t('버퍼')} />
-      <span data-part="cached" style={{ width: w(cached) }} title={t('캐시 — 필요하면 돌려받습니다')} />
+      <span data-part="cached" style={{ width: w(cached) }} title={t('캐시')} />
     </div>
   )
 }

@@ -2411,3 +2411,57 @@ button.events-unit {
 .res-mem span {
   height: 100%;
 }
+
+/* 시간축 차트. x 는 위치가 아니라 시각이다 — 유휴로 벌어진 30초 간격을
+   촘촘한 2초처럼 그리면 선의 모양은 그대로인데 축의 축척만 몰래 바뀐다. */
+.chart {
+  margin-bottom: var(--sp-3);
+}
+.chart svg {
+  width: 100%;
+  height: 72px;
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  color: var(--accent);
+}
+.chart svg[data-warn] {
+  color: var(--danger);
+}
+.chart-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.chart-dot {
+  fill: currentColor;
+}
+.chart-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+/* 빈 구간. 안 이어 그리는 것만으로는 「평평했다」로 읽힐 수 있어
+   자리를 칠해서 「기록이 없다」로 읽히게 한다. */
+.chart-gap {
+  fill: var(--border);
+  opacity: 0.5;
+}
+.chart-axis {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  font-size: var(--text-xs);
+  padding-top: 2px;
+}
+.chart-empty {
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  margin-bottom: var(--sp-3);
+}

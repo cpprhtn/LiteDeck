@@ -257,6 +257,13 @@ export const en: Record<string, string> = {
   '세션 슬롯을 기다린 시간': 'Time spent waiting for a session slot',
   // 모니터링 탭 (arch/07)
   // CPU·메모리 분해
+  // 시간축 차트
+  'CPU 사용률 추이': 'CPU over time',
+  '메모리 사용률 추이': 'Memory over time',
+  'GPU {n} 사용률 추이': 'GPU {n} over time',
+  '아직 그릴 만큼 모이지 않았습니다.': 'Not enough readings yet to draw.',
+  '빈 구간 {n}곳': '{n} gaps',
+  '이 구간은 앱이 보고 있지 않아 기록이 없습니다': 'Nothing was recorded here — the app was not watching',
   '그 밖': 'Other',
   '두 번째 표본을 기다리는 중 — 누적 카운터라 한 번만으로는 알 수 없습니다': 'Waiting for a second sample — the counters are totals since boot, so one reading says nothing',
   '사용자 시간': 'User',
@@ -271,8 +278,6 @@ export const en: Record<string, string> = {
   '코어 {n} — {v}': 'Core {n} — {v}',
   '쓰는 중': 'In use',
   '캐시': 'Cache',
-  '캐시 — 필요하면 돌려받습니다': 'Cache — handed back the moment anything needs it',
-  '필요하면 돌려받습니다': 'handed back on demand',
   '버퍼': 'Buffers',
   '공유': 'Shared',
   '미기록': 'Unwritten',
