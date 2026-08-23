@@ -552,7 +552,7 @@ function renderTab(
           hasEvents={!!info.capabilities?.events}
           facts={{
             prettyName: info.prettyName,
-            kernel: info.kernel,
+            kernel: info.kernelRelease || info.kernel,
             hostname: info.hostname,
             cpuModel: info.cpuModel,
             timezone: info.timezone,

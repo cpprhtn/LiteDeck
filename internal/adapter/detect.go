@@ -105,6 +105,10 @@ type ServerInfo struct {
 	// the middle of the night or the middle of the afternoon.
 	Hostname string `json:"hostname,omitempty"`
 	Timezone string `json:"timezone,omitempty"`
+	// KernelRelease is `uname -r` — "6.8.0-137-generic". Kernel above is
+	// `uname -s`, which on every Linux says "Linux" and so tells a reader
+	// nothing they did not already know from the distribution name.
+	KernelRelease string `json:"kernelRelease,omitempty"`
 
 	// Errors that did not stop detection, for the bug report template (§11).
 	Warnings []string `json:"warnings,omitempty"`
@@ -261,6 +265,10 @@ func Detect(ctx context.Context, r Runner) (ServerInfo, error) {
 	}
 	if res, err := r.Probe(ctx, "cat", "/proc/sys/kernel/hostname"); err == nil && res.OK() {
 		info.Hostname = strings.TrimSpace(string(res.Stdout))
+	}
+	// A file rather than `uname -r`: same answer, no process.
+	if res, err := r.Probe(ctx, "cat", "/proc/sys/kernel/osrelease"); err == nil && res.OK() {
+		info.KernelRelease = strings.TrimSpace(string(res.Stdout))
 	}
 	// /etc/timezone is Debian's; the symlink is what everyone else has. Reading
 	// the file first because it is one read against a readlink plus a trim.

@@ -130,6 +130,8 @@ export interface ServerInfo {
   cpuModel?: string
   hostname?: string
   timezone?: string
+  /** `uname -r`. `kernel` above is `uname -s`, which always says "Linux". */
+  kernelRelease?: string
   warnings?: string[]
   capabilities: Record<string, boolean>
 }

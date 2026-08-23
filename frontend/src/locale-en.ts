@@ -285,7 +285,6 @@ export const en: Record<string, string> = {
   '시스템': 'System',
   '가장 찬 곳': 'fullest',
   '커널': 'Kernel',
-  '호스트명': 'Hostname',
   '부팅 시각': 'Booted',
   '시간대': 'Timezone',
   '아무 일도 하지 않은 시간의 몫입니다.': 'The share of time spent doing nothing at all.',

@@ -427,9 +427,7 @@ function SystemInfo({
   switchRate: number
 }) {
   const rows: [string, string][] = []
-  if (info.prettyName) rows.push(['OS', info.prettyName])
   if (info.kernel) rows.push([t('커널'), info.kernel])
-  if (info.hostname) rows.push([t('호스트명'), info.hostname])
   rows.push([t('가동 시간'), fmtUptime(uptime)])
   rows.push([t('부팅 시각'), since(uptime)])
   if (info.timezone) rows.push([t('시간대'), info.timezone])
@@ -446,6 +444,8 @@ function SystemInfo({
 }
 
 export interface SysFacts {
+  /** Shown as the panel's subtitle, so the fact list does not repeat it —
+   *  same reason the hostname is the headline rather than a row. */
   prettyName?: string
   kernel?: string
   hostname?: string

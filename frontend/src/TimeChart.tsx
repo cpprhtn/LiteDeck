@@ -103,11 +103,14 @@ export function TimeChart({
   // Times along the bottom rather than only at the ends: with one label at each
   // edge the middle of the chart has no time attached to it at all, and "when
   // did it spike" is most of what anybody asks a chart.
+  //
+  // Three, not five. A panel is a quarter of the row, and five stamps of
+  // "04:50 PM" ran into each other — five labels that overlap say less than
+  // two that do not.
+  const steps = 2
   const stamps: { at: number; x: number }[] = []
-  const steps = 4
   for (let i = 0; i <= steps; i++) {
-    const at = t0 + (span * i) / steps
-    stamps.push({ at, x: (i / steps) * 100 })
+    stamps.push({ at: t0 + (span * i) / steps, x: (i / steps) * 100 })
   }
 
   // The second series gets the same gap treatment, but silently: one "N gaps"
@@ -193,7 +196,7 @@ export function TimeChart({
             style={{ left: `${s2.x}%` }}
             data-edge={i === 0 ? 'first' : i === steps ? 'last' : undefined}
           >
-            {clock(s2.at)}
+            {clock(s2.at, span)}
           </span>
         ))}
       </div>
@@ -202,9 +205,22 @@ export function TimeChart({
   )
 }
 
-function clock(ms: number): string {
+/**
+ * The time under a tick.
+ *
+ * 24-hour, because "04:50 PM" is eight characters against "16:50"'s five and
+ * the panel is a quarter of a row — and because a chart axis reading 24-hour is
+ * the convention every monitoring tool already set.
+ *
+ * Seconds appear on a short window. The history starts empty, so the first
+ * minutes of any connection span less than a minute, and three stamps all
+ * reading "16:50" tell the reader nothing about which end is which.
+ */
+function clock(ms: number, spanMs: number): string {
   return new Date(ms).toLocaleTimeString(undefined, {
     hour: '2-digit',
     minute: '2-digit',
+    ...(spanMs < 10 * 60_000 ? { second: '2-digit' } : {}),
+    hour12: false,
   })
 }
