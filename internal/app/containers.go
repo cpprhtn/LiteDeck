@@ -36,6 +36,25 @@ func (a *App) containerRuntime(hostID string) (string, error) {
 
 // ListContainers returns the container table (§4.5).
 func (a *App) ListContainers(hostID string) ([]adapter.Container, error) {
+	return a.listContainers(hostID, adapter.PSArgsContainers())
+}
+
+// ListRunningContainers returns only the containers that are up.
+//
+// The full listing has to wait for the daemon to walk every container the host
+// has ever kept, which on a CI box is thousands of dead ones and tens of
+// seconds — and for all of that time the tab has nothing to draw. This is the
+// cheap half of the same question, so the table can go up while the rest is
+// still coming (see adapter.PSArgsRunningContainers for the measurements).
+//
+// Not a replacement for the full listing: a stopped container is exactly what
+// someone opens this tab to find. The view asks for this one first and the full
+// one second.
+func (a *App) ListRunningContainers(hostID string) ([]adapter.Container, error) {
+	return a.listContainers(hostID, adapter.PSArgsRunningContainers())
+}
+
+func (a *App) listContainers(hostID string, args []string) ([]adapter.Container, error) {
 	runtime, err := a.containerRuntime(hostID)
 	if err != nil {
 		return nil, err
@@ -48,7 +67,7 @@ func (a *App) ListContainers(hostID string) ([]adapter.Container, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), pollTimeout)
 	defer cancel()
 
-	res, err := conn.Poll(ctx, runtime, adapter.PSArgsContainers()...)
+	res, err := conn.Poll(ctx, runtime, args...)
 	if err != nil {
 		// A listing that ran out of time is not the same failure as a daemon
 		// that is not there, and "context deadline exceeded" tells the user

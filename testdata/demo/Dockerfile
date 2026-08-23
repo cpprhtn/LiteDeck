@@ -197,7 +197,7 @@ RUN set -eux; \
       '[Service]' 'ExecStart=/bin/bash -c "while :; do sleep 30; done"' 'Restart=always' \
       '[Install]' 'WantedBy=multi-user.target' > /etc/systemd/system/orders-api.service; \
     printf '%s\n' '[Unit]' 'Description=Order fulfilment worker' \
-      '[Service]' 'ExecStart=/bin/bash -c "while :; do sleep 30; done"' 'Restart=always' \
+      '[Service]' 'ExecStart=/usr/local/bin/orders-worker-loop' 'Restart=always' \
       '[Install]' 'WantedBy=multi-user.target' > /etc/systemd/system/orders-worker.service; \
     printf '%s\n' '[Unit]' 'Description=Prometheus node exporter' \
       '[Service]' 'ExecStart=/bin/bash -c "while :; do sleep 30; done"' 'Restart=always' \
@@ -209,6 +209,85 @@ RUN set -eux; \
       '[Service]' 'Type=oneshot' 'ExecStart=/bin/false' \
       '[Install]' 'WantedBy=multi-user.target' > /etc/systemd/system/certbot-renew.service; \
     systemctl enable orders-api orders-worker node-exporter
+
+# ── The worker actually works ─────────────────────────────────────────────
+#
+# The other units sleep, which is fine for a service list: what that screen
+# shows is names, states and unit files. The monitoring tab shows *movement*,
+# and a container where nothing happens draws four flat lines along the bottom
+# — a screenshot of that sells the opposite of what the tab does.
+#
+# So the one unit whose name promises work does some. Bursts rather than a
+# steady burn, because a flat 40% line says as little as a flat 0% one: what
+# the charts are for is showing that the shape changed and roughly when.
+#
+# Deliberately modest — a demo fixture that pins the recording machine's fans
+# is a fixture nobody runs twice. One core for a couple of seconds at a time,
+# a few megabytes of file writes, then idle.
+RUN printf '%s\n' \
+      '#!/bin/bash' \
+      '# Demo workload. See the comment in testdata/demo/Dockerfile.' \
+      'set -u' \
+      'work=/var/tmp/orders-worker' \
+      'mkdir -p "$work"' \
+      'while :; do' \
+      '  # A batch: some arithmetic, then write and re-read what it produced.' \
+      '  end=$((SECONDS + 2 + RANDOM % 3))' \
+      '  while [ $SECONDS -lt $end ]; do :; done' \
+      '  dd if=/dev/urandom of="$work/batch.tmp" bs=1M count=8 status=none' \
+      '  cat "$work/batch.tmp" > /dev/null' \
+      '  sync' \
+      '  rm -f "$work/batch.tmp"' \
+      '  # Idle between batches, so the charts have somewhere to come back to.' \
+      '  sleep $((6 + RANDOM % 10))' \
+      'done' > /usr/local/bin/orders-worker-loop \
+ && chmod +x /usr/local/bin/orders-worker-loop
+
+# ── A stand-in nvidia-smi ─────────────────────────────────────────────────
+#
+# ⚠ There is no GPU in this container. This script answers the query the app
+# makes and nothing else, so that the monitoring tab's GPU panel appears in the
+# README recording. Every other fake in this file is a real thing with an
+# invented name — orders-api is a systemd unit that genuinely runs. This one is
+# different: it reports hardware that is not here.
+#
+# It earns its place because GPU monitoring is a feature verified against real
+# cards (a GTX 1050 and an RTX 3060, over SSH), and the fixture exists so that
+# recording it does not mean pointing a camera at somebody's actual machine.
+# Anyone regenerating the media should know which of the two kinds of fake they
+# are looking at, which is why this comment is longer than the script.
+#
+# The numbers walk rather than sit still, because a flat line in a GIF of a
+# monitoring tab argues against the tab.
+RUN printf '%s\n' \
+      '#!/bin/bash' \
+      '# STAND-IN. No GPU here — see the comment in testdata/demo/Dockerfile.' \
+      'set -u' \
+      'state=/var/tmp/.gpu-demo' \
+      '[ -f "$state" ] || echo "18 46 41 1740" > "$state"' \
+      'emit() {' \
+      '  read -r u f t m < "$state"' \
+      '  u=$(( u + RANDOM % 25 - 11 )); [ $u -lt 0 ] && u=0; [ $u -gt 97 ] && u=97' \
+      '  t=$(( t + RANDOM % 5 - 2 ));  [ $t -lt 34 ] && t=34; [ $t -gt 78 ] && t=78' \
+      '  f=$(( 30 + t / 2 ));          [ $f -gt 88 ] && f=88' \
+      '  m=$(( m + RANDOM % 260 - 120 )); [ $m -lt 900 ] && m=900; [ $m -gt 11200 ] && m=11200' \
+      '  echo "$u $f $t $m" > "$state"' \
+      '  echo "0, NVIDIA GeForce RTX 5070, $u, $f, $t, 12282, $m"' \
+      '}' \
+      'loop=0' \
+      'while [ $# -gt 0 ]; do' \
+      '  case "$1" in' \
+      '    -l|--loop) loop="${2:-2}"; shift 2 ;;' \
+      '    -l*)       loop="${1#-l}"; shift ;;' \
+      '    *)         shift ;;' \
+      '  esac' \
+      'done' \
+      'if [ "$loop" -gt 0 ] 2>/dev/null; then' \
+      '  while :; do emit; sleep "$loop"; done' \
+      'else' \
+      '  emit' \
+      'fi' > /usr/local/bin/nvidia-smi \
+ && chmod +x /usr/local/bin/nvidia-smi
 
 # Docker inside Docker cannot stack overlay on overlay — every `docker run` in
 # here dies on "mount source: overlay ... invalid argument" with the default

@@ -8,7 +8,7 @@
   "frontend:dev:serverUrl": "auto",
   "info": {
     "productName": "LiteDeck",
-    "productVersion": "1.5.0",
+    "productVersion": "1.5.1",
     "companyName": "LiteDeck",
     "copyright": "Copyright © 2026 Junwon Lee. Apache-2.0.",
     "comments": "SSH 하나로 원격 서버를 내 컴퓨터의 GUI에서 다룹니다."

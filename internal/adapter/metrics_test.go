@@ -125,7 +125,12 @@ func TestInterestingFilesystems(t *testing.T) {
 	}
 	got := InterestingFilesystems(m.Filesystems)
 
+	var hasRoot bool
 	for _, fs := range got {
+		if fs.MountPoint == "/" {
+			hasRoot = true
+			continue // whatever driver is under the root, the root is the disk
+		}
 		switch fs.Device {
 		case "tmpfs", "shm", "overlay", "devtmpfs", "udev", "none":
 			t.Errorf("pseudo-filesystem %s (%s) survived the filter", fs.Device, fs.MountPoint)
@@ -136,6 +141,17 @@ func TestInterestingFilesystems(t *testing.T) {
 	}
 	if len(got) == 0 {
 		t.Fatal("the filter removed everything; the real disk is gone too")
+	}
+	// This capture is from a container, where the root is an overlay. Dropping
+	// it for that left the bind mount of /etc/hosts standing in as the
+	// machine's storage — same percentage, wrong thing entirely.
+	if !hasRoot {
+		t.Error("the root filesystem was filtered out")
+	}
+	for _, fs := range got {
+		if fs.MountPoint == "/etc/hosts" {
+			t.Error("a bind-mounted file is being reported as a filesystem")
+		}
 	}
 	// Fullest first: the one about to cause an incident belongs at the top.
 	for i := 1; i < len(got); i++ {
@@ -474,14 +490,38 @@ func TestParseMetricsGoldenFull(t *testing.T) {
 // Partitions are counted against the disk they sit on, so keeping both would
 // report several times the traffic that happened.
 func TestSkipDiskDropsPartitions(t *testing.T) {
-	for _, name := range []string{"sda1", "sda2", "nvme0n1p1", "loop3", "ram0", "dm-0", "zram0"} {
-		if !skipDisk(name) {
+	// The listing a real machine produces: disks, their partitions, and the
+	// virtual devices nobody watches.
+	all := map[string]bool{}
+	for _, n := range []string{
+		"sda", "sda1", "sda2", "sdb", "nvme0n1", "nvme0n1p1", "nvme0n1p2",
+		"loop3", "ram0", "dm-0", "zram0", "md0", "nbd0", "vda", "vda1", "xvda",
+	} {
+		all[n] = true
+	}
+
+	for _, name := range []string{"sda1", "sda2", "nvme0n1p1", "vda1", "loop3", "ram0", "dm-0", "zram0"} {
+		if !skipDisk(name, all) {
 			t.Errorf("%s should be skipped", name)
 		}
 	}
-	for _, name := range []string{"sda", "sdb", "nvme0n1", "vda", "xvda"} {
-		if skipDisk(name) {
-			t.Errorf("%s is a whole disk and should be kept", name)
+	// md0 is a RAID array and nbd0 a network block device. Both end in a digit
+	// and neither is a partition — the first attempt read the name and dropped
+	// exactly the disk somebody most wants to watch.
+	for _, name := range []string{"sda", "sdb", "nvme0n1", "vda", "xvda", "md0", "nbd0"} {
+		if skipDisk(name, all) {
+			t.Errorf("%s is a whole device and should be kept", name)
+		}
+	}
+}
+
+// A partition is only a partition when its disk is in the same listing. A
+// machine that exposes md0 and nothing named "md" must keep it.
+func TestSkipDiskNeedsTheParentPresent(t *testing.T) {
+	lonely := map[string]bool{"md0": true, "nbd0": true, "sda1": true}
+	for name := range lonely {
+		if skipDisk(name, lonely) {
+			t.Errorf("%s has no parent in this listing and should be kept", name)
 		}
 	}
 }
@@ -522,5 +562,40 @@ func TestInodesTolerateFilesystemsWithout(t *testing.T) {
 	}
 	if got := m.Filesystems[0].InodesTotal; got != 0 {
 		t.Errorf("InodesTotal = %d for a filesystem with no inode table", got)
+	}
+}
+
+// A container's root is an overlay, and skipping it for that left the bind
+// mount of /etc/hosts standing in as the machine's disk — df reports that file
+// as a filesystem the size of the whole volume it came from.
+func TestInterestingFilesystemsKeepContainerRoot(t *testing.T) {
+	// Real df output from the demo fixture.
+	all := []Filesystem{
+		{Device: "overlay", MountPoint: "/", Size: 195353903104, Used: 72805883904, Percent: 38},
+		{Device: "tmpfs", MountPoint: "/dev", Size: 67108864},
+		{Device: "/dev/vdb1", MountPoint: "/etc/hosts", Size: 195353903104, Used: 72805883904, Percent: 38},
+		{Device: "/dev/vdb1", MountPoint: "/etc/hostname", Size: 195353903104, Used: 72805883904, Percent: 38},
+	}
+	got := InterestingFilesystems(all)
+
+	if len(got) != 1 {
+		t.Fatalf("%d filesystems, want 1: %+v", len(got), got)
+	}
+	if got[0].MountPoint != "/" {
+		t.Errorf("headline filesystem is %s, want / — the machine's storage is not a bind-mounted file",
+			got[0].MountPoint)
+	}
+}
+
+// On an ordinary server the root is not an overlay and tmpfs is still noise.
+func TestInterestingFilesystemsStillDropTmpfs(t *testing.T) {
+	all := []Filesystem{
+		{Device: "/dev/sda2", MountPoint: "/", Size: 100, Used: 40, Percent: 40},
+		{Device: "tmpfs", MountPoint: "/tmp", Size: 100},
+		{Device: "/dev/md0", MountPoint: "/mnt/raid", Size: 900, Used: 100, Percent: 11},
+	}
+	got := InterestingFilesystems(all)
+	if len(got) != 2 {
+		t.Fatalf("%d filesystems, want 2 (/ and the array): %+v", len(got), got)
 	}
 }

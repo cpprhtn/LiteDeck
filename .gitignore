@@ -44,3 +44,6 @@ __pycache__/
 *.png
 !build/**/*.png
 !frontend/**/*.png
+# docs/media 는 README 가 참조하는 자리다. 거기 있는 것은 주고받다 남은 것이
+# 아니라 문서의 일부이고, 데모 픽스처로 재생성할 수 있다.
+!docs/media/*.png

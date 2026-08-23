@@ -1,6 +1,18 @@
-OS: Ubuntu 24.04.4 LTS
-kernel: 6.8.0-137-generic
-cores: 20
-captured: 2026-08-23
-command: MetricsScript (adapter/metrics.go) verbatim
-note: eno1 carries a real rx-drop count (200793) — a live example of the counter the network panel exists to surface.
+이 디렉터리에는 캡처가 두 개 있다.
+
+snapshot.txt
+  PRETTY_NAME="Ubuntu 22.04.5 LTS"
+  NAME="Ubuntu"
+  VERSION_ID="22.04"
+  주: df 의 루트가 overlay 이고 /etc/hosts 가 별도 파일시스템으로 잡힌다 —
+      컨테이너에서 뜬 것이다. InterestingFilesystems 가 루트를 지우면 안 되는
+      이유가 이 파일에 그대로 들어 있다.
+
+ubuntu-24.04-full.txt
+  OS: Ubuntu 24.04.4 LTS
+  kernel: 6.8.0-137-generic
+  cores: 20
+  captured: 2026-08-23
+  command: MetricsScript (adapter/metrics.go) 를 그대로 실행
+  주: eno1 에 rx-drop 이 200793 건 쌓여 있다 — 네트워크 패널이 존재하는 이유인
+      그 카운터의 실물이다.

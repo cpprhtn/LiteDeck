@@ -185,6 +185,29 @@ func TestPSArgsContainers(t *testing.T) {
 	}
 }
 
+// The running-only listing exists to be cheap, and the one word that decides
+// that is the one it must not have. `-a` makes the daemon walk every container
+// the host has ever kept; putting it back here would make this listing exactly
+// as slow as the one it is meant to precede, while looking correct.
+func TestPSArgsRunningContainersOmitsAll(t *testing.T) {
+	args := PSArgsRunningContainers()
+	for _, a := range args {
+		if a == "-a" || a == "--all" {
+			t.Fatalf("PSArgsRunningContainers() = %q — the point is to not walk every container", args)
+		}
+	}
+	joined := ""
+	for _, a := range args {
+		joined += a + " "
+	}
+	// The rest has to match the full listing: same columns, same labels, same
+	// parser. Compose grouping reads those labels, so a leaner format here
+	// would ungroup the fast pass and regroup it a beat later.
+	if !containsAll(joined, "ps", "--no-trunc", "{{json .}}") {
+		t.Errorf("PSArgsRunningContainers() = %q", args)
+	}
+}
+
 func containsAll(s string, subs ...string) bool {
 	for _, sub := range subs {
 		found := false

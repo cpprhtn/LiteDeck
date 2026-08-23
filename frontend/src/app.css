@@ -2385,6 +2385,19 @@ button.events-unit {
   font-size: 20px;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
+  min-width: 0;
+}
+/* 제목이 숫자가 아니라 이름인 패널. 이름은 길어질 수 있어서, 퍼센트와 같은
+   크기로 두면 세 줄로 접히면서 옆의 라벨까지 세로로 쌓아 버린다. 커널 버전
+   줄과 같은 크기로 내리고, 그래도 넘치면 잘라서 툴팁에 전체를 남긴다. */
+.res-panel-value[data-name] {
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  font-variant-numeric: normal;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .res-panel[data-warn] .res-panel-value {
   color: var(--danger);

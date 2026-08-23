@@ -694,6 +694,7 @@ interface Bindings {
   FollowContainerLog(id: string, containerId: string, tail: number): Promise<LogStream>
   StopLogStream(streamId: string): Promise<void>
   ListContainers(id: string): Promise<Container[]>
+  ListRunningContainers(id: string): Promise<Container[]>
   ContainerAction(
     id: string,
     containerId: string,
@@ -916,6 +917,7 @@ export const FollowContainerLog = (id: string, containerId: string, tail: number
   api().FollowContainerLog(id, containerId, tail)
 export const StopLogStream = (streamId: string) => api().StopLogStream(streamId)
 export const ListContainers = (id: string) => api().ListContainers(id)
+export const ListRunningContainers = (id: string) => api().ListRunningContainers(id)
 export const ContainerAction = (
   id: string,
   containerId: string,
