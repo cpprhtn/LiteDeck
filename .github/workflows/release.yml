@@ -51,6 +51,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The tag says which release this is; app.Version is what the binary tells
+      # the user it is. Nothing connected the two, so tagging without bumping
+      # would publish a build that reports the previous version — and that
+      # number is the one that reaches the bug report, which is the whole reason
+      # the constant exists.
+      #
+      # version_test.go already ties app.Version to wails.json's productVersion.
+      # This is the third corner: the tag actually being built. Checked here
+      # rather than in the release job so it fails before three platforms spend
+      # several minutes each.
+      #
+      # A pre-release tag carries its suffix here too — v1.6.0-rc.1 means
+      # Version = "1.6.0-rc.1". The binary should say what the tag says.
+      - name: Tag matches the version in the source
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -eu
+          source_version=$(sed -n 's/^const Version = "\(.*\)"$/\1/p' internal/app/version.go)
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [ -z "$source_version" ]; then
+            echo "::error::could not read Version out of internal/app/version.go — has the declaration changed shape?"
+            exit 1
+          fi
+          if [ "$source_version" != "$tag_version" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match app.Version (${source_version}). Bump internal/app/version.go and wails.json together, or retag."
+            exit 1
+          fi
+          echo "tag ${GITHUB_REF_NAME} matches app.Version ${source_version}"
+
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
