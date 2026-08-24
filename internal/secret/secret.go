@@ -25,6 +25,10 @@ const (
 	KindPassword   Kind = "password"   // login password
 	KindPassphrase Kind = "passphrase" // private key passphrase
 	KindSudo       Kind = "sudo"       // sudo password, opt-in only (§7.2)
+	// KindKumaAPIKey reads an Uptime Kuma instance's /metrics endpoint. Not a
+	// credential for the server itself, but it is a bearer secret and there is
+	// no second place to keep those.
+	KindKumaAPIKey Kind = "kuma-api-key"
 )
 
 // ErrNotFound reports that no secret is stored for that host and kind.

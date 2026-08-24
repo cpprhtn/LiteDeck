@@ -36,6 +36,7 @@ type App struct {
 	gens      *genCache
 	transfers *transferQueue
 	terminals *terminalRegistry
+	tunnels   *tunnelRegistry
 	cpu       *cpuHistory
 	gpus      *gpuWatcher
 	logs      *logRegistry
@@ -47,6 +48,11 @@ type App struct {
 	// call to the Wails runtime so the prompt bridge — the one piece of logic
 	// here with real concurrency in it — can be tested without a window.
 	emit func(event string, payload any)
+
+	// openURL hands an address to the system browser, for the same reason emit
+	// is a field: the tunnel logic has to be testable without a window, and a
+	// test that opened the tester's browser would be a test nobody runs twice.
+	openURL func(url string)
 
 	// configDir is resolved once at startup rather than looked up per call, so
 	// integration tests can point the whole app at a temporary directory.
@@ -69,6 +75,7 @@ func New() *App {
 	a.gens = newGenCache()
 	a.transfers = newTransferQueue(a)
 	a.terminals = newTerminalRegistry(a)
+	a.tunnels = newTunnelRegistry(a)
 	a.cpu = newCPUHistory()
 	a.gpus = newGPUWatcher()
 	a.logs = newLogRegistry(a)
@@ -77,6 +84,7 @@ func New() *App {
 	// Until Startup runs there is no window; dropping events is correct, and
 	// keeps every caller free of nil checks.
 	a.emit = func(string, any) {}
+	a.openURL = func(string) {}
 	return a
 }
 
@@ -84,6 +92,7 @@ func New() *App {
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
 	a.emit = func(event string, payload any) { wr.EventsEmit(ctx, event, payload) }
+	a.openURL = func(url string) { wr.BrowserOpenURL(ctx, url) }
 	a.mgr = sshcore.NewManager(sshcore.ManagerOptions{}, a.emitConnectionState)
 	a.secrets = secret.Open()
 
@@ -137,6 +146,11 @@ func (a *App) Startup(ctx context.Context) {
 func (a *App) Shutdown(context.Context) {
 	if a.terminals != nil {
 		a.terminals.closeAll()
+	}
+	// Before the connections go: a forward is a port on *this* machine, and one
+	// left listening after the session behind it is gone answers by hanging.
+	if a.tunnels != nil {
+		a.tunnels.closeAll()
 	}
 	if a.logs != nil {
 		a.logs.closeAll()
@@ -201,6 +215,17 @@ type ConnectionState struct {
 }
 
 func (a *App) emitConnectionState(hostID string, s sshcore.State, err error) {
+	// A forward rides the connection that just went away, so it cannot carry
+	// anything and must not go on listening as if it could. Reconnecting counts:
+	// the replacement is a different connection, and the old channel died with
+	// the old one.
+	//
+	// On its own goroutine because this runs on the keepalive loop, which the
+	// StateFunc contract says not to block.
+	if a.tunnels != nil && s != sshcore.StateConnected && s != sshcore.StateConnecting {
+		go a.tunnels.closeHost(hostID, i18n.S("서버 연결이 끊겨 터널을 닫았습니다"))
+	}
+
 	payload := ConnectionState{HostID: hostID, State: s.String()}
 	if err != nil {
 		payload.Error = err.Error()

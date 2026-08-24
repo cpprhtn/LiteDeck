@@ -26,13 +26,24 @@ MCP 클라이언트는 **GUI가 앉던 자리에 앉습니다.** 같은 어댑�
 런타임과 상주 프로세스가 생기고, 컨텍스트 수집용 파일 탐색이 저사양 서버의 I/O를
 때립니다. 그 부하는 전부 클라이언트가 집니다.
 
-**조회 12개**: `hosts_list` · `health_snapshot` · `sys_stats` · `svc_list` · **`svc_logs`** ·
+**조회 13개**: `hosts_list` · `health_snapshot` · `sys_stats` · `svc_list` · **`svc_logs`** ·
 `proc_list` · `container_list` · **`container_logs`** · `net_ports` · `fs_list` · `fs_read` ·
-`sessions_list`. `health_snapshot` 하나로 CPU·메모리·디스크·failed 유닛·비정상 컨테이너·
-외부 노출 포트가 한 번에 오고, `svc_logs` 가 **왜** 죽었는지를 말해줍니다.
+`sessions_list` · **`kuma_status`**. `health_snapshot` 하나로 CPU·메모리·디스크·failed 유닛·
+비정상 컨테이너·외부 노출 포트가 한 번에 오고, `svc_logs` 가 **왜** 죽었는지를 말해줍니다.
 
 **변경 5개**: `svc_control`(시작/중지/재시작) · `container_control` · `proc_signal`(TERM/KILL) ·
 `fs_write` · `fs_delete`.
+
+**`kuma_status` — Uptime Kuma 의 모니터.** 「지금 죽어 있는 게 있나」에 답합니다.
+`health_snapshot` 과는 다른 질문입니다 — 그쪽은 *이 서버*, 이쪽은 *이 서버가 지켜보는 것들*.
+읽는 곳은 Kuma 의 **`/metrics`** (Prometheus 텍스트) 하나뿐입니다. Kuma 자신의 README 가
+「API 는 자체 웹 UI 용으로 만들었고 서드파티 연동을 보장하지 않는다」고 적어 두었고,
+`/metrics` 만이 바깥에서 읽으라고 있는 표면이라서입니다. `/api/*` 는 건드리지 않습니다.
+
+**쓰기는 없습니다.** 모니터를 만들거나 고치거나 지우는 도구는 넣지 않았습니다 — 그건 Kuma 의
+일이고, 보장되지 않는 표면 위에 쓰기를 얹는 것은 되돌릴 수 없는 방향의 실수입니다.
+포트와 API 키는 **네트워크 탭의 Kuma 설정**에서 서버별로 지정합니다. 키는 이 컴퓨터의
+자격증명 저장소에만 저장되고 (§7.4), Command Log 의 줄에는 자리표시자로 남습니다.
 
 **되돌릴 수 있습니다.** MCP가 파일을 덮어쓰거나 지우기 전에 이전 내용을 **이 컴퓨터에** 보관하고,
 MCP 패널의 **바뀐 파일** 탭에서 파일별로 되돌립니다. 안 묻기로 두고 자리를 비웠을 때 방어 대신

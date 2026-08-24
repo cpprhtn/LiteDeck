@@ -67,6 +67,10 @@ func TestToolSetIsExactlyWhatWasDesigned(t *testing.T) {
 		"container_logs":  true,
 		"net_ports":       true,
 		"sessions_list":   true,
+		// Uptime Kuma, read through its Prometheus endpoint. Read-only on
+		// purpose: monitors are Kuma's to create and edit, and its README says
+		// its own API carries no promise to callers like this one.
+		"kuma_status": true,
 		// Files.
 		"fs_list": true,
 		"fs_read": true,

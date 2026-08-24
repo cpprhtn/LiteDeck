@@ -155,6 +155,10 @@ func (a *App) DisconnectHost(hostID string) error {
 	// Dropping the connection kills the sessions anyway; this is so the registry
 	// does not go on offering them back as tabs that cannot be typed into.
 	a.terminals.closeHost(hostID)
+	// Same for forwards, and here it is not only tidiness: the listening port is
+	// on this machine, so one that outlived its session would go on accepting
+	// browsers and then hang them.
+	a.tunnels.closeHost(hostID, i18n.S("서버 연결을 끊어 터널을 닫았습니다"))
 	return a.mgr.Disconnect(hostID)
 }
 

@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePoll } from './usePoll'
 import {
+  CloseKumaTunnel,
+  DetectKuma,
   HostNetwork,
+  KumaConfig,
+  OpenKumaTunnel,
+  SetKumaConfig,
   SSHDConfig,
+  on,
+  type KumaCandidate,
+  type KumaView,
   type NetworkView as NetView,
   type SSHDNote,
   type SSHDReport,
+  type TunnelView,
 } from './ipc'
 import { t } from './i18n'
 
@@ -167,6 +176,8 @@ export function NetworkView({
             </div>
           )}
         </section>
+
+        <KumaSection hostID={hostID} visible={visible} onError={onError} />
 
         <SSHDSection hostID={hostID} visible={visible} />
       </div>
@@ -331,4 +342,303 @@ function noteText(n: SSHDNote): string {
     default:
       return n.code
   }
+}
+
+/**
+ * Uptime Kuma, reached over the SSH session that is already open.
+ *
+ * There is no dashboard here and there will not be one. Kuma's own UI is
+ * finished, and a summary of it in this window would be a worse copy of
+ * something that exists. The single thing this window can do that Kuma cannot
+ * do for itself is *reach* an instance that is bound to 127.0.0.1 on purpose —
+ * so that is all the section offers: find it, forward a port to it, open it.
+ *
+ * Detection costs an HTTP request per candidate over the connection, so it runs
+ * when the tab is opened and when the user asks again — never on the poll the
+ * rest of this view runs on. A service does not appear while you watch it, and
+ * every probe is something the server pays for (§3.2d).
+ */
+function KumaSection({
+  hostID,
+  visible,
+  onError,
+}: {
+  hostID: string
+  visible: boolean
+  onError: (msg: string) => void
+}) {
+  const [view, setView] = useState<KumaView | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [port, setPort] = useState('')
+  const [apiKey, setApiKey] = useState('')
+  const [opening, setOpening] = useState<number | null>(null)
+
+  const detect = useCallback(async () => {
+    setBusy(true)
+    try {
+      setView(await DetectKuma(hostID))
+      setError(null)
+    } catch (e) {
+      // Its own line rather than the view's: a probe that could not run still
+      // leaves a network tab worth looking at.
+      setError(String(e))
+      // The stored port and any open tunnel are known without the server, and
+      // are what the settings form needs to render.
+      try {
+        setView(await KumaConfig(hostID))
+      } catch {
+        /* the binding layer is gone; the error above already says so */
+      }
+    } finally {
+      setBusy(false)
+    }
+  }, [hostID])
+
+  const asked = useRef('')
+  useEffect(() => {
+    if (!visible || asked.current === hostID) return
+    asked.current = hostID
+    void detect()
+  }, [visible, hostID, detect])
+
+  // A tunnel can end without anybody clicking — the connection drops, or the
+  // host is disconnected from the sidebar. Listening beats re-probing: the
+  // answer arrives immediately and costs the server nothing.
+  useEffect(() => {
+    const apply = (fn: (prev: TunnelView[]) => TunnelView[]) =>
+      setView((v) => (v ? { ...v, tunnels: fn(v.tunnels) } : v))
+
+    const offOpen = on<TunnelView>(`tunnel:opened:${hostID}`, (tn) =>
+      apply((prev) => [...prev.filter((p) => p.id !== tn.id), tn]),
+    )
+    const offClose = on<TunnelView>(`tunnel:closed:${hostID}`, (tn) =>
+      apply((prev) => prev.filter((p) => p.id !== tn.id)),
+    )
+    return () => {
+      offOpen()
+      offClose()
+    }
+  }, [hostID])
+
+  const open = async (p: number) => {
+    setOpening(p)
+    try {
+      const tn = await OpenKumaTunnel(hostID, p)
+      setView((v) =>
+        v ? { ...v, tunnels: [...v.tunnels.filter((x) => x.id !== tn.id), tn] } : v,
+      )
+      setError(null)
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setOpening(null)
+    }
+  }
+
+  const close = async (id: string) => {
+    try {
+      await CloseKumaTunnel(id)
+      setView((v) => (v ? { ...v, tunnels: v.tunnels.filter((t) => t.id !== id) } : v))
+    } catch (e) {
+      onError(String(e))
+    }
+  }
+
+  const startEditing = () => {
+    setPort(view?.configured ? String(view.port) : '')
+    setApiKey('')
+    setEditing(true)
+  }
+
+  const save = async () => {
+    const n = port.trim() === '' ? 0 : Number(port)
+    if (!Number.isInteger(n) || n < 0 || n > 65535) {
+      setError(t('포트는 1 에서 65535 사이의 숫자여야 합니다.'))
+      return
+    }
+    setBusy(true)
+    try {
+      // An untouched key field means "leave what is stored alone". Anything
+      // else would erase a secret the form was never given in the first place.
+      const res = await SetKumaConfig(hostID, n, apiKey, apiKey === '')
+      if (!res.ok) {
+        setError(res.error ?? t('설정을 저장하지 못했습니다.'))
+        return
+      }
+      setEditing(false)
+      setApiKey('')
+      await detect()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const candidates = view?.candidates ?? []
+  const tunnels = view?.tunnels ?? []
+  const exposed = view?.exposed ?? []
+  const tunnelFor = (p: number) => tunnels.find((tn) => tn.remotePort === p)
+  const nothingFound =
+    candidates.length === 0 && tunnels.length === 0 && exposed.length === 0
+
+  return (
+    <section>
+      <h3 className="net-heading">
+        Uptime Kuma
+        <span className="spacer" />
+        <button className="ghost small-btn" disabled={busy} onClick={() => void detect()}>
+          {t('다시 찾기')}
+        </button>
+        <button className="ghost small-btn" onClick={() => (editing ? setEditing(false) : startEditing())}>
+          {editing ? t('설정 접기') : t('설정')}
+        </button>
+      </h3>
+
+      {error && <div className="placeholder small">{error}</div>}
+
+      {editing && (
+        <div className="kuma-form">
+          <label>
+            <span className="muted small">{t('포트')}</span>
+            <input
+              className="mono"
+              inputMode="numeric"
+              placeholder={String(view?.port ?? 3001)}
+              value={port}
+              onChange={(e) => setPort(e.target.value)}
+            />
+          </label>
+          <label>
+            <span className="muted small">{t('API 키 (MCP 조회용, 선택)')}</span>
+            <input
+              type="password"
+              className="mono"
+              autoComplete="off"
+              placeholder={view?.hasApiKey ? t('저장되어 있음 — 바꾸려면 입력') : ''}
+              value={apiKey}
+              disabled={!view?.keychainOk}
+              onChange={(e) => setApiKey(e.target.value)}
+            />
+          </label>
+          <div className="kuma-form-actions">
+            <button className="ghost small-btn" onClick={() => setEditing(false)}>
+              {t('취소')}
+            </button>
+            <button className="small-btn" disabled={busy} onClick={() => void save()}>
+              {t('저장')}
+            </button>
+          </div>
+          {/* The key is only ever sent to Kuma itself, over this connection. It
+              is worth saying out loud on the one form in the app that asks for
+              a credential belonging to something other than the server. */}
+          <p className="muted small">
+            {view?.keychainOk
+              ? t('API 키는 이 컴퓨터의 자격증명 저장소에만 저장되고, Kuma 의 /metrics 를 읽을 때만 쓰입니다. MCP 조회 도구에 필요하며 터널에는 필요하지 않습니다.')
+              : t('이 컴퓨터에는 자격증명 저장소가 없어 API 키를 보관할 수 없습니다. 터널 열기는 키 없이 됩니다.')}
+          </p>
+        </div>
+      )}
+
+      {busy && !view && <div className="placeholder small">{t('Uptime Kuma 를 찾는 중…')}</div>}
+
+      {!busy && nothingFound && (
+        <div className="placeholder small">
+          {t('127.0.0.1 에서만 듣는 Uptime Kuma 를 찾지 못했습니다. 기본 포트(3001)가 아니라면 설정에서 포트를 지정하세요.')}
+        </div>
+      )}
+
+      {candidates.map((c) => (
+        <KumaRow
+          key={c.port}
+          candidate={c}
+          tunnel={tunnelFor(c.port)}
+          busy={opening === c.port}
+          onOpen={() => void open(c.port)}
+          onClose={(id) => void close(id)}
+        />
+      ))}
+
+      {/* A tunnel whose candidate is no longer in the list — the port stopped
+          listening, or the user changed the configured port while it was open.
+          It still has to be closable from here; it is a port on this machine. */}
+      {tunnels
+        .filter((tn) => !candidates.some((c) => c.port === tn.remotePort))
+        .map((tn) => (
+          <div key={tn.id} className="kuma-row">
+            <span className="mono">:{tn.remotePort}</span>
+            <a className="mono ellipsis" href={tn.url} target="_blank" rel="noreferrer">
+              {tn.url}
+            </a>
+            <span className="spacer" />
+            <button className="ghost small-btn" onClick={() => void close(tn.id)}>
+              {t('터널 닫기')}
+            </button>
+          </div>
+        ))}
+
+      {exposed.map((c) => (
+        <div key={`exposed-${c.port}`} className="kuma-row" data-exposed>
+          <span className="mono">:{c.port}</span>
+          <span className="badge warn">{t('외부 노출')}</span>
+          {/* No tunnel offered: a browser reaches this already, and forwarding
+              to it would be theatre. Naming it is the useful part — "I thought
+              that was internal" is what this tab exists to catch. */}
+          <span className="muted small">
+            {t('이 Kuma 는 외부에서도 닿습니다 — 터널이 필요 없습니다.')}
+          </span>
+        </div>
+      ))}
+    </section>
+  )
+}
+
+/** One detected instance, and the button that reaches it. */
+function KumaRow({
+  candidate,
+  tunnel,
+  busy,
+  onOpen,
+  onClose,
+}: {
+  candidate: KumaCandidate
+  tunnel?: TunnelView
+  busy: boolean
+  onOpen: () => void
+  onClose: (id: string) => void
+}) {
+  return (
+    <div className="kuma-row">
+      <span className="mono">
+        {candidate.address}:{candidate.port}
+      </span>
+      {/* Confirmed means the port answered with Kuma's own page. An unconfirmed
+          one is still offered — it is the port the user named — but calling it
+          Kuma when it might be somebody's router would be the app inventing a
+          fact it does not have. */}
+      {candidate.confirmed ? (
+        <span className="badge">{t('확인됨')}</span>
+      ) : (
+        <span className="badge warn" title={candidate.note}>
+          {t('미확인')}
+        </span>
+      )}
+      {candidate.process && <span className="muted small mono">{candidate.process}</span>}
+      <span className="spacer" />
+      {tunnel ? (
+        <>
+          <a className="mono small ellipsis" href={tunnel.url} target="_blank" rel="noreferrer">
+            {tunnel.url}
+          </a>
+          <button className="ghost small-btn" onClick={() => onClose(tunnel.id)}>
+            {t('터널 닫기')}
+          </button>
+        </>
+      ) : (
+        <button className="small-btn" disabled={busy} onClick={onOpen}>
+          {busy ? t('여는 중…') : t('Kuma 열기 (SSH 터널)')}
+        </button>
+      )}
+    </div>
+  )
 }

@@ -36,6 +36,7 @@ const (
 	// hundreds of units and no answer needs all of them at once.
 	maxServiceRows = 60
 	maxListenRows  = 60
+	maxKumaRows    = 60
 	maxDirRows     = 200
 	maxFileBytes   = 64 * 1024
 	maxLogLines    = 300
@@ -541,6 +542,86 @@ func (a *App) registerMCPTools(s *mcp.Server) {
 				res["warnings"] = net.Warnings
 			}
 			return res, nil
+		},
+	})
+
+	s.Register(mcp.Tool{
+		Name: "kuma_status",
+		Description: "Uptime Kuma's monitors on this host: what it watches and what is failing. " +
+			"A different question from health_snapshot, which is about this server rather than the " +
+			"things it checks on. Start with downOnly=true. Read-only — monitors are created and " +
+			"edited in Kuma's own UI, and there is no tool here that changes one.",
+		InputSchema: obj(map[string]any{
+			"hostId": hostArg,
+			"downOnly": map[string]any{
+				"type":        "boolean",
+				"description": "Only monitors that are not up. Defaults to false; the summary counts are always complete either way.",
+			},
+			"monitor": grepArg,
+		}, "hostId"),
+		Handler: func(_ context.Context, args map[string]any) (any, error) {
+			id, err := a.mcpHost(args)
+			if err != nil {
+				return nil, err
+			}
+			snap, err := a.KumaStatus(id)
+			if err != nil {
+				return nil, err
+			}
+
+			// The counts describe every monitor, before any filter. A model that
+			// asked for the down ones and got "down: 1" from a filtered set has
+			// no way to say how much of the estate that is.
+			summary := map[string]any{"total": len(snap.Monitors)}
+			put(summary, "up", snap.Up)
+			put(summary, "down", snap.Down)
+			put(summary, "pending", snap.Pending)
+			put(summary, "maintenance", snap.Maintenance)
+
+			monitors := snap.Monitors
+			if grep := strings.ToLower(str(args, "monitor")); grep != "" {
+				kept := monitors[:0:0]
+				for _, m := range monitors {
+					if strings.Contains(strings.ToLower(m.Name), grep) {
+						kept = append(kept, m)
+					}
+				}
+				monitors = kept
+			}
+			if only, _ := args["downOnly"].(bool); only {
+				kept := monitors[:0:0]
+				for _, m := range monitors {
+					if m.Status != "up" {
+						kept = append(kept, m)
+					}
+				}
+				monitors = kept
+			}
+			total := len(monitors)
+			if len(monitors) > maxKumaRows {
+				monitors = monitors[:maxKumaRows]
+			}
+
+			out := make([]map[string]any, 0, len(monitors))
+			for _, m := range monitors {
+				row := map[string]any{"name": m.Name, "status": m.Status}
+				put(row, "type", m.Type)
+				put(row, "target", m.Target)
+				if m.ResponseMs > 0 {
+					row["responseMs"] = int(m.ResponseMs)
+				}
+				// Only where there is a certificate. Zero would read as "expires
+				// today" rather than "this monitor does not have one".
+				if m.HasCert {
+					row["certDays"] = m.CertDays
+				}
+				out = append(out, row)
+			}
+			return map[string]any{
+				"summary":  summary,
+				"monitors": out,
+				"page":     truncated(len(out), total, "set downOnly or filter by monitor"),
+			}, nil
 		},
 	})
 

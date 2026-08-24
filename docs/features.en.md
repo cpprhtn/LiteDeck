@@ -11,7 +11,7 @@
 | **Services** | systemd units / Windows services. List, filter, start/stop/restart, set start-at-boot, **live log tailing** (Linux) |
 | **Processes** | A task-manager table. Sort, search, tree view, terminate (TERM then KILL), change priority |
 | **Containers** | Docker and Podman cards. Start/stop/restart/remove, **live log tailing**, image and volume cleanup. Anything Compose started is **grouped by project** and can be started, stopped or restarted as one |
-| **Network** | Interfaces and listening ports. **Flags which ones are reachable from outside**. Reviews the sshd configuration |
+| **Network** | Interfaces and listening ports. **Flags which ones are reachable from outside**. Reviews the sshd configuration. **Opens an Uptime Kuma bound to 127.0.0.1 over an SSH tunnel** |
 | **Sessions** | Who is logged in to this server, and cutting any of them off |
 | **Scheduled jobs** | systemd timers. Next and last run |
 | **Terminal** | xterm.js PTY, multiple tabs. `code .` and `vi foo.conf` are **caught by the app** and open in the file tab. They are never sent to the server, so neither VS Code nor vi needs to exist there |
@@ -176,6 +176,40 @@ setting** — reporting the `PermitRootLogin yes` beneath `Match Address 10.0.0.
 applied to everyone is the classic misreading of this file. And **sshd keeps the first value it
 reads**, the opposite of most config formats, which is why distributions put their `Include` at the
 top of the file.
+
+## Uptime Kuma: reaching what is bound to 127.0.0.1
+
+If your Uptime Kuma listens only on `127.0.0.1:3001`, that was on purpose. It also means typing
+`ssh -L 3001:127.0.0.1:3001 …` every time you want to look at it.
+
+**The session that is already open does that for you.** The network tab finds a Kuma among the
+loopback-only listeners, and **Open Kuma (SSH tunnel)** forwards a port over that session and hands
+the address to your browser. No second login, no command to remember.
+
+**A listening port is not evidence of what is behind it**, so each candidate gets one HTTP request
+to check that it answers with Kuma's own page. That request rides the SSH channel too, so **nothing
+is published on this machine** to perform it. A candidate that cannot be confirmed is labelled
+**Unconfirmed** and still offered — the app does not overrule a port you named.
+
+**The tunnel ends with the session.** Closing the tab, disconnecting the host, or the connection
+dropping and reconnecting all close it, so you are never left with a port on your own machine that
+accepts a browser and then hangs it.
+
+**It is in the Command Log.** The `ssh -N -L …` you would have typed is written out and can be
+copied. LiteDeck did not run it — it opened one more channel on a session it already had — so the
+row carries a **⇄** instead of a prompt. It does not pass for a command that ran.
+
+**Kuma's dashboard is not redrawn here.** Kuma's own UI is finished, and a summary of it would be a
+worse copy of something that exists. There are no Kuma-specific container controls either: the
+Containers tab already restarts, tails and updates it without caring what is inside.
+
+> [!NOTE]
+> The server's sshd needs `AllowTcpForwarding yes`. **Alpine's openssh package ships it as `no`**
+> (upstream OpenSSH defaults to `yes`). With it off, sshd refuses with `administratively
+> prohibited`, which reads as a problem with your account — so LiteDeck names **which setting** it
+> actually is.
+
+To ask the same question from an AI client, see `kuma_status` in [MCP](mcp.en.md).
 
 ## ProxyJump: one hop through a bastion
 

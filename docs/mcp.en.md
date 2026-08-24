@@ -25,13 +25,26 @@ same Command Log. What it asks for scrolls past tagged `MCP`. And **still nothin
 on the server.** Putting an AI tool there means a runtime and a resident process, and its
 context-gathering hammers a small box's I/O. All of that load stays on the client.
 
-**Twelve read tools**: `hosts_list`, `health_snapshot`, `sys_stats`, `svc_list`, **`svc_logs`**,
+**Thirteen read tools**: `hosts_list`, `health_snapshot`, `sys_stats`, `svc_list`, **`svc_logs`**,
 `proc_list`, `container_list`, **`container_logs`**, `net_ports`, `fs_list`, `fs_read`,
-`sessions_list`. One `health_snapshot` returns CPU, memory, disk, failed units, unhealthy
-containers and exposed ports; `svc_logs` is what says *why* something died.
+`sessions_list`, **`kuma_status`**. One `health_snapshot` returns CPU, memory, disk, failed units,
+unhealthy containers and exposed ports; `svc_logs` is what says *why* something died.
 
 **Five write tools**: `svc_control` (start/stop/restart), `container_control`, `proc_signal`
 (TERM/KILL), `fs_write` and `fs_delete`.
+
+**`kuma_status` — Uptime Kuma's monitors.** Answers "is anything down right now". That is a
+different question from `health_snapshot`, which is about *this server* rather than the things it
+watches. It reads exactly one surface: Kuma's **`/metrics`**, in Prometheus text format. Kuma's own
+README says its API is built for its own web UI and that third-party integrations carry no
+guarantee — `/metrics` is the one part that exists *for* outside readers, so `/api/*` is left
+alone.
+
+**There are no writes.** No tool creates, edits or deletes a monitor; that is Kuma's job, and
+putting writes on top of a surface with no compatibility promise is a mistake in the direction you
+cannot undo. The port and the API key are set per server in the **Kuma settings on the network
+tab**. The key is kept only in this machine's credential store (§7.4), and the Command Log line
+carries a placeholder in its place.
 
 **They can be undone.** Before MCP overwrites or deletes a file, the previous contents are kept
 **on this machine**, and the **Changed files** tab restores them one at a time. When you have told

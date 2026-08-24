@@ -1,0 +1,21 @@
+# HELP monitor_cert_days_remaining The number of days remaining until the certificate expires
+# TYPE monitor_cert_days_remaining gauge
+monitor_cert_days_remaining{monitor_name="blog",monitor_type="http",monitor_url="https://blog.example.com",monitor_hostname="null",monitor_port="null"} 61
+
+# HELP monitor_cert_is_valid Is the certificate still valid? (1 = Yes, 0= No)
+# TYPE monitor_cert_is_valid gauge
+monitor_cert_is_valid{monitor_name="blog",monitor_type="http",monitor_url="https://blog.example.com",monitor_hostname="null",monitor_port="null"} 1
+
+# HELP monitor_response_time Monitor Response Time (ms)
+# TYPE monitor_response_time gauge
+monitor_response_time{monitor_name="blog",monitor_type="http",monitor_url="https://blog.example.com",monitor_hostname="null",monitor_port="null"} 132
+monitor_response_time{monitor_name="db, replica",monitor_type="port",monitor_url="null",monitor_hostname="10.0.0.7",monitor_port="5432"} NaN
+monitor_response_time{monitor_name="cache",monitor_type="port",monitor_url="null",monitor_hostname="10.0.0.9",monitor_port="6379"} 3
+monitor_response_time{monitor_name="nightly \"backup\"",monitor_type="push",monitor_url="null",monitor_hostname="null",monitor_port="null"} 0
+
+# HELP monitor_status Monitor Status (1 = UP, 0= DOWN, 2= PENDING, 3= MAINTENANCE)
+# TYPE monitor_status gauge
+monitor_status{monitor_name="blog",monitor_type="http",monitor_url="https://blog.example.com",monitor_hostname="null",monitor_port="null"} 1
+monitor_status{monitor_name="db, replica",monitor_type="port",monitor_url="null",monitor_hostname="10.0.0.7",monitor_port="5432"} 0
+monitor_status{monitor_name="cache",monitor_type="port",monitor_url="null",monitor_hostname="10.0.0.9",monitor_port="6379"} 2
+monitor_status{monitor_name="nightly \"backup\"",monitor_type="push",monitor_url="null",monitor_hostname="null",monitor_port="null"} 3

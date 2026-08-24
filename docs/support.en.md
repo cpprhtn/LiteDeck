@@ -21,6 +21,10 @@ This section separates **what has actually been run** from what merely ought to 
 | **Jumping** | Two Alpine containers (bastion + target) | ProxyJump, with the target publishing no port so it is **genuinely unreachable directly** |
 | **Containers** | docker 28 (dind) | Containers, images, volumes |
 | **Compose** | docker 28 (dind) + Compose v2.40.3 | Reading the project labels, and starting/stopping/restarting per service and per project — including after the compose file was deleted |
+| **SSH tunnel** | Alpine 3.20 + OpenSSH (container) | Local port forwarding. A channel to the container's own loopback (`127.0.0.1:22`) returns the SSH banner, so bytes genuinely cross it. Also that closing the tunnel removes the port at once, and that closing does not block on traffic still riding it |
+| **`AllowTcpForwarding no`** | Alpine 3.20 (measured) | The refusal path. Alpine's openssh package ships the setting as `no` where upstream ships `yes`. A tunnel was opened against that fixture, really was refused, and the resulting message was checked to name *which setting* it is |
+| **Kuma `/metrics` parsing** | Golden file | The Prometheus text parser: monitor names containing commas and quotes, no answer (`NaN`), and all four of up/down/pending/maintenance |
+| **Kuma HTTP handling** | A local HTTP server | Identifying the page (and refusing to call something else Kuma), the 401 message, the API key going into the basic-auth **password** field, and the key never reaching the Command Log |
 
 **The one real Linux SSH server is the row above.** An Ubuntu 24.04.4 server was driven through the
 MCP integration, covering the read side and reading, writing and deleting files. **The paths the
@@ -51,6 +55,11 @@ file chooser have not.
 | **ProxyJump against a real bastion** | Verified against two containers (bastion + target). Never tried against an actual bastion. Multi-hop is not implemented and is refused |
 | **macOS and BSD servers** | No adapter. Connecting works and **files and terminal do too**; the other tabs explain themselves |
 | **Remote → local drag** | Wails v2 has no drag-out API. Use the download button |
+| **A real Uptime Kuma instance** | **Never connected to one.** The golden file above was written from the published format of `/metrics`, not captured from a running Kuma. So the **page marker, the label names and the API-key authentication scheme** rest on documentation and source, not on measurement |
+| **Kuma's UI through the tunnel** | The forward is confirmed to carry bytes, but **whether Kuma's websocket (socket.io) survives it has not been tried.** A forward is a protocol-blind TCP relay, so it ought to — "ought to" and "did" are different things |
+| **Opening the browser** | `BrowserOpenURL` is one line, and the tests swap it out. That a browser actually appears is unconfirmed |
+| **An MCP client calling `kuma_status`** | Registration, schema and handler are tested, but no round trip where a model calls it and reads the answer |
+| **Kuma on a Windows server** | The tunnel is an SSH channel and does not care about the server's OS, but this was not checked |
 
 If you run a combination that is not listed, please [open an issue](https://github.com/cpprhtn/LiteDeck/issues).
 

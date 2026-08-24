@@ -1823,6 +1823,54 @@ button.danger {
   border-bottom: 1px solid var(--border);
 }
 
+/* Uptime Kuma. One row per instance, not a card: there is nothing to show about
+   it here beyond where it is and how to reach it, and a card would promise a
+   summary this section deliberately does not provide. */
+.kuma-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 32px;
+  padding: var(--sp-1) var(--sp-2);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+.kuma-row:last-child {
+  border-bottom: none;
+}
+.kuma-row a {
+  color: var(--accent);
+}
+.kuma-row[data-exposed] .mono:first-child {
+  color: var(--warn);
+}
+.kuma-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+.kuma-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.kuma-form input {
+  width: 220px;
+}
+.kuma-form label:first-child input {
+  width: 96px;
+}
+.kuma-form-actions {
+  display: flex;
+  gap: var(--sp-2);
+}
+.kuma-form > p {
+  flex-basis: 100%;
+  margin: 0;
+}
+
 /* Drag and drop ---------------------------------------------------------- */
 
 /* Wails tests this custom property to decide whether an element accepts a

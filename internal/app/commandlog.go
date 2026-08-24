@@ -37,9 +37,11 @@ type CommandEntry struct {
 	// when it is long enough to matter, because a command that sat in a queue
 	// and a command that was genuinely slow look identical without it.
 	QueuedMs int64 `json:"queuedMs,omitempty"`
-	// Origin is "ai" for a tool call an MCP client made, empty for the user's
-	// own actions. The panel marks these so a command nobody remembers asking
-	// for is attributable at a glance (§4.6).
+	// Origin is "ai" for a tool call an MCP client made, "tunnel" for a port
+	// forward, and empty for a command the user's click ran directly. The panel
+	// marks the non-empty ones, so a line nobody remembers asking for is
+	// attributable at a glance — and so a row that shows a command LiteDeck did
+	// not literally execute never passes for one it did (§4.6).
 	Origin string `json:"origin,omitempty"`
 }
 
@@ -244,6 +246,78 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// forwardOpened records a port forward, and returns the row to complete later.
+//
+// A forward is not a command — no shell runs, and the bytes ride a channel on
+// the session that is already open. It belongs in this panel anyway: it is the
+// app reaching a service on the user's behalf, which is the entire question
+// §4.6 exists to answer. The line is the `ssh -L` somebody would have typed to
+// do the same thing by hand, so it is worth copying, and the "tunnel" origin is
+// what stops it from reading as a command that ran.
+func (l *commandLog) forwardOpened(hostID, line string) int {
+	l.mu.Lock()
+	l.seq++
+	e := CommandEntry{
+		Seq:    l.seq,
+		HostID: hostID,
+		Line:   line,
+		At:     time.Now().Format(time.RFC3339),
+		Status: "running", // the panel says "실행 중", which is true while it carries traffic
+		Origin: "tunnel",
+	}
+	l.entries = append(l.entries, e)
+	l.trim()
+	l.mu.Unlock()
+
+	l.emit("cmd:started", e)
+	return e.Seq
+}
+
+// forwardClosed completes a forward's row with how long it stayed open.
+//
+// reason is empty when the user closed it and carries the cause otherwise —
+// "the connection dropped" is the difference between a tunnel that ended and
+// one that was taken away, and only one of those is worth investigating.
+func (l *commandLog) forwardClosed(seq int, open time.Duration, reason string) {
+	l.mu.Lock()
+	var updated CommandEntry
+	if i := l.indexOf(seq); i >= 0 {
+		e := &l.entries[i]
+		e.Status = "ok"
+		e.Duration = open.Milliseconds()
+		if reason != "" {
+			e.Status, e.Stderr = "failed", reason
+		}
+		updated = *e
+	}
+	l.mu.Unlock()
+
+	if updated.Seq != 0 {
+		l.emit("cmd:finished", updated)
+	}
+}
+
+// probed records a read that crossed the connection without being a command —
+// an HTTP request over a forwarded channel.
+//
+// Folded and classified like a background probe, because it is one: asking a
+// port whether it is Uptime Kuma is a capability check, and "nothing there" is
+// an answer rather than a fault. Counting those as failures would put a
+// permanent red number on the panel and train the user to stop reading it.
+func (l *commandLog) probed(hostID, line string, answered bool, detail string, d time.Duration) {
+	status := "probe"
+	if answered {
+		status = "ok"
+	}
+	info := sshcore.CommandInfo{HostID: hostID, Line: line, Kind: sshcore.CommandProbe}
+
+	l.mu.Lock()
+	e := l.fold(info, status, 0, truncate(detail, 4000), &sshcore.Result{Duration: d})
+	l.mu.Unlock()
+
+	l.emit("cmd:finished", e)
 }
 
 // AICall records a tool call an MCP client made.

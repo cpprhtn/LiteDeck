@@ -532,6 +532,69 @@ export interface NetworkView {
   warnings: string[]
 }
 
+/** One loopback-only listener that might be an Uptime Kuma instance. */
+export interface KumaCandidate {
+  port: number
+  address: string
+  process?: string
+  pid?: number
+  /** The port answered with Kuma's own landing page. Unconfirmed candidates are
+   *  still offered — it is the port the user named — but must not be labelled
+   *  Kuma. */
+  confirmed: boolean
+  /** This is the port the user pinned, as opposed to Kuma's default. */
+  configured: boolean
+  /** Why confirmation failed, verbatim. */
+  note?: string
+}
+
+/** One open SSH port forward. */
+export interface TunnelView {
+  id: string
+  hostId: string
+  /** The address on this machine that now reaches the server's service. */
+  url: string
+  localPort: number
+  remotePort: number
+  since: string
+}
+
+export interface KumaView {
+  port: number
+  configured: boolean
+  /** Whether a key is in the OS credential store. The key itself never comes
+   *  to the frontend. */
+  hasApiKey: boolean
+  /** False where this machine has no credential store, in which case the form
+   *  must not offer to remember a key it cannot keep. */
+  keychainOk: boolean
+  candidates: KumaCandidate[]
+  tunnels: TunnelView[]
+  /** Instances reachable from off the machine. Reported, never tunnelled — a
+   *  browser gets there already. */
+  exposed: KumaCandidate[]
+  warnings: string[]
+}
+
+/** One monitor as Uptime Kuma's /metrics reports it. */
+export interface KumaMonitor {
+  name: string
+  type?: string
+  target?: string
+  /** up, down, pending, maintenance or unknown. */
+  status: string
+  responseMs?: number
+  certDays?: number
+}
+
+export interface KumaSnapshot {
+  monitors: KumaMonitor[]
+  up: number
+  down: number
+  pending: number
+  maintenance: number
+}
+
 /** One container image (v1.x). */
 export interface Image {
   id: string
@@ -685,6 +748,18 @@ interface Bindings {
   HostEvents(id: string, range: string, elevate: boolean): Promise<EventsView>
   HostNetwork(id: string): Promise<NetworkView>
   SSHDConfig(id: string): Promise<SSHDReport>
+  DetectKuma(id: string): Promise<KumaView>
+  KumaConfig(id: string): Promise<KumaView>
+  KumaStatus(id: string): Promise<KumaSnapshot>
+  SetKumaConfig(
+    id: string,
+    port: number,
+    apiKey: string,
+    keep: boolean,
+  ): Promise<ActionResult>
+  OpenKumaTunnel(id: string, port: number): Promise<TunnelView>
+  CloseKumaTunnel(tunnelId: string): Promise<ActionResult>
+  ListTunnels(id: string): Promise<TunnelView[]>
   FollowServiceLog(
     id: string,
     unit: string,
@@ -907,6 +982,25 @@ export const HostEvents = (id: string, range: string, elevate: boolean) =>
   api().HostEvents(id, range, elevate)
 export const HostNetwork = (id: string) => api().HostNetwork(id)
 export const SSHDConfig = (id: string) => api().SSHDConfig(id)
+
+/** Probes the server for an Uptime Kuma bound to its own loopback. Costs a
+ *  round trip per candidate, so it is called when the tab opens and when the
+ *  user asks again — never on the tab's poll. */
+export const DetectKuma = (id: string) => api().DetectKuma(id)
+export const KumaConfig = (id: string) => api().KumaConfig(id)
+export const KumaStatus = (id: string) => api().KumaStatus(id)
+/** keep=true saves the port without touching the stored API key, so the form
+ *  can be submitted without re-typing a secret it never received. */
+export const SetKumaConfig = (
+  id: string,
+  port: number,
+  apiKey: string,
+  keep: boolean,
+) => api().SetKumaConfig(id, port, apiKey, keep)
+export const OpenKumaTunnel = (id: string, port: number) =>
+  api().OpenKumaTunnel(id, port)
+export const CloseKumaTunnel = (tunnelId: string) => api().CloseKumaTunnel(tunnelId)
+export const ListTunnels = (id: string) => api().ListTunnels(id)
 export const FollowServiceLog = (
   id: string,
   unit: string,

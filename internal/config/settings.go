@@ -31,6 +31,25 @@ type Settings struct {
 	// an endpoint that speaks for every connected server is not something to
 	// open because the app was installed.
 	MCP MCPSettings `json:"mcp,omitzero"`
+
+	// Kuma locates an Uptime Kuma instance per host, by host ID.
+	//
+	// Here rather than in hosts.json because it is not part of reaching the
+	// server: a host with no entry still connects, and somebody pasting their
+	// hosts.json into a bug report should not be pasting where their status
+	// page lives. The API key is not here at all — it goes to the OS credential
+	// store like every other secret (§6).
+	Kuma map[string]KumaSettings `json:"kuma,omitempty"`
+}
+
+// KumaSettings is where one host's Uptime Kuma answers.
+//
+// Only the port. The address is always the server's own loopback: the feature
+// exists for an instance that is bound to 127.0.0.1 on purpose, and one that is
+// reachable from elsewhere needs no help from this app to be opened.
+type KumaSettings struct {
+	// Port Kuma listens on, as seen from the server. 0 means the default 3001.
+	Port int `json:"port,omitempty"`
 }
 
 // MCPSettings is the AI integration (§4 of the MCP design note).
@@ -123,6 +142,22 @@ func (s *SettingsStore) Get() Settings {
 func (s *SettingsStore) SetMCP(m MCPSettings) error {
 	s.mu.Lock()
 	s.settings.MCP = m
+	s.mu.Unlock()
+	return s.save()
+}
+
+// SetKuma records where one host's Uptime Kuma answers. A zero port removes the
+// entry, which is how somebody undoes it.
+func (s *SettingsStore) SetKuma(hostID string, k KumaSettings) error {
+	s.mu.Lock()
+	if s.settings.Kuma == nil {
+		s.settings.Kuma = map[string]KumaSettings{}
+	}
+	if k.Port <= 0 {
+		delete(s.settings.Kuma, hostID)
+	} else {
+		s.settings.Kuma[hostID] = k
+	}
 	s.mu.Unlock()
 	return s.save()
 }

@@ -10,6 +10,31 @@ import { t } from './i18n'
 // asking to be believed; showing exactly what it just executed is how it earns
 // that, and it teaches the CLI on the way. Local only, never transmitted (§7.4).
 
+/** What the marker in front of a line means. */
+function markerTitle(origin?: string): string {
+  if (origin === 'ai') return t('MCP 클라이언트가 요청한 도구 호출입니다.')
+  if (origin === 'tunnel')
+    return t('이미 열려 있는 SSH 세션에 포트 포워딩을 걸었습니다. 아래 명령을 실행한 것은 아니지만, 손으로 같은 일을 하려면 그 명령입니다.')
+  return t('LiteDeck 이 서버에서 실행한 명령입니다.')
+}
+
+/**
+ * A duration, in the unit that reads.
+ *
+ * Milliseconds are right for a command and wrong for a port forward, which
+ * stays open for as long as somebody keeps the tab — `1847000ms` is a number
+ * nobody parses. The threshold is high enough that a slow command still shows
+ * the precision that made it worth noticing.
+ */
+function duration(ms: number): string {
+  if (ms < 10_000) return `${ms}ms`
+  const s = Math.round(ms / 1000)
+  if (s < 600) return `${s}s`
+  const m = Math.round(s / 60)
+  if (m < 120) return `${m}m`
+  return `${Math.round(m / 60)}h`
+}
+
 export function CommandLogPanel({
   open,
   onToggle,
@@ -131,8 +156,16 @@ export function CommandLogPanel({
                   glance. The marker replaces the prompt rather than sitting
                   beside it: this entry is a tool call, not a shell command.
                   Labelled MCP rather than AI because that is the word the
-                  person set up in their client. */}
-              <span className="cmdlog-marker">{e.origin === 'ai' ? 'MCP' : '$'}</span>
+                  person set up in their client.
+                  A port forward gets its own marker for the same reason and a
+                  sharper one: the line is the `ssh -L` you would type to do it
+                  by hand, which is worth copying — but LiteDeck did not run it,
+                  it opened a channel on the session it already had. Under a `$`
+                  the row would be claiming otherwise, on the one surface whose
+                  whole job is not to. */}
+              <span className="cmdlog-marker" title={markerTitle(e.origin)}>
+                {e.origin === 'ai' ? 'MCP' : e.origin === 'tunnel' ? '⇄' : '$'}
+              </span>
               {/* Newlines shown as ⏎ rather than collapsed to whitespace by the
                   browser. A multi-line command such as the metrics script read as
                   `... | head -1 echo '#mem'` — a command that would be broken if
@@ -159,8 +192,13 @@ export function CommandLogPanel({
                   </span>
                 ) : null}
                 {e.status === 'running' && t('실행 중')}
-                {e.status === 'ok' && `${e.durationMs}ms`}
-                {e.status === 'probe' && t('없음 (exit {code})', { code: e.exitCode })}
+                {e.status === 'ok' && duration(e.durationMs)}
+                {/* An exit code is the answer when there was a process to have
+                    one. A probe that never ran a command — an HTTP request over
+                    a forwarded channel — would read as `exit 0`, which is a
+                    success this row is not reporting. */}
+                {e.status === 'probe' &&
+                  (e.exitCode ? t('없음 (exit {code})', { code: e.exitCode }) : t('없음'))}
                 {e.status === 'failed' && `exit ${e.exitCode}`}
                 {e.status === 'error' && t('오류')}
               
