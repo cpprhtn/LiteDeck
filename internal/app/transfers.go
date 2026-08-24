@@ -408,11 +408,18 @@ func (a *App) StartDownload(hostID string, remotePaths []string, localDir string
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", cleaned, err)
 		}
+		// The last component is a name the server chose, not one the user
+		// typed — they picked it out of a listing. path.Base only strips at
+		// "/", so a name carrying the client's *other* separator arrives whole.
+		base := path.Base(cleaned)
+		if !safeLocalName(base) {
+			return nil, errUnsafeName(base)
+		}
 		if fi.IsDir() {
 			j := a.transfers.add(Transfer{
 				HostID:    hostID,
 				Direction: "download",
-				Local:     filepath.Join(localDir, path.Base(cleaned)),
+				Local:     filepath.Join(localDir, base),
 				Remote:    cleaned,
 				Dir:       true,
 			})
@@ -431,7 +438,7 @@ func (a *App) StartDownload(hostID string, remotePaths []string, localDir string
 		j := a.transfers.add(Transfer{
 			HostID:    hostID,
 			Direction: "download",
-			Local:     filepath.Join(localDir, path.Base(cleaned)),
+			Local:     filepath.Join(localDir, base),
 			Remote:    cleaned,
 			Size:      fi.Size(),
 		})
@@ -771,6 +778,55 @@ type relFile struct {
 	Size int64
 }
 
+// safeLocalName reports whether a name the *server* chose can be joined under a
+// local directory without escaping it.
+//
+// A downloaded name is not ours. It comes out of the server's directory
+// listing, and joining it to the folder the user picked is the moment it stops
+// being data and starts being a path — the same step that scp got wrong
+// (CVE-2019-6111): a server, or anyone able to write into a directory on it,
+// decides where bytes land on the client.
+//
+// Both separators are treated as separators here, on every platform, and that
+// is the whole point rather than an excess of caution. A backslash is an
+// ordinary character in a POSIX filename and a path separator on Windows, so
+// `..\..\..\evil.exe` is a legal file name on the Linux box that serves it
+// and an escape on the Windows laptop that receives it — filepath.Join ends in
+// Clean, and Windows's Clean resolves `..` across `\` as readily as across `/`.
+// A check written against the running platform's separator would pass on the
+// developer's machine, pass in CI (which is Linux), and fail only for the user.
+func safeLocalName(rel string) bool {
+	if rel == "" {
+		return false
+	}
+	norm := strings.ReplaceAll(rel, `\`, "/")
+	if strings.HasPrefix(norm, "/") {
+		return false // absolute: not a name inside the tree at all
+	}
+	if len(rel) >= 2 && rel[1] == ':' {
+		return false // a Windows volume ("C:..") is not a name either
+	}
+	for _, part := range strings.Split(norm, "/") {
+		if part == ".." {
+			return false
+		}
+	}
+	return true
+}
+
+// errUnsafeName is what a rejected name reports. The transfer fails rather than
+// skipping the file: a server sending a path that climbs out of the download
+// folder is not a corrupt file to step over, and burying it in a progress
+// counter is how it would go unnoticed.
+//
+// The name is quoted rather than interpolated raw. Everything about this path
+// assumes the far side is not being straightforward, and a file name is allowed
+// to contain newlines and terminal escapes — which would otherwise be rendered
+// as-is in a message about that very server.
+func errUnsafeName(rel string) error {
+	return i18n.Errorf("서버가 보낸 이름 %q 이 받을 폴더 밖을 가리킵니다 — 전송을 중단했습니다", rel)
+}
+
 func walkLocalDir(ctx context.Context, root string) ([]relFile, int64, error) {
 	var files []relFile
 	var total int64
@@ -892,6 +948,9 @@ func (a *App) downloadDir(ctx context.Context, j *transferJob, files []relFile) 
 		}
 		a.transfers.progressFile(j, i, f.Rel)
 
+		if !safeLocalName(f.Rel) {
+			return errUnsafeName(f.Rel)
+		}
 		src := path.Join(j.Remote, f.Rel)
 		dst := filepath.Join(j.Local, filepath.FromSlash(f.Rel))
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {

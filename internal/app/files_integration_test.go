@@ -893,3 +893,79 @@ func findTransfer(t *testing.T, a *App, id string) Transfer {
 	t.Fatalf("no transfer %s in the queue", id)
 	return Transfer{}
 }
+
+// A name the server chose, carrying a separator this client would honour, must
+// not decide where bytes land.
+//
+// The premise is what needs a real server: that such a name survives the sftp
+// listing and the walk and arrives at the join. `..\..\evil.txt` is an ordinary
+// file name on the Linux fixture — backslash is not a separator there — and on
+// a Windows client filepath.Join would resolve it straight out of the folder
+// the user chose. This machine is not Windows, so what is asserted here is the
+// refusal, and that the hostile name really did get this far.
+func TestDirectoryDownloadRefusesANameThatClimbsOut(t *testing.T) {
+	a := connectedApp(t)
+	remoteParent := scratchDir(t, a, "litedeck-escape")
+	remoteTree := path.Join(remoteParent, "tree")
+
+	if res := a.MakeDir("fixture", remoteTree); !res.OK {
+		t.Fatalf("MakeDir: %s", res.Error)
+	}
+	if res := a.WriteTextFile("fixture", path.Join(remoteTree, "ordinary.txt"), "fine\n"); !res.OK {
+		t.Fatalf("write ordinary: %s", res.Error)
+	}
+	// Written through SFTP rather than a shell, so the name is exactly this and
+	// nothing gets a chance to interpret it on the way.
+	hostile := `..\..\..\evil.txt`
+	if res := a.WriteTextFile("fixture", path.Join(remoteTree, hostile), "owned\n"); !res.OK {
+		t.Skipf("the fixture would not take a backslash in a file name: %s", res.Error)
+	}
+
+	// The premise: the walk really does hand this name to the download.
+	client, err := a.mgr.SFTP("fixture")
+	if err != nil {
+		t.Fatalf("SFTP: %v", err)
+	}
+	files, _, err := walkRemoteDir(context.Background(), client, remoteTree)
+	if err != nil {
+		t.Fatalf("walkRemoteDir: %v", err)
+	}
+	seen := false
+	for _, f := range files {
+		if f.Rel == hostile {
+			seen = true
+		}
+	}
+	if !seen {
+		t.Fatalf("the walk never produced %q, so this test proves nothing: %+v", hostile, files)
+	}
+
+	downDir := t.TempDir()
+	ids, err := a.StartDownload("fixture", []string{remoteTree}, downDir)
+	if err != nil {
+		t.Fatalf("StartDownload: %v", err)
+	}
+	waitTransfer(t, a, ids[0], TransferFailed)
+
+	var tr Transfer
+	for _, x := range a.Transfers() {
+		if x.ID == ids[0] {
+			tr = x
+		}
+	}
+	if !strings.Contains(tr.Error, "evil.txt") {
+		t.Errorf("the failure does not name what was rejected: %q", tr.Error)
+	}
+	// Nothing above the chosen folder, whatever the client's separator is.
+	if _, err := os.Stat(filepath.Join(filepath.Dir(downDir), "evil.txt")); !os.IsNotExist(err) {
+		t.Errorf("a file was written outside the download folder: %v", err)
+	}
+
+	// The same name selected on its own. This is the other call site: the last
+	// component of a path the user picked out of a listing is still a name the
+	// server chose, and path.Base only strips at "/". Refused before it is
+	// queued, so there is no transfer to wait on.
+	if _, err := a.StartDownload("fixture", []string{path.Join(remoteTree, hostile)}, t.TempDir()); err == nil {
+		t.Error("selecting the hostile name directly was accepted")
+	}
+}
