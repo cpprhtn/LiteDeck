@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
 	"github.com/cpprhtn/LiteDeck/internal/i18n"
@@ -10,6 +12,69 @@ import (
 )
 
 // The network view (v1.x): interfaces and listening sockets.
+
+// ifaceTTL is how long an interface listing is reused.
+//
+// The two halves of this view change at completely different rates, and reading
+// both at the faster one is what made the tab cost two Exec channels per tick
+// instead of one. Listeners are why it polls at all — a port opens, a service
+// restarts, and five seconds later the table says so. Interfaces do not behave
+// that way: an address appears when a VPN comes up or a container network is
+// created, which is minutes apart, and in between the same answer is re-read
+// eleven more times for nothing.
+//
+// Thirty seconds rather than the life of the connection, because interfaces are
+// not immutable the way a config file is — that is the difference between this
+// and the sshd section below, which reads once and stops. The refresh button
+// bypasses it outright: somebody who just brought up a VPN and pressed it is
+// telling us the answer changed.
+//
+// There are three Exec channels for a whole connection (§3.2a) and the summary
+// bar is polling on one of them. Halving a view's share is not a micro-optimisation
+// at that budget.
+const ifaceTTL = 30 * time.Second
+
+// ifaceCache holds one host's interface listing for ifaceTTL.
+type ifaceCache struct {
+	mu   sync.Mutex
+	byID map[string]ifaceEntry
+}
+
+type ifaceEntry struct {
+	// gen is the connection this was read through. A reconnect can be a
+	// rebooted machine — or a different one behind the same name — and its
+	// addresses are not the ones cached here (see Manager.Generation).
+	gen   uint64
+	at    time.Time
+	items []adapter.Interface
+}
+
+func newIfaceCache() *ifaceCache { return &ifaceCache{byID: map[string]ifaceEntry{}} }
+
+func (c *ifaceCache) get(id string, gen uint64) ([]adapter.Interface, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.byID[id]
+	if !ok || e.gen != gen || time.Since(e.at) > ifaceTTL {
+		return nil, false
+	}
+	// A copy of the slice: the caller hands this straight to the frontend and
+	// to the MCP tool, and one of them appending to it would corrupt what every
+	// later reader sees. The elements themselves are read-only by contract.
+	return append([]adapter.Interface(nil), e.items...), true
+}
+
+func (c *ifaceCache) put(id string, gen uint64, items []adapter.Interface) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.byID[id] = ifaceEntry{gen: gen, at: time.Now(), items: items}
+}
+
+func (c *ifaceCache) forget(id string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.byID, id)
+}
 
 // NetworkView is what the tab renders.
 type NetworkView struct {
@@ -65,7 +130,13 @@ func (a *App) HostNetwork(hostID string) (NetworkView, error) {
 		return out, nil
 	}
 
-	if res, err := conn.Poll(ctx, "ip", adapter.IPAddrArgs()...); err != nil {
+	// Only a success is cached. A server without iproute2 goes on being asked,
+	// which is the behaviour it already had — and a failure held for half a
+	// minute would be a tab that stays broken after the package is installed.
+	gen := a.mgr.Generation(hostID)
+	if ifaces, ok := a.ifaces.get(hostID, gen); ok {
+		out.Interfaces = ifaces
+	} else if res, err := conn.Poll(ctx, "ip", adapter.IPAddrArgs()...); err != nil {
 		out.Warnings = append(out.Warnings, "ip addr: "+err.Error())
 	} else if !res.OK() {
 		out.Warnings = append(out.Warnings,
@@ -74,6 +145,7 @@ func (a *App) HostNetwork(hostID string) (NetworkView, error) {
 		out.Warnings = append(out.Warnings, perr.Error())
 	} else {
 		out.Interfaces = ifaces
+		a.ifaces.put(hostID, gen, ifaces)
 	}
 
 	if res, err := conn.Poll(ctx, "ss", adapter.SSArgs()...); err != nil {
@@ -103,4 +175,15 @@ func (a *App) HostNetwork(hostID string) (NetworkView, error) {
 		return out, fmt.Errorf("app: %s", out.Warnings[0])
 	}
 	return out, nil
+}
+
+// RefreshHostNetwork is HostNetwork with the interface cache dropped first.
+//
+// What the refresh button calls. Serving a cached interface list to somebody
+// who just brought up a VPN and pressed refresh would be the app quietly
+// deciding it knows better than they do — on the one control whose entire
+// meaning is "I know something changed".
+func (a *App) RefreshHostNetwork(hostID string) (NetworkView, error) {
+	a.ifaces.forget(hostID)
+	return a.HostNetwork(hostID)
 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePoll } from './usePoll'
 import {
   HostNetwork,
+  RefreshHostNetwork,
   SSHDConfig,
   type NetworkView as NetView,
   type SSHDNote,
@@ -29,18 +30,24 @@ export function NetworkView({
   const [onlyExposed, setOnlyExposed] = useState(false)
   const inFlight = useRef(false)
 
-  const refresh = useCallback(async () => {
-    if (inFlight.current) return
-    inFlight.current = true
-    try {
-      setNet(await HostNetwork(hostID))
-    } catch (e) {
-      onError(String(e))
-    } finally {
-      inFlight.current = false
-      setLoading(false)
-    }
-  }, [hostID, onError])
+  // forced is the refresh button rather than the timer. The interface list is
+  // held for 30s between polls (see ifaceTTL); somebody who just brought up a
+  // VPN and pressed refresh is telling us that cache is stale.
+  const refresh = useCallback(
+    async (forced = false) => {
+      if (inFlight.current) return
+      inFlight.current = true
+      try {
+        setNet(await (forced ? RefreshHostNetwork(hostID) : HostNetwork(hostID)))
+      } catch (e) {
+        onError(String(e))
+      } finally {
+        inFlight.current = false
+        setLoading(false)
+      }
+    },
+    [hostID, onError],
+  )
 
   usePoll(refresh, POLL_MS, visible)
 
@@ -64,7 +71,7 @@ export function NetworkView({
           </button>
         </div>
         <span className="spacer" />
-        <button className="ghost" onClick={() => void refresh()}>
+        <button className="ghost" onClick={() => void refresh(true)}>
           {t('새로고침')}
         </button>
       </div>

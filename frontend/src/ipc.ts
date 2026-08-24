@@ -684,6 +684,7 @@ interface Bindings {
   HostMetrics(id: string): Promise<MetricsView>
   HostEvents(id: string, range: string, elevate: boolean): Promise<EventsView>
   HostNetwork(id: string): Promise<NetworkView>
+  RefreshHostNetwork(id: string): Promise<NetworkView>
   SSHDConfig(id: string): Promise<SSHDReport>
   FollowServiceLog(
     id: string,
@@ -906,6 +907,10 @@ export const HostMetrics = (id: string) => api().HostMetrics(id)
 export const HostEvents = (id: string, range: string, elevate: boolean) =>
   api().HostEvents(id, range, elevate)
 export const HostNetwork = (id: string) => api().HostNetwork(id)
+/** Same reading, but the interface list is re-read rather than served from the
+ *  30s cache. For the refresh button only — pressing it means "something
+ *  changed", and answering from a cache would be ignoring that. */
+export const RefreshHostNetwork = (id: string) => api().RefreshHostNetwork(id)
 export const SSHDConfig = (id: string) => api().SSHDConfig(id)
 export const FollowServiceLog = (
   id: string,
