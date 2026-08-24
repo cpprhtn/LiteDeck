@@ -88,6 +88,14 @@ export function ServiceView({
   // to be frugal.
   usePoll(refresh, POLL_MS, visible)
 
+  // A followed log on a hidden tab would hold one of the connection's
+  // long-lived channels and go on receiving lines nobody can see. Dropping it
+  // is what unmounting the whole view used to do, and LogPanel stops the
+  // stream as it goes.
+  useEffect(() => {
+    if (!visible) setLog(null)
+  }, [visible])
+
   // §7.2: run as the logged-in user first. Only if the server refuses do we
   // offer to retry as administrator — LiteDeck never reaches for root on its
   // own, because then the Command Log would stop matching what the user asked
@@ -164,7 +172,7 @@ export function ServiceView({
             <button data-on>{t('타이머')}</button>
           </div>
         </div>
-        <TimersView hostID={hostID} visible onError={onError} />
+        <TimersView hostID={hostID} visible={visible} onError={onError} />
       </div>
     )
   }

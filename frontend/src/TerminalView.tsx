@@ -61,11 +61,14 @@ function themeFromTokens() {
 
 function TerminalPane({
   info,
+  focused,
   onClosed,
   onError,
   onCommand,
 }: {
   info: TerminalInfo
+  /** This pane is the selected terminal, on the tab that is on screen. */
+  focused: boolean
   onClosed: () => void
   onError: (msg: string) => void
   onCommand: (command: string, arg: string) => void
@@ -73,10 +76,20 @@ function TerminalPane({
   const hostRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
-  // Through a ref: the terminal is built once, and rebuilding it whenever the
+  // Through refs: the terminal is built once, and rebuilding it whenever the
   // parent re-renders would throw away the session's scrollback.
+  //
+  // All three callbacks and not just onCommand — a tab switch is a re-render
+  // now that the view stays mounted, and every render of the parent hands this
+  // pane a fresh arrow function. Leaving one of them in the dependency list
+  // below was enough to dispose the terminal four times per round trip and
+  // bring it back empty.
   const command = useRef(onCommand)
   command.current = onCommand
+  const closed = useRef(onClosed)
+  closed.current = onClosed
+  const failed = useRef(onError)
+  failed.current = onError
 
   useEffect(() => {
     if (!hostRef.current) return
@@ -141,7 +154,7 @@ function TerminalPane({
         // normalises CRLF to CR. It reaches the server through onData below,
         // so the Command Log and the `code`/`vi` watcher still see it.
         .then((text) => text && term.paste(text))
-        .catch(() => onError(t('클립보드를 읽지 못했습니다.')))
+        .catch(() => failed.current(t('클립보드를 읽지 못했습니다.')))
       return false
     })
 
@@ -150,7 +163,7 @@ function TerminalPane({
     )
     const offExit = on<string>(`term:exit:${info.id}`, (msg) => {
       term.write(`\r\n\x1b[2m— ${t('세션 종료')}${msg ? `: ${msg}` : ''} —\x1b[0m\r\n`)
-      onClosed()
+      closed.current()
     })
 
     // `code` and `vi` are handled here and never sent (§4.6a).
@@ -181,12 +194,21 @@ function TerminalPane({
         command.current(caught.command, caught.arg)
         return
       }
-      void WriteTerminal(info.id, b64encode(data)).catch((e) => onError(String(e)))
+      void WriteTerminal(info.id, b64encode(data)).catch((e) => failed.current(String(e)))
     })
 
     // The remote side needs to know the size or full-screen programs draw at
     // 80x24 regardless of the window.
+    //
+    // Never measured from a pane that is not laid out, though. FitAddon reads
+    // the parent's computed style, and a display:none element answers with the
+    // stylesheet's "100%" instead of a pixel count — 100px, which worked out to
+    // a 10x6 terminal. That size went to the real PTY, the shell redrew its
+    // prompt for a 10-column screen, and the screenful of output that was there
+    // did not survive the trip back. Hiding a tab is not a resize.
     const resize = () => {
+      const el = hostRef.current
+      if (!el || el.clientWidth === 0 || el.clientHeight === 0) return
       try {
         fit.fit()
         void ResizeTerminal(info.id, term.cols, term.rows).catch(() => {})
@@ -207,7 +229,17 @@ function TerminalPane({
       term.dispose()
       termRef.current = null
     }
-  }, [info.id, onClosed, onError])
+    // The session id alone: see the refs above.
+  }, [info.id])
+
+  // The keyboard follows the tab. Mounting used to do this once, at the end of
+  // the effect above, which was enough back when coming back to this tab meant
+  // mounting again. Now that the pane survives, nothing re-aimed the keyboard —
+  // the terminal looked ready, kept its scrollback, and swallowed the first
+  // thing typed at it because the focus was still on the tab button.
+  useEffect(() => {
+    if (focused) termRef.current?.focus()
+  }, [focused])
 
   return <div className="term-pane" ref={hostRef} />
 }
@@ -248,14 +280,17 @@ export function TerminalView({
   // Adopt whatever is already running, and only open a new terminal if there is
   // nothing to adopt.
   //
-  // This view unmounts every time the user looks at another tab, so its own
-  // state is not a record of anything — Go is. Trusting the local list meant
-  // coming back from the file tab with an empty one, opening a second terminal,
-  // and leaving the first holding a channel no one could name any more. Four
-  // round trips and the host was out of slots (§4.6).
+  // Go holds the sessions, not this view. That was the whole point back when
+  // looking at another tab unmounted the view: trusting the local list meant
+  // coming back from the file tree with an empty one, opening a second
+  // terminal, and leaving the first holding a channel no one could name any
+  // more. Four round trips and the host was out of slots (§4.6).
   //
-  // Sessions deliberately survive the unmount: a running build or an htop should
-  // not die because someone glanced at the file tree.
+  // The view now survives a tab switch, which is what keeps the scrollback —
+  // the PTY always survived, but a fresh xterm adopting it came up blank, so
+  // everything typed before the switch was gone from the screen while still
+  // being gone-from-the-screen only. Adoption still matters: a reconnect, a
+  // restarted app, or a second window all arrive with sessions already running.
   useEffect(() => {
     // Claimed synchronously, before any await: React runs mount effects twice in
     // development, and two passes that both find an empty list would both open a
@@ -264,11 +299,15 @@ export function TerminalView({
     adopted.current = hostID
 
     let cancelled = false
+    // Whether this pass reached an answer — adopted the running sessions, or
+    // opened the first one. Only an unsettled pass releases the claim below.
+    let settled = false
     ;(async () => {
       try {
         const existing = await ListTerminals(hostID)
         if (cancelled) return
         if (existing.length > 0) {
+          settled = true
           setTabs(existing)
           setActive((cur) =>
             cur && existing.some((t) => t.id === cur) ? cur : existing[existing.length - 1].id,
@@ -276,8 +315,13 @@ export function TerminalView({
           return
         }
         // A terminal costs a channel from the long-lived budget, so someone who
-        // never opens this tab should not pay for one.
-        if (visible) void openTab()
+        // never opens this tab should not pay for one. Left unsettled when it
+        // is not visible, so the next visit asks again rather than inheriting
+        // an answer that was only "not yet".
+        if (visible) {
+          settled = true
+          void openTab()
+        }
       } catch (e) {
         if (!cancelled) onError(String(e))
       }
@@ -290,7 +334,12 @@ export function TerminalView({
       // claimed, so nothing ever opens. Releasing keeps the single-open
       // guarantee — the cancelled pass returns before it can open anything —
       // while letting the pass that survives do its job.
-      if (adopted.current === hostID) adopted.current = null
+      //
+      // Only an unsettled pass, though. `visible` is a dependency, so a tab
+      // switch re-runs this effect; releasing unconditionally meant asking Go
+      // for the session list twice per round trip and answering a question
+      // already answered.
+      if (!settled && adopted.current === hostID) adopted.current = null
     }
   }, [hostID, visible, openTab, onError])
 
@@ -363,6 +412,7 @@ export function TerminalView({
           <div key={t.id} className="term-slot" data-active={t.id === active || undefined}>
             <TerminalPane
               info={t}
+              focused={visible && t.id === active}
               onClosed={() => setDead((d) => new Set(d).add(t.id))}
               onError={onError}
               onCommand={(_cmd, arg) => void reveal(t.id, arg)}

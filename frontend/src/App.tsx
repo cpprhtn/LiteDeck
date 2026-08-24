@@ -94,6 +94,11 @@ export default function App() {
   const [hosts, setHosts] = useState<HostView[]>([])
   const [activeID, setActiveID] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('services')
+  /** Which host the remembered tabs belong to; a different one starts over. */
+  const [opened, setOpened] = useState<{ host: string | null; tabs: Tab[] }>({
+    host: null,
+    tabs: [],
+  })
   const [info, setInfo] = useState<Record<string, ServerInfo>>({})
   const [hostKeyPrompt, setHostKeyPrompt] = useState<HostKeyPrompt | null>(null)
   const [secretPrompt, setSecretPrompt] = useState<SecretPrompt | null>(null)
@@ -236,6 +241,26 @@ export default function App() {
   // side went on rendering "not supported" on top of it.
   const unsupported = !!activeInfo && !activeInfo.supported
 
+  // Tabs the user has opened on this host, in the order they first opened them.
+  // All of them stay mounted; only the active one is shown.
+  //
+  // Rebuilding a view on every visit is not a cost of the work, it is a cost of
+  // the tab strip — and it was being charged twice over. The container tab
+  // re-ran a listing that takes tens of seconds on a busy daemon, and the
+  // terminal threw away the session someone was in the middle of typing into.
+  //
+  // Opened lazily rather than all at once: mounting eight views the moment a
+  // host connects would fire eight first loads into a connection that has three
+  // Exec channels.
+  //
+  // Adjusted during render rather than in an effect, so the pane exists in the
+  // same commit that selects it — an effect would paint one empty frame first.
+  if (connected && activeID) {
+    if (opened.host !== activeID) setOpened({ host: activeID, tabs: [tab] })
+    else if (!opened.tabs.includes(tab)) setOpened({ host: activeID, tabs: [...opened.tabs, tab] })
+  }
+  const openedTabs = opened.host === activeID ? opened.tabs : []
+
   return (
     <div className="app">
       <HostSidebar
@@ -342,11 +367,20 @@ export default function App() {
               })}
             </nav>
 
-            {/* Scoped per tab and keyed by host: a crash in one view leaves the
-                others usable, and switching hosts starts the view clean. */}
-            <ErrorBoundary key={`${active.id}:${tab}`} label={TABS.find((x) => x.id === tab)?.label ?? tab}>
-              {renderTab(tab, active.id, activeInfo, setError, () => setTab('files'))}
-            </ErrorBoundary>
+            {/* Hidden rather than unmounted, so coming back to a tab finds it
+                as it was left. Every polling view stops the moment `visible`
+                goes false, so a remembered tab holds its state without holding
+                the connection.
+
+                Keyed by host as well as tab: a crash in one view leaves the
+                others usable, and switching hosts starts every view clean. */}
+            {openedTabs.map((id) => (
+              <div className="tab-pane" key={`${active.id}:${id}`} hidden={id !== tab}>
+                <ErrorBoundary label={TABS.find((x) => x.id === id)?.label ?? id}>
+                  {renderTab(id, active.id, activeInfo, setError, () => setTab('files'), id === tab)}
+                </ErrorBoundary>
+              </div>
+            ))}
           </>
         )}
 
@@ -417,6 +451,8 @@ function renderTab(
   onError: (msg: string) => void,
   /** A `code`/`vi` caught in the terminal wants the file tab (§4.6a). */
   onReveal: () => void,
+  /** This tab is the one on screen. Hidden tabs stay mounted and stop polling. */
+  visible: boolean,
 ) {
   if (!info) {
     return <div className="placeholder">{t('서버를 확인하는 중…')}</div>
@@ -463,7 +499,7 @@ function renderTab(
       return <FileExplorer hostID={hostID} onError={onError} />
 
     case 'processes':
-      return <ProcessView hostID={hostID} visible onError={onError} />
+      return <ProcessView hostID={hostID} visible={visible} onError={onError} />
 
     case 'services':
       // Keyed on the capability, not on hasSystemd. Asking about systemd directly
@@ -479,7 +515,7 @@ function renderTab(
           />
         )
       }
-      return <ServiceView hostID={hostID} visible onError={onError} />
+      return <ServiceView hostID={hostID} visible={visible} onError={onError} />
 
     case 'containers':
       if (!info.hasDocker && !info.hasPodman) {
@@ -491,7 +527,7 @@ function renderTab(
           />
         )
       }
-      return <ContainerView hostID={hostID} visible onError={onError} />
+      return <ContainerView hostID={hostID} visible={visible} onError={onError} />
 
     case 'network':
       // The one view that had no check at all. Tabs stay clickable by design, so
@@ -515,7 +551,7 @@ function renderTab(
           />
         )
       }
-      return <NetworkView hostID={hostID} visible onError={onError} />
+      return <NetworkView hostID={hostID} visible={visible} onError={onError} />
 
     case 'sessions':
       if (!info.capabilities?.sessions) {
@@ -531,7 +567,7 @@ function renderTab(
           />
         )
       }
-      return <SessionView hostID={hostID} visible onError={onError} />
+      return <SessionView hostID={hostID} visible={visible} onError={onError} />
 
     case 'monitor':
       if (!info.capabilities?.metrics) {
@@ -566,7 +602,7 @@ function renderTab(
         <Suspense fallback={<div className="placeholder">{t('터미널을 불러오는 중…')}</div>}>
           <TerminalView
             hostID={hostID}
-            visible
+            visible={visible}
             onError={onError}
             onReveal={onReveal}
           />
