@@ -15,12 +15,13 @@
 // the app layer, which is what keeps the dependency pointing one way and lets
 // the protocol be tested with tools that do nothing.
 //
-// # Scope today: read only
+// # Reads and writes are not the same decision
 //
-// Every tool registered here answers questions. Nothing changes a server. The
-// approval model that writes require (per-connection modes, owned by the app
-// and not settable over the wire) is not built yet, and shipping writes before
-// it exists would be irreversible in the wrong direction.
+// Most tools answer questions. A few change a server, and those exist only
+// because the approval model they need exists too — per-host modes that expire
+// on their own, owned by the app and not settable over the wire. That model
+// lives in the app layer, not here: this package must not be able to relax a
+// policy it also serves requests against.
 package mcp
 
 import (

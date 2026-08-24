@@ -32,6 +32,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -114,7 +115,64 @@ func Open(dir string) *Store {
 			s.seq = n
 		}
 	}
+
+	// Expiry has to happen here, not only when the feature is next used.
+	//
+	// prune otherwise runs on Record and on List — an AI making a change, or
+	// somebody opening the panel. Both stop happening the moment a user decides
+	// they are done with the integration, which is exactly when the promise in
+	// the docs matters: copies clear themselves after 24 hours. What is being
+	// held is the previous contents of somebody's server configuration, so a
+	// copy that outlives its window is not a tidiness problem.
+	if s.prune() {
+		_ = s.save()
+	}
+	s.sweepOrphans()
 	return s
+}
+
+// sweepOrphans removes blobs the index does not name, once they are old enough
+// that nothing could still be writing them.
+//
+// prune only knows about entries it can see, so a corrupt index — which this
+// package deliberately survives by starting empty — would strand every copy it
+// referenced on disk, past any expiry, with nothing that would ever look at
+// them again.
+//
+// The age check is what makes this safe to run at startup. Record writes the
+// blob and *then* saves the index, so for a moment a perfectly good copy exists
+// that no index on disk names yet. A second LiteDeck starting in that window
+// would otherwise delete the first one's undo copy — this function is the only
+// destructive thing here that acts on files it cannot account for, so it gets
+// to be the cautious one. Anything younger than the expiry window will be
+// collected by the next sweep regardless, so nothing is lost by waiting.
+func (s *Store) sweepOrphans() {
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		return
+	}
+
+	s.mu.Lock()
+	known := make(map[string]bool, len(s.entries))
+	for _, e := range s.entries {
+		known[e.ID+".blob"] = true
+	}
+	s.mu.Unlock()
+
+	cutoff := time.Now().Add(-MaxAge)
+	for _, f := range entries {
+		name := f.Name()
+		if f.IsDir() || !strings.HasSuffix(name, ".blob") || known[name] {
+			continue
+		}
+		info, err := f.Info()
+		if err != nil || info.ModTime().After(cutoff) {
+			// Unreadable, or young enough that somebody may still be writing
+			// it. Either way, not ours to delete on this pass.
+			continue
+		}
+		_ = os.Remove(filepath.Join(s.dir, name))
+	}
 }
 
 func (s *Store) indexPath() string { return filepath.Join(s.dir, "index.json") }
@@ -151,7 +209,7 @@ func (s *Store) Record(hostID, path, action string, before []byte, created bool)
 			return e, fmt.Errorf("rollback: save previous contents: %w", err)
 		}
 	}
-	s.prune()
+	_ = s.prune()
 	return e, s.save()
 }
 
@@ -160,7 +218,15 @@ func (s *Store) Record(hostID, path, action string, before []byte, created bool)
 func (s *Store) List(hostID string) []Entry {
 	// Enforced on read as well as on write: an app left open overnight would
 	// otherwise keep showing entries that have already aged out.
-	s.prune()
+	//
+	// Written back when it removed something. Pruning deletes blobs from disk
+	// but leaves the index in memory, so quitting after a read that expired
+	// something left index.json naming copies that were already gone — and the
+	// next launch loaded them back and offered to restore files it no longer
+	// had.
+	if s.prune() {
+		_ = s.save()
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -218,10 +284,13 @@ func (s *Store) Forget(id string) error {
 	return s.save()
 }
 
-// prune enforces the limits, oldest first.
-func (s *Store) prune() {
+// prune enforces the limits, oldest first. It reports whether anything was
+// dropped, so callers know whether the index on disk needs rewriting.
+func (s *Store) prune() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	before := len(s.entries)
 
 	sort.Slice(s.entries, func(i, j int) bool { return s.entries[i].At.Before(s.entries[j].At) })
 
@@ -251,6 +320,7 @@ func (s *Store) prune() {
 		cut++
 	}
 	s.entries = s.entries[cut:]
+	return len(s.entries) != before
 }
 
 func (s *Store) save() error {

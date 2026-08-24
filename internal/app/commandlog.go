@@ -3,6 +3,7 @@ package app
 import (
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/cpprhtn/LiteDeck/internal/sshcore"
 )
@@ -239,11 +240,20 @@ func (a *App) ClearCommandLog() {
 	a.log.mu.Unlock()
 }
 
+// truncate shortens a string to at most n bytes, on a rune boundary.
+//
+// The boundary matters: this cuts remote stderr, and slicing at a byte offset
+// puts half a character at the end of the line — which for a server answering
+// in Korean or Japanese is most of them.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[:n] + "…"
+	cut := n
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "…"
 }
 
 // AICall records a tool call an MCP client made.

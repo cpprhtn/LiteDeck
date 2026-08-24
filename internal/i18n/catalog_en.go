@@ -93,4 +93,5 @@ var english = map[string]string{
 	"파일 탐색과 터미널은 그대로 쓸 수 있습니다":                        "Files and the terminal still work",
 	"판정 근거: ver 의 출력이 UTF-8 이 아님 (OEM 코드페이지)":         "Basis: the output of `ver` is not UTF-8 (OEM code page)",
 	"프로세스 이름을 볼 수 없습니다 — 다른 사용자의 소켓은 관리자 권한이 필요합니다":   "Process names are hidden — another user's sockets need administrator rights",
+	"서버가 보낸 이름 %q 이 받을 폴더 밖을 가리킵니다 — 전송을 중단했습니다":      "The name %q the server sent points outside the download folder — the transfer was stopped",
 }

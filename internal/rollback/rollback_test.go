@@ -2,6 +2,7 @@ package rollback
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -243,5 +244,185 @@ func TestExpiryAppliesWithoutAnyNewWrites(t *testing.T) {
 	}
 	if _, err := s.Contents(e.ID); err == nil {
 		t.Error("an expired entry should no longer be restorable")
+	}
+}
+
+// age rewrites an entry's timestamp on disk, standing in for time passing.
+func age(t *testing.T, dir, id string, d time.Duration) {
+	t.Helper()
+	index := filepath.Join(dir, "ai-history", "index.json")
+	data, err := os.ReadFile(index)
+	if err != nil {
+		t.Fatalf("read index: %v", err)
+	}
+	var entries []Entry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		t.Fatalf("decode index: %v", err)
+	}
+	found := false
+	for i := range entries {
+		if entries[i].ID == id {
+			entries[i].At = time.Now().Add(-d)
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no entry %s in the index", id)
+	}
+	out, _ := json.MarshalIndent(entries, "", "  ")
+	if err := os.WriteFile(index, out, 0o600); err != nil {
+		t.Fatalf("write index: %v", err)
+	}
+}
+
+func blobs(t *testing.T, dir string) []string {
+	t.Helper()
+	m, err := filepath.Glob(filepath.Join(dir, "ai-history", "*.blob"))
+	if err != nil {
+		t.Fatalf("glob: %v", err)
+	}
+	return m
+}
+
+// The documented promise is that copies clear themselves after 24 hours. Until
+// this, expiry only ran when an AI made another change or somebody opened the
+// panel — both of which stop the moment a user is done with the integration,
+// which is precisely when it matters. What is held is the previous contents of
+// their server configuration.
+func TestOpenExpiresCopiesWithoutTheFeatureBeingUsedAgain(t *testing.T) {
+	dir := t.TempDir()
+	s := Open(dir)
+	old, err := s.Record("h1", "/etc/nginx/nginx.conf", ActionWrite, []byte("secret_key = hunter2\n"), false)
+	if err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	if len(blobs(t, dir)) != 1 {
+		t.Fatalf("the copy was not written")
+	}
+
+	age(t, dir, old.ID, MaxAge+time.Hour)
+
+	// A fresh launch, and nothing else — no Record, no List.
+	reopened := Open(dir)
+	if got := blobs(t, dir); len(got) != 0 {
+		t.Errorf("an expired copy survived a restart: %v", got)
+	}
+	// And it is gone from the index too, not merely from disk.
+	if got := reopened.List(""); len(got) != 0 {
+		t.Errorf("the index still names %d expired entries", len(got))
+	}
+}
+
+// A copy that is still inside its window has to survive the same restart, or
+// the undo list would be empty every morning.
+func TestOpenKeepsCopiesInsideTheWindow(t *testing.T) {
+	dir := t.TempDir()
+	s := Open(dir)
+	e, err := s.Record("h1", "/etc/hosts", ActionWrite, []byte("127.0.0.1 x\n"), false)
+	if err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	age(t, dir, e.ID, MaxAge/2)
+
+	if got := Open(dir).List("h1"); len(got) != 1 {
+		t.Fatalf("a copy inside the window was dropped: %v", got)
+	}
+	if len(blobs(t, dir)) != 1 {
+		t.Error("its contents were removed")
+	}
+}
+
+// prune deletes blobs but only trims the index in memory. Quitting after a read
+// that expired something left index.json naming copies that were already gone,
+// and the next launch offered to restore files it no longer had.
+func TestListPersistsWhatItExpired(t *testing.T) {
+	dir := t.TempDir()
+	s := Open(dir)
+	stale, err := s.Record("h1", "/etc/hosts", ActionWrite, []byte("old\n"), false)
+	if err != nil {
+		t.Fatalf("record: %v", err)
+	}
+
+	// Aged in memory rather than on disk, so this is about List and nothing
+	// else. Going through Open would prune it there — which it now does, and
+	// which would leave this test passing whatever List did. It is the
+	// long-running window that matters here: an app open past midnight expires
+	// an entry on a read, and quitting before the next write must not leave the
+	// index naming a copy that is already gone.
+	s.mu.Lock()
+	for i := range s.entries {
+		if s.entries[i].ID == stale.ID {
+			s.entries[i].At = time.Now().Add(-MaxAge - time.Hour)
+		}
+	}
+	s.mu.Unlock()
+
+	_ = s.List("")
+
+	// What the index on disk says now is what the next launch will believe.
+	data, err := os.ReadFile(filepath.Join(dir, "ai-history", "index.json"))
+	if err != nil {
+		t.Fatalf("read index: %v", err)
+	}
+	var entries []Entry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		t.Fatalf("decode index: %v", err)
+	}
+	for _, e := range entries {
+		if e.ID == stale.ID {
+			t.Fatal("the index still names a copy that was deleted from disk")
+		}
+	}
+}
+
+// A corrupt index is survived by starting empty — which used to strand every
+// copy it referenced on disk, past any expiry, with nothing left to look at them.
+func TestOpenSweepsBlobsTheIndexDoesNotName(t *testing.T) {
+	dir := t.TempDir()
+	s := Open(dir)
+	if _, err := s.Record("h1", "/etc/hosts", ActionWrite, []byte("kept\n"), false); err != nil {
+		t.Fatalf("record: %v", err)
+	}
+
+	orphan := filepath.Join(dir, "ai-history", "9999.blob")
+	if err := os.WriteFile(orphan, []byte("nobody's copy\n"), 0o600); err != nil {
+		t.Fatalf("write orphan: %v", err)
+	}
+	// Aged past the window. A fresh one is deliberately left alone — see the
+	// test below.
+	old := time.Now().Add(-MaxAge - time.Hour)
+	if err := os.Chtimes(orphan, old, old); err != nil {
+		t.Fatalf("age orphan: %v", err)
+	}
+
+	Open(dir)
+
+	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
+		t.Errorf("an orphaned copy survived: %v", err)
+	}
+	// The one the index does name is untouched.
+	if got := len(blobs(t, dir)); got != 1 {
+		t.Errorf("%d blobs left, want the one that is still referenced", got)
+	}
+}
+
+// Record writes the blob and *then* saves the index, so for a moment a good copy
+// exists that no index on disk names yet. A second LiteDeck starting in that
+// window must not delete the first one's undo copy — the sweep is the only thing
+// here that acts on files it cannot account for.
+func TestOpenLeavesAFreshUnnamedBlobAlone(t *testing.T) {
+	dir := t.TempDir()
+	Open(dir) // creates the directory
+
+	// Exactly the state Record is in between its two writes.
+	inFlight := filepath.Join(dir, "ai-history", "4242.blob")
+	if err := os.WriteFile(inFlight, []byte("another instance is mid-Record\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	Open(dir)
+
+	if _, err := os.Stat(inFlight); err != nil {
+		t.Errorf("a copy that was still being written was swept: %v", err)
 	}
 }

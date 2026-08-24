@@ -198,12 +198,45 @@ func (a *App) logAICall(tool string, args map[string]any) {
 		if i > 0 {
 			b.WriteString(", ")
 		}
-		fmt.Fprintf(&b, "%s=%v", k, args[k])
+		fmt.Fprintf(&b, "%s=%s", k, clipArg(fmt.Sprintf("%v", args[k])))
 	}
 	b.WriteString(")")
 
 	hostID, _ := args["hostId"].(string)
 	a.log.AICall(hostID, b.String())
+}
+
+// maxAIArgChars bounds one argument in the logged line.
+//
+// Per value rather than per line, because the value that runs away is always
+// the same one: fs_write's `content` is an entire file, and it arrived here
+// whole. A row holding a megabyte of somebody's nginx.conf answers "what did
+// the AI ask for" no better than its first line does, while crowding out every
+// other row in a panel whose only job is to stay scannable — and the entries
+// are held in memory and pushed to the webview as they arrive.
+const maxAIArgChars = 120
+
+// clipArg shortens one argument, keeping the size.
+//
+// The length is kept because "it rewrote 40 bytes" and "it rewrote 40 kilobytes"
+// are different events, and the clipped line is the only place the difference
+// would still be visible.
+func clipArg(s string) string {
+	if len(s) <= maxAIArgChars {
+		// Fewer bytes than the limit means fewer runes than the limit.
+		return s
+	}
+	// Walked rather than converted: the value can be a megabyte, and []rune on
+	// that allocates four of them to throw away. Ranging a string yields rune
+	// start offsets, so the cut is always on a boundary.
+	count := 0
+	for i := range s {
+		if count == maxAIArgChars {
+			return s[:i] + fmt.Sprintf("…(%d bytes)", len(s))
+		}
+		count++
+	}
+	return s
 }
 
 /* ------------------------------------------------------------- bindings */
