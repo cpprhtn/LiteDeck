@@ -131,12 +131,21 @@ func Open(dir string) *Store {
 	return s
 }
 
-// sweepOrphans removes blobs the index does not name.
+// sweepOrphans removes blobs the index does not name, once they are old enough
+// that nothing could still be writing them.
 //
 // prune only knows about entries it can see, so a corrupt index — which this
 // package deliberately survives by starting empty — would strand every copy it
 // referenced on disk, past any expiry, with nothing that would ever look at
 // them again.
+//
+// The age check is what makes this safe to run at startup. Record writes the
+// blob and *then* saves the index, so for a moment a perfectly good copy exists
+// that no index on disk names yet. A second LiteDeck starting in that window
+// would otherwise delete the first one's undo copy — this function is the only
+// destructive thing here that acts on files it cannot account for, so it gets
+// to be the cautious one. Anything younger than the expiry window will be
+// collected by the next sweep regardless, so nothing is lost by waiting.
 func (s *Store) sweepOrphans() {
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
@@ -150,9 +159,16 @@ func (s *Store) sweepOrphans() {
 	}
 	s.mu.Unlock()
 
+	cutoff := time.Now().Add(-MaxAge)
 	for _, f := range entries {
 		name := f.Name()
 		if f.IsDir() || !strings.HasSuffix(name, ".blob") || known[name] {
+			continue
+		}
+		info, err := f.Info()
+		if err != nil || info.ModTime().After(cutoff) {
+			// Unreadable, or young enough that somebody may still be writing
+			// it. Either way, not ours to delete on this pass.
 			continue
 		}
 		_ = os.Remove(filepath.Join(s.dir, name))

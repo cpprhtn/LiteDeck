@@ -388,6 +388,12 @@ func TestOpenSweepsBlobsTheIndexDoesNotName(t *testing.T) {
 	if err := os.WriteFile(orphan, []byte("nobody's copy\n"), 0o600); err != nil {
 		t.Fatalf("write orphan: %v", err)
 	}
+	// Aged past the window. A fresh one is deliberately left alone — see the
+	// test below.
+	old := time.Now().Add(-MaxAge - time.Hour)
+	if err := os.Chtimes(orphan, old, old); err != nil {
+		t.Fatalf("age orphan: %v", err)
+	}
 
 	Open(dir)
 
@@ -397,5 +403,26 @@ func TestOpenSweepsBlobsTheIndexDoesNotName(t *testing.T) {
 	// The one the index does name is untouched.
 	if got := len(blobs(t, dir)); got != 1 {
 		t.Errorf("%d blobs left, want the one that is still referenced", got)
+	}
+}
+
+// Record writes the blob and *then* saves the index, so for a moment a good copy
+// exists that no index on disk names yet. A second LiteDeck starting in that
+// window must not delete the first one's undo copy — the sweep is the only thing
+// here that acts on files it cannot account for.
+func TestOpenLeavesAFreshUnnamedBlobAlone(t *testing.T) {
+	dir := t.TempDir()
+	Open(dir) // creates the directory
+
+	// Exactly the state Record is in between its two writes.
+	inFlight := filepath.Join(dir, "ai-history", "4242.blob")
+	if err := os.WriteFile(inFlight, []byte("another instance is mid-Record\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	Open(dir)
+
+	if _, err := os.Stat(inFlight); err != nil {
+		t.Errorf("a copy that was still being written was swept: %v", err)
 	}
 }
