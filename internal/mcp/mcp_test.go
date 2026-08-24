@@ -85,10 +85,28 @@ func TestHandshakeOverHTTP(t *testing.T) {
 	if _, ok := init.Result.Capabilities["tools"]; !ok {
 		t.Error("capabilities must advertise tools")
 	}
-	// The instructions are prompt text; a model that reads them must learn that
-	// writes are absent rather than hidden behind a parameter.
-	if !strings.Contains(init.Result.Instructions, "change a server") {
-		t.Error("instructions should say the tools cannot change a server")
+	// The instructions are prompt text, and they are also what a client is told
+	// when it asks this server to describe itself. They have to match what is
+	// registered. They did not for a whole release: the text said there were no
+	// write tools while five of them were on the wire, so somebody auditing
+	// their setup by reading the handshake was told the wrong thing.
+	instr := init.Result.Instructions
+	for _, want := range []string{"fs_delete", "approval"} {
+		if !strings.Contains(instr, want) {
+			t.Errorf("instructions never mention %q — a model reading them would "+
+				"not know writes exist or that they are gated", want)
+		}
+	}
+	// The specific sentence that was wrong, and any obvious rewording of it.
+	for _, gone := range []string{
+		"no write tools",
+		"Nothing here can change a server",
+		"read-only tools",
+	} {
+		if strings.Contains(instr, gone) {
+			t.Errorf("instructions still claim %q, which is false: "+
+				"svc_control, proc_signal, fs_write and fs_delete are registered", gone)
+		}
 	}
 
 	// A notification expects no reply at all.
@@ -324,27 +342,6 @@ func TestTokensAreDistinct(t *testing.T) {
 func TestServeRequiresAToken(t *testing.T) {
 	if _, _, err := New().Serve(Options{}); err == nil {
 		t.Error("serving without a token must fail")
-	}
-}
-
-// Nothing registered may modify a server. This is the guard on the one property
-// that makes shipping read-only safe: it fails the moment somebody adds a write
-// tool without also building the approval model.
-func TestNoRegisteredToolNameSuggestsAWrite(t *testing.T) {
-	s := New()
-	// Stand-in for the real registration; the app-side test covers the real set.
-	for _, name := range []string{"hosts_list", "health_snapshot", "svc_list", "fs_read"} {
-		s.Register(Tool{Name: name, InputSchema: map[string]any{"type": "object"}})
-	}
-	forbidden := []string{"write", "restart", "stop", "start", "kill", "delete",
-		"remove", "prune", "exec", "run_command", "push", "chmod", "rename"}
-	for _, tool := range s.Tools() {
-		for _, verb := range forbidden {
-			if strings.Contains(tool.Name, verb) {
-				t.Errorf("%q looks like a write tool. Writes need the approval model "+
-					"in §4 of the design note first, and it does not exist yet", tool.Name)
-			}
-		}
 	}
 }
 

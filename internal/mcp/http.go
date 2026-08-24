@@ -29,7 +29,14 @@ const Version = "0.1"
 // Instructions is sent at initialize. It is prompt text: the model reads it
 // before deciding anything, so it says what the tools are for and — more
 // usefully — what they will refuse to do.
-const Instructions = `LiteDeck exposes read-only tools for servers the user has explicitly shared over SSH.
+//
+// It has to keep matching what is actually registered. The first version of
+// this text said there were no write tools, and stayed on the wire unchanged
+// after five of them shipped. That is worse than an out-of-date comment: this
+// string is what a client is told when it asks the server to describe itself,
+// so anyone auditing their setup by reading the handshake was told the
+// endpoint could not change a server, while fs_delete was registered on it.
+const Instructions = `LiteDeck exposes tools for servers the user has explicitly shared over SSH.
 
 Start with health_snapshot: one round trip covering CPU, memory, disk, failed units,
 unhealthy containers and exposed ports. Reach for the narrower tools only when it does
@@ -39,9 +46,15 @@ Every call runs a real command on a real server over one shared SSH connection, 
 user watches those commands appear in the app's Command Log as you make them. Servers are
 often small. Ask for what you need rather than sweeping.
 
-Nothing here can change a server. There are no write tools, and none are hidden behind a
-parameter. If the user asks you to restart something, say that it has to be done in the
-app or the terminal.
+Most tools only read. Five change things: svc_control, container_control, proc_signal,
+fs_write and fs_delete. Each one goes to the user for approval before it runs, and what
+they are shown is the real command or a diff against the file as it is on the server right
+now. Whether it interrupts them is their setting, not yours: there is no parameter here
+that skips the prompt and no tool that changes the policy. Asking to have it relaxed is
+not something this server can act on.
+
+A declined write is a normal answer. Report it and stop — do not reword the request and
+try again, and do not look for another tool that achieves the same thing.
 
 Hosts must be named explicitly with hostId. Call hosts_list first if you do not have one;
 there is no implicit "current" host, because guessing wrong would mean reading the wrong
