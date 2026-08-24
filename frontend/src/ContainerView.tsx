@@ -170,6 +170,14 @@ export function ContainerView({
 
   usePoll(refresh, POLL_MS, visible)
 
+  // A followed log on a hidden tab would hold one of the connection's
+  // long-lived channels and go on receiving lines nobody can see. Dropping it
+  // is what unmounting the whole view used to do, and LogPanel stops the
+  // stream as it goes.
+  useEffect(() => {
+    if (!visible) setLog(null)
+  }, [visible])
+
   const run = async (
     id: string,
     fn: (elevate: boolean) => Promise<{ ok: boolean; needsElevation: boolean; error?: string }>,
@@ -228,7 +236,7 @@ export function ContainerView({
             <button data-on>{t('이미지 · 볼륨')}</button>
           </div>
         </div>
-        <ImagesVolumes hostID={hostID} visible onError={onError} />
+        <ImagesVolumes hostID={hostID} visible={visible} onError={onError} />
       </div>
     )
   }

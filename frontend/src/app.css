@@ -148,8 +148,29 @@
   min-width: 0;
 }
 
+/* Every opened tab is a pane; only one is not [hidden]. The pane takes the
+   growing role its view used to have as a direct child of .main, and passes it
+   down — the direct-child selectors below matter, because ErrorBoundary renders
+   its children without a wrapper of its own. */
+.main > .tab-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* `hidden` alone loses to the display above, and the pane would stay on screen
+   stacked under the active one. */
+.main > .tab-pane[hidden] {
+  display: none;
+}
+
 .main > .view,
-.main > .placeholder {
+.main > .placeholder,
+.tab-pane > .view,
+.tab-pane > .placeholder,
+.tab-pane > .crash {
   flex: 1;
   min-height: 0;
 }
