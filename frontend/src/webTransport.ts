@@ -8,6 +8,8 @@
 // bridge. Those are the only two seams between the frontend and the backend, so
 // filling them carries the whole UI.
 
+import { t } from './i18n'
+
 type Handler = (payload: unknown) => void
 
 // The path the app is served under, so a reverse proxy mounting it at
@@ -111,6 +113,8 @@ export function installWebTransport() {
     },
   )
 
+  ;(window as unknown as { __litedeckWeb?: boolean }).__litedeckWeb = true
+
   const bus = new EventBus()
   bus.connect()
 
@@ -118,5 +122,38 @@ export function installWebTransport() {
   ;(window as unknown as { go: unknown; runtime: unknown }).runtime = {
     EventsOn: (event: string, cb: (...data: unknown[]) => void) => bus.on(event, (p) => cb(p)),
     EventsOff: (event: string) => bus.off(event),
+  }
+}
+
+
+/**
+ * True when the UI is served over HTTP by cmd/litedeck-server rather than hosted
+ * in a Wails webview. The upload flow branches on this: the desktop reaches the
+ * local disk through a native file dialog; the web sends the browser's own File
+ * objects to POST /upload.
+ */
+export function isWebMode(): boolean {
+  return !!(window as unknown as { __litedeckWeb?: boolean }).__litedeckWeb
+}
+
+/** Streams picked files to the server's /upload, which SFTPs them to remoteDir. */
+export async function uploadFiles(
+  hostId: string,
+  remoteDir: string,
+  files: FileList | File[],
+): Promise<void> {
+  const form = new FormData()
+  for (const f of Array.from(files)) form.append('file', f, f.name)
+  const url = `${basePath()}upload?hostId=${encodeURIComponent(hostId)}&dir=${encodeURIComponent(remoteDir)}`
+  const res = await fetch(url, { method: 'POST', body: form })
+  if (!res.ok) {
+    let msg = t('업로드 실패: HTTP {status}', { status: res.status })
+    try {
+      const j = await res.json()
+      if (j.error) msg = j.error
+    } catch {
+      /* non-JSON */
+    }
+    throw new Error(msg)
   }
 }

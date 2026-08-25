@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -254,6 +255,40 @@ func truncate(s string, n int) string {
 		cut--
 	}
 	return s[:cut] + "…"
+}
+
+// uploaded records a browser upload streamed to the server over SFTP. Like a
+// forward, no shell command ran — the bytes went straight to the SFTP
+// subsystem — so it is marked rather than dressed up as a command that ran.
+func (l *commandLog) uploaded(hostID, name, dir string, bytes int64) {
+	l.mu.Lock()
+	l.seq++
+	e := CommandEntry{
+		Seq:    l.seq,
+		HostID: hostID,
+		Line:   "upload " + name + " → " + dir + "  (" + humanBytes(bytes) + ")",
+		At:     time.Now().Format(time.RFC3339),
+		Status: "ok",
+		Origin: "tunnel", // non-command marker; the bytes rode SFTP, not a shell
+	}
+	l.entries = append(l.entries, e)
+	l.trim()
+	l.mu.Unlock()
+	l.emit("cmd:started", e)
+}
+
+// humanBytes is a compact size for a log line.
+func humanBytes(n int64) string {
+	const u = 1024
+	if n < u {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(u), 0
+	for x := n / u; x >= u; x /= u {
+		div *= u
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
 // AICall records a tool call an MCP client made.

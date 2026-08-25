@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -187,4 +188,131 @@ func (e errString) Error() string { return string(e) }
 func promptID(m map[string]any) string {
 	s, _ := m["id"].(string)
 	return s
+}
+
+// The full web upload path against a real sshd: connect the host over HTTP/WS
+// (answering the prompts as the browser would), then POST a file to /upload and
+// confirm it landed on the remote over SFTP. This proves the piece the desktop
+// path cannot exercise — bytes from an HTTP request, not a local disk path.
+func TestUploadOverWebAfterConnect(t *testing.T) {
+	a, _ := liveApp(t)
+	srv := webrpc.NewServer(webrpc.New(a), "")
+	srv.SetUploader(a)
+	a.emit = srv.Emit
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	ws := dialWSClient(t, ts)
+	defer ws.Close()
+	awaitRegistered(t, srv, ws)
+
+	// Connect, answering host-key and password prompts over the web transport.
+	connErr := make(chan error, 1)
+	go func() {
+		_, appErr, reqErr := rpcCall(t, ts, "ConnectHost", "fixture")
+		if reqErr != nil {
+			connErr <- reqErr
+			return
+		}
+		connErr <- appErr
+	}()
+	answerPromptsUntilConnected(t, ts, ws, connErr)
+
+	// Pick a writable directory on the remote and upload into it.
+	dir := webScratchDir(t, a)
+	res := postUpload(t, ts, "fixture", dir, "web-upload.txt", "uploaded over http\n")
+	if res != http.StatusOK {
+		t.Fatalf("/upload status %d", res)
+	}
+
+	// It must actually be on the server.
+	st, err := a.StatPath("fixture", dir+"/web-upload.txt")
+	if err != nil || !st.Exists {
+		t.Fatalf("uploaded file is not on the remote: %v", err)
+	}
+	if got, _ := a.ReadTextFile("fixture", dir+"/web-upload.txt"); got.Content != "uploaded over http\n" {
+		t.Errorf("remote content = %q", got.Content)
+	}
+}
+
+type wsEvent struct {
+	event   string
+	payload map[string]any
+}
+
+func answerPromptsUntilConnected(t *testing.T, ts *httptest.Server, ws *websocket.Conn, connErr chan error) {
+	t.Helper()
+	// Read events on their own goroutine so connect completing is noticed even
+	// while no further prompt is arriving. The goroutine ends when the socket
+	// closes (defer ws.Close in the caller).
+	events := make(chan wsEvent, 8)
+	go func() {
+		for {
+			_, data, err := ws.ReadMessage()
+			if err != nil {
+				close(events)
+				return
+			}
+			var m struct {
+				Event   string         `json:"event"`
+				Payload map[string]any `json:"payload"`
+			}
+			if json.Unmarshal(data, &m) == nil {
+				events <- wsEvent{m.Event, m.Payload}
+			}
+		}
+	}()
+
+	deadline := time.After(90 * time.Second)
+	for {
+		select {
+		case err := <-connErr:
+			if err != nil {
+				t.Fatalf("connect failed: %v", err)
+			}
+			return
+		case e := <-events:
+			switch e.event {
+			case "prompt:hostkey":
+				rpcCall(t, ts, "AnswerHostKey", promptID(e.payload), "always")
+			case "prompt:secret":
+				rpcCall(t, ts, "AnswerSecret", promptID(e.payload), sysPass, false)
+			}
+		case <-deadline:
+			t.Fatal("connect timed out")
+		}
+	}
+}
+
+func webScratchDir(t *testing.T, a *App) string {
+	t.Helper()
+	dir := "/tmp/litedeck-webupload"
+	if res := a.MakeDir("fixture", dir); !res.OK {
+		// already there from a previous run is fine
+		if !strings.Contains(res.Error, "exists") {
+			t.Fatalf("MakeDir: %s", res.Error)
+		}
+	}
+	return dir
+}
+
+func postUpload(t *testing.T, ts *httptest.Server, hostID, dir, name, body string) int {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, _ := mw.CreateFormFile("file", name)
+	_, _ = fw.Write([]byte(body))
+	_ = mw.Close()
+
+	url := ts.URL + "/upload?hostId=" + hostID + "&dir=" + dir
+	req, _ := http.NewRequest(http.MethodPost, url, &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("Origin", ts.URL)
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("upload do: %v", err)
+	}
+	defer res.Body.Close()
+	return res.StatusCode
 }

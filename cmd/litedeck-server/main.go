@@ -52,6 +52,7 @@ func run(addr, token string) error {
 
 	a := app.New()
 	srv := webrpc.NewServer(webrpc.New(a), token)
+	srv.SetUploader(a) // POST /upload streams browser files to the remote over SFTP
 
 	// Events reach the browser over the WebSocket instead of the Wails runtime.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

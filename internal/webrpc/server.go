@@ -3,6 +3,7 @@ package webrpc
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -40,16 +41,28 @@ type Server struct {
 	// the WebSocket cannot carry an Authorization header, so it takes the token
 	// in the query string — logged by some proxies, which is why loopback +
 	// Origin remain the primary defence and this is the fallback.
-	token string
+	token    string
+	uploader Uploader
 
 	mu      sync.Mutex
 	clients map[*wsClient]struct{}
+}
+
+// Uploader receives a browser upload and streams it to a remote host. It is a
+// separate seam from the RPC dispatcher because a file's bytes cannot travel as
+// a JSON argument — /upload is multipart, not /rpc.
+type Uploader interface {
+	UploadFile(hostID, remoteDir, name string, r io.Reader) (int64, error)
 }
 
 // NewServer wraps a dispatcher. token may be empty (loopback deployments).
 func NewServer(disp *Dispatcher, token string) *Server {
 	return &Server{disp: disp, token: token, clients: map[*wsClient]struct{}{}}
 }
+
+// SetUploader enables POST /upload, backed by u. Left unset, uploads are simply
+// not offered.
+func (s *Server) SetUploader(u Uploader) { s.uploader = u }
 
 // authOK checks the bearer token for /rpc (header) — empty token means open.
 func (s *Server) authOK(r *http.Request) bool {
@@ -75,7 +88,73 @@ func (s *Server) Handler() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/rpc/", s.handleRPC)
 	mux.HandleFunc("/ws", s.handleWS)
+	if s.uploader != nil {
+		mux.HandleFunc("/upload", s.handleUpload)
+	}
 	return mux
+}
+
+// maxUploadMem is how much of a multipart upload is buffered in memory before
+// spilling to a temp file. The stream itself is copied straight to SFTP, so
+// this only bounds the multipart parser's own buffering.
+const maxUploadMem = 16 << 20
+
+// handleUpload streams each part of a multipart POST to a remote directory. It
+// carries the same Origin and token checks as /rpc — a file write to a
+// production server is at least as sensitive as any binding.
+//
+//	POST /upload?hostId=<id>&dir=<remote dir>   (multipart/form-data, files)
+func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !originOK(r) {
+		http.Error(w, "forbidden origin", http.StatusForbidden)
+		return
+	}
+	if !s.authOK(r) {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="litedeck"`)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	hostID := r.URL.Query().Get("hostId")
+	dir := r.URL.Query().Get("dir")
+	if hostID == "" || dir == "" {
+		writeErr(w, http.StatusBadRequest, "hostId and dir are required")
+		return
+	}
+
+	reader, err := r.MultipartReader()
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "expected multipart/form-data")
+		return
+	}
+	saved := []map[string]any{}
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "could not read upload: "+err.Error())
+			return
+		}
+		if part.FormName() != "file" || part.FileName() == "" {
+			_ = part.Close()
+			continue
+		}
+		// The stream goes straight to SFTP; UploadFile confines the client-chosen
+		// name to a single component inside dir.
+		n, err := s.uploader.UploadFile(hostID, dir, part.FileName(), part)
+		_ = part.Close()
+		if err != nil {
+			writeErr(w, http.StatusBadGateway, fmt.Sprintf("%s: %v", part.FileName(), err))
+			return
+		}
+		saved = append(saved, map[string]any{"name": part.FileName(), "bytes": n})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"uploaded": saved})
 }
 
 // Emit is wired into the App as its event sink (StartupHeadless). It fans one

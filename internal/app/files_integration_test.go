@@ -969,3 +969,43 @@ func TestDirectoryDownloadRefusesANameThatClimbsOut(t *testing.T) {
 		t.Error("selecting the hostile name directly was accepted")
 	}
 }
+
+// A browser upload's file name is chosen by the client, so it is the upload-side
+// of the download traversal: `../../etc/passwd` or `..\..\x` must land as a
+// single component inside the chosen directory, never above it. Proven against
+// a real sshd so the SFTP write actually happens.
+func TestUploadFileConfinesTheClientChosenName(t *testing.T) {
+	a := connectedApp(t)
+	remoteDir := scratchDir(t, a, "litedeck-upload")
+
+	// An ordinary file lands where asked.
+	if _, err := a.UploadFile("fixture", remoteDir, "hello.txt", strings.NewReader("hi\n")); err != nil {
+		t.Fatalf("UploadFile(ordinary): %v", err)
+	}
+	if st, err := a.StatPath("fixture", path.Join(remoteDir, "hello.txt")); err != nil || !st.Exists {
+		t.Errorf("ordinary upload missing: %v", err)
+	}
+
+	// A hostile name is flattened to its base, inside the dir — not above it.
+	for _, name := range []string{"../escape.txt", "../../etc/wouldbe", "a/b/c.txt", `..\..\win.txt`} {
+		if _, err := a.UploadFile("fixture", remoteDir, name, strings.NewReader("x\n")); err != nil {
+			t.Fatalf("UploadFile(%q): %v", name, err)
+		}
+	}
+	// Nothing escaped: the parent of the chosen dir must not have gained a file.
+	parent := path.Dir(remoteDir)
+	for _, escaped := range []string{"escape.txt", "wouldbe", "win.txt"} {
+		if st, _ := a.StatPath("fixture", path.Join(parent, escaped)); st.Exists {
+			t.Errorf("%s escaped into %s", escaped, parent)
+		}
+	}
+	// The backslash name, flattened, is a single file in the dir.
+	if st, _ := a.StatPath("fixture", path.Join(remoteDir, `..\..\win.txt`)); !st.Exists {
+		t.Errorf("the flattened backslash name did not land in the dir")
+	}
+
+	// Names that are only a traversal are refused outright.
+	if _, err := a.UploadFile("fixture", remoteDir, "..", strings.NewReader("x")); err == nil {
+		t.Error("a name of just .. was accepted")
+	}
+}

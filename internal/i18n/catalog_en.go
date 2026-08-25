@@ -97,5 +97,6 @@ var english = map[string]string{
 	"서버 모드에서는 로컬 파일 선택창을 열 수 없습니다 — 브라우저에서 업로드하세요":    "A local file picker cannot open in server mode — upload from the browser instead",
 	"서버 모드에서는 로컬 폴더 선택창을 열 수 없습니다 — 브라우저에서 업로드하세요":    "A local folder picker cannot open in server mode — upload from the browser instead",
 	"서버 모드에서는 로컬 폴더 선택창을 열 수 없습니다":                    "A local folder picker cannot open in server mode",
+	"업로드할 파일 이름이 올바르지 않습니다: %q":                       "The uploaded file name is not valid: %q",
 	"서버가 보낸 이름 %q 이 받을 폴더 밖을 가리킵니다 — 전송을 중단했습니다":      "The name %q the server sent points outside the download folder — the transfer was stopped",
 }
