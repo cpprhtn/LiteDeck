@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -198,17 +199,30 @@ func TestSlowClientIsDroppedNotBlocking(t *testing.T) {
 	defer c.Close()
 	waitClients(t, s, 1)
 
-	// Never read from c. Flood past the send buffer; Emit must not block.
+	// Never read from c. The payload has to be large: a small event drains into
+	// the OS socket buffer faster than it piles up, so the client never actually
+	// falls behind and nothing is dropped — this test passed on macOS and failed
+	// on the Linux CI runner for exactly that reason (a bigger socket buffer).
+	// A large payload fills that buffer, backs the send channel up, and forces
+	// the drop; Emit must never block regardless. Stop as soon as the client is
+	// gone rather than marshalling megabytes past that point.
+	big := strings.Repeat("x", 32*1024)
 	done := make(chan struct{})
 	go func() {
-		for i := 0; i < clientSendBuffer*4; i++ {
-			s.Emit("spam", i)
+		defer close(done)
+		for i := 0; i < clientSendBuffer*8; i++ {
+			s.Emit("spam", big)
+			s.mu.Lock()
+			gone := len(s.clients) == 0
+			s.mu.Unlock()
+			if gone {
+				return
+			}
 		}
-		close(done)
 	}()
 	select {
 	case <-done:
-	case <-time.After(5 * time.Second):
+	case <-time.After(15 * time.Second):
 		t.Fatal("Emit blocked on a client that stopped reading")
 	}
 	waitClients(t, s, 0) // the slow client was dropped
