@@ -35,5 +35,5 @@ go test ./... -race           # 통합 테스트 포함 (Docker 필요)
 
 통합 테스트는 실제 서버를 띄웁니다. `testdata/`에 sshd·systemd·Docker-in-Docker 픽스처가 있습니다. Docker가 없으면 실패가 아니라 건너뛰므로, **`-race`가 몇 초 만에 끝났다면 통합 테스트가 안 돌았다는 뜻입니다** (Docker가 켜져 있으면 1분 남짓 걸립니다).
 
-v1.5.3을 만든 환경: Go 1.26.6 · Node 22.13.1 · Wails CLI 2.13.0 (라이브러리 2.14.0) · Docker 29.4.0 (macOS 26.5.2 arm64).
+v1.6.0을 만든 환경: Go 1.26.6 · Node 22.13.1 · Wails CLI 2.13.0 (라이브러리 2.14.0) · Docker 29.4.0 (macOS 26.5.2 arm64).
 릴리스 워크플로도 같은 CLI 를 씁니다. 위의 `@latest` 로 받으면 더 새 CLI 가 올 수 있는데, 그래도 빌드는 됩니다.

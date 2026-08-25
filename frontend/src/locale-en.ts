@@ -535,4 +535,6 @@ export const en: Record<string, string> = {
   '호스트를 삭제하시겠습니까?': 'Delete this host?',
   '확인': 'OK',
   '확인 필요': 'Check this',
+  '업로드 실패: HTTP {status}': 'Upload failed: HTTP {status}',
+  '로그인이 필요합니다': 'Sign-in required',
 }

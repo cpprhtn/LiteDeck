@@ -723,6 +723,9 @@ func (a *App) ClearFinishedTransfers() { a.transfers.clearFinished() }
 
 // PickLocalFiles opens the OS file chooser for uploading.
 func (a *App) PickLocalFiles() ([]string, error) {
+	if a.headless {
+		return nil, i18n.Errorf("서버 모드에서는 로컬 파일 선택창을 열 수 없습니다 — 브라우저에서 업로드하세요")
+	}
 	if a.ctx == nil {
 		return nil, errors.New("app: no window")
 	}
@@ -736,6 +739,9 @@ func (a *App) PickLocalFiles() ([]string, error) {
 // files and folders in the same pass — asking for one or the other is the only
 // way to offer both.
 func (a *App) PickLocalUploadDir() (string, error) {
+	if a.headless {
+		return "", i18n.Errorf("서버 모드에서는 로컬 폴더 선택창을 열 수 없습니다 — 브라우저에서 업로드하세요")
+	}
 	if a.ctx == nil {
 		return "", errors.New("app: no window")
 	}
@@ -746,6 +752,9 @@ func (a *App) PickLocalUploadDir() (string, error) {
 
 // PickLocalDir opens the OS directory chooser for downloading into.
 func (a *App) PickLocalDir() (string, error) {
+	if a.headless {
+		return "", i18n.Errorf("서버 모드에서는 로컬 폴더 선택창을 열 수 없습니다")
+	}
 	if a.ctx == nil {
 		return "", errors.New("app: no window")
 	}
@@ -1025,4 +1034,55 @@ func (q *transferQueue) progressFile(j *transferJob, done int, rel string) {
 	j.CurrentRel = rel
 	q.mu.Unlock()
 	q.emit(j)
+}
+
+// UploadFile streams one uploaded file into remoteDir over SFTP.
+//
+// This is the web server's upload path (cmd/litedeck-server's /upload). It
+// exists because StartUpload cannot: that one reads local disk paths, and in
+// server mode the "local" machine is a browser the server cannot see. Here the
+// bytes arrive as a stream (a multipart part) and go straight to SFTP.
+//
+// name is chosen by the client, so it is treated as hostile: path.Base strips
+// any directory component, which is the upload-side of the same containment
+// rule downloads need (a name like `..\..\x` or `../../etc/passwd` must not
+// escape remoteDir on the server). The result is joined under a cleaned,
+// absolute remoteDir and nowhere else.
+func (a *App) UploadFile(hostID, remoteDir, name string, r io.Reader) (int64, error) {
+	dir, err := CleanRemotePath(remoteDir)
+	if err != nil {
+		return 0, err
+	}
+	base := path.Base(name)
+	if base == "." || base == ".." || base == "/" || strings.TrimSpace(base) == "" {
+		return 0, i18n.Errorf("업로드할 파일 이름이 올바르지 않습니다: %q", name)
+	}
+	// path.Base already dropped any '/'-separated directory. A backslash is a
+	// legal character in a POSIX name, so it stays — the danger it poses is on a
+	// *Windows client's* filesystem (the download case), not on the remote where
+	// this writes, and here there is exactly one path component regardless.
+	dst := path.Join(dir, base)
+
+	client, err := a.mgr.SFTP(hostID)
+	if err != nil {
+		return 0, err
+	}
+	out, err := client.Create(dst)
+	if err != nil {
+		return 0, err
+	}
+	n, copyErr := io.Copy(out, r)
+	closeErr := out.Close()
+	if copyErr != nil {
+		return n, copyErr
+	}
+	if closeErr != nil {
+		return n, closeErr
+	}
+
+	// Shown in the Command Log like everything else the app does on the user's
+	// behalf (§4.6) — an upload that left no trace would be the one action the
+	// panel is meant to make visible that it did not.
+	a.log.uploaded(hostID, base, dir, n)
+	return n, nil
 }

@@ -7,6 +7,7 @@ import { ContainerView } from './ContainerView'
 import { FileExplorer } from './FileExplorer'
 import { HostEditor, emptyHost } from './HostEditor'
 import { HostSidebar } from './HostSidebar'
+import { ShellControls } from './ShellControls'
 import { MetricsBar } from './MetricsBar'
 import { NetworkView } from './NetworkView'
 import { ProcessView } from './ProcessView'
@@ -122,7 +123,10 @@ export default function App() {
   useEffect(() => {
     ;(async () => {
       try {
-        if (await BenchMode()) {
+        // BenchMode is a dev-only spike (report.go); the server binary does not
+        // expose it, so its absence means "not in bench mode", not a boot
+        // failure. Catching keeps a missing dev endpoint from aborting boot.
+        if (await BenchMode().catch(() => false)) {
           setBenchMode(true)
           return
         }
@@ -137,13 +141,43 @@ export default function App() {
         setBoot(b)
         setHosts(b.hosts)
         if (b.startupError) setError(b.startupError)
-        if (b.hosts.length > 0) setActiveID(b.hosts[0].id)
+        // Prefer a host that is already connected — in server "this server" mode
+        // the box auto-connects itself, so opening the UI should land inside it
+        // rather than on whatever happens to be first.
+        const connected = b.hosts.find((h) => h.state === 'connected')
+        if (connected) setActiveID(connected.id)
+        else if (b.hosts.length > 0) setActiveID(b.hosts[0].id)
       } catch (e) {
         setBenchMode(false)
         setError(String(e))
       }
     })()
   }, [])
+
+  // Detect a host that is already connected when the app loads — the server's
+  // "this server" auto-connect, or a host still connected from before. The
+  // click path (connect) is what normally runs DetectHost, and it never runs
+  // for these, so info stays empty and every tab hangs on "checking the
+  // server…". Keyed on booleans, not the whole host list, so a poll does not
+  // re-trigger it and a completed detection ends it.
+  const activeHost = hosts.find((h) => h.id === activeID)
+  const activeConnected = activeHost?.state === 'connected'
+  const activeDetected = !!(activeID && info[activeID])
+  useEffect(() => {
+    if (!activeID || !activeConnected || activeDetected) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const detected = await DetectHost(activeID)
+        if (!cancelled) setInfo((prev) => ({ ...prev, [activeID]: detected }))
+      } catch (e) {
+        if (!cancelled) setError(String(e))
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [activeID, activeConnected, activeDetected])
 
   // Prompts arrive mid-handshake: sshcore is parked on a channel waiting for
   // the answer these dialogs send back.
@@ -261,8 +295,11 @@ export default function App() {
   }
   const openedTabs = opened.host === activeID ? opened.tabs : []
 
+  const selfMode = boot?.selfMode
+
   return (
-    <div className="app">
+    <div className="app" data-self={selfMode || undefined}>
+      {!selfMode && (
       <HostSidebar
         hosts={hosts}
         activeID={activeID}
@@ -276,6 +313,7 @@ export default function App() {
         version={boot?.version}
         onOpenMCP={() => setMcpOpen(true)}
       />
+      )}
 
       {mcpOpen && (
         <McpPanel hosts={hosts} onClose={() => setMcpOpen(false)} onError={setError} />
@@ -319,6 +357,11 @@ export default function App() {
                 <span className="badge warn" title={t('OS 키체인을 사용할 수 없어 비밀번호를 저장하지 않습니다')}>
                   {t('키체인 없음')}
                 </span>
+              )}
+              {selfMode && (
+                <div className="self-controls">
+                  <ShellControls version={boot?.version} onOpenMCP={() => setMcpOpen(true)} />
+                </div>
               )}
             </>
           ) : (

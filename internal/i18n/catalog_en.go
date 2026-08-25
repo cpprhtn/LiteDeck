@@ -93,5 +93,10 @@ var english = map[string]string{
 	"파일 탐색과 터미널은 그대로 쓸 수 있습니다":                        "Files and the terminal still work",
 	"판정 근거: ver 의 출력이 UTF-8 이 아님 (OEM 코드페이지)":         "Basis: the output of `ver` is not UTF-8 (OEM code page)",
 	"프로세스 이름을 볼 수 없습니다 — 다른 사용자의 소켓은 관리자 권한이 필요합니다":   "Process names are hidden — another user's sockets need administrator rights",
+	"서버 모드에서는 클립보드를 읽을 수 없습니다":                        "The clipboard is not available in server mode",
+	"서버 모드에서는 로컬 파일 선택창을 열 수 없습니다 — 브라우저에서 업로드하세요":    "A local file picker cannot open in server mode — upload from the browser instead",
+	"서버 모드에서는 로컬 폴더 선택창을 열 수 없습니다 — 브라우저에서 업로드하세요":    "A local folder picker cannot open in server mode — upload from the browser instead",
+	"서버 모드에서는 로컬 폴더 선택창을 열 수 없습니다":                    "A local folder picker cannot open in server mode",
+	"업로드할 파일 이름이 올바르지 않습니다: %q":                       "The uploaded file name is not valid: %q",
 	"서버가 보낸 이름 %q 이 받을 폴더 밖을 가리킵니다 — 전송을 중단했습니다":      "The name %q the server sent points outside the download folder — the transfer was stopped",
 }

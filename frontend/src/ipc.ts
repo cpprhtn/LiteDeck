@@ -43,6 +43,8 @@ export interface BootstrapData {
   /** What Go read out of the environment, for when the webview cannot say. */
   systemLanguage: string
   startupError?: string
+  /** "this server" server-mode instance: one auto-connected host, no sidebar. */
+  selfMode?: boolean
 }
 
 export type ServerPlatform = 'linux' | 'windows' | 'darwin' | 'bsd' | 'unknown'

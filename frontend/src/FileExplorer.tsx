@@ -34,6 +34,7 @@ import {
 } from './openFiles'
 import { isTyping, matches, shortcutLabel } from './platform'
 import { t } from './i18n'
+import { isWebMode, uploadFiles } from './webTransport'
 
 // CodeMirror and its grammars are the largest thing in the app after the
 // terminal, and a session spent looking at a directory listing never needs
@@ -690,13 +691,33 @@ export function FileExplorer({
     })
   }
 
+  const webFileInput = useRef<HTMLInputElement>(null)
+
   const upload = async (paths?: string[]) => {
     try {
+      // Served over HTTP there is no local disk to reach; open the browser's
+      // own file picker and stream the chosen files to /upload instead.
+      if (isWebMode() && !paths) {
+        webFileInput.current?.click()
+        return
+      }
       const files = paths ?? (await PickLocalFiles())
       if (!files?.length) return
       await StartUpload(hostID, files, cwd)
     } catch (e) {
       onError(String(e))
+    }
+  }
+
+  const onWebFilesPicked = async (list: FileList | null) => {
+    if (!list?.length || !cwd) return
+    try {
+      await uploadFiles(hostID, cwd, list)
+      await refresh()
+    } catch (e) {
+      onError(String(e))
+    } finally {
+      if (webFileInput.current) webFileInput.current.value = ''
     }
   }
 
@@ -888,7 +909,16 @@ export function FileExplorer({
               {t('새 폴더')}
             </button>
             <button onClick={() => void upload()}>{t('업로드…')}</button>
-            <button onClick={() => void uploadFolder()}>{t('폴더 업로드…')}</button>
+            {!isWebMode() && (
+              <button onClick={() => void uploadFolder()}>{t('폴더 업로드…')}</button>
+            )}
+            <input
+              ref={webFileInput}
+              type="file"
+              multiple
+              hidden
+              onChange={(e) => void onWebFilesPicked(e.target.files)}
+            />
             <button disabled={selectedEntries.length === 0} onClick={() => void download()}>
               {t('다운로드…')}
             </button>

@@ -193,9 +193,61 @@ jobs:
           path: build/bin/
           retention-days: 14
 
+  server:
+    name: Server (headless, Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          # The same reason as the desktop build: the newest patch carries the
+          # stdlib CVE fixes, and it is what builds the binaries people download.
+          check-latest: true
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # The server binary embeds the built frontend (frontend/embed.go), so the
+      # UI must be compiled before the Go build — no Wails, no webview, no cgo.
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      # One static binary per server architecture. CGO_ENABLED=0 means no libc,
+      # no webkit — it runs on any Linux box, unlike the desktop Linux binary
+      # that is pinned to a webkit2gtk version.
+      - name: Build server binaries
+        run: |
+          mkdir -p build/server
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags "-s -w" \
+              -o litedeck-server-linux-$arch ./cmd/litedeck-server
+            tar czf build/server/litedeck-server-linux-$arch.tar.gz litedeck-server-linux-$arch
+            rm -f litedeck-server-linux-$arch
+          done
+
+      - name: Checksums
+        run: |
+          cd build/server
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: litedeck-server
+          path: build/server/
+          retention-days: 14
+
   release:
     name: Draft release
-    needs: build
+    needs: [build, server]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
