@@ -11,4 +11,4 @@ package app
 // together, then tagging v<Version>. The tag is the third corner and is checked
 // too: release.yml refuses to build a tag that disagrees with this constant,
 // because the version a binary reports is the one that reaches the bug report.
-const Version = "1.6.0"
+const Version = "1.6.1"
