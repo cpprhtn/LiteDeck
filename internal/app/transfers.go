@@ -723,6 +723,9 @@ func (a *App) ClearFinishedTransfers() { a.transfers.clearFinished() }
 
 // PickLocalFiles opens the OS file chooser for uploading.
 func (a *App) PickLocalFiles() ([]string, error) {
+	if a.headless {
+		return nil, i18n.Errorf("서버 모드에서는 로컬 파일 선택창을 열 수 없습니다 — 브라우저에서 업로드하세요")
+	}
 	if a.ctx == nil {
 		return nil, errors.New("app: no window")
 	}
@@ -736,6 +739,9 @@ func (a *App) PickLocalFiles() ([]string, error) {
 // files and folders in the same pass — asking for one or the other is the only
 // way to offer both.
 func (a *App) PickLocalUploadDir() (string, error) {
+	if a.headless {
+		return "", i18n.Errorf("서버 모드에서는 로컬 폴더 선택창을 열 수 없습니다 — 브라우저에서 업로드하세요")
+	}
 	if a.ctx == nil {
 		return "", errors.New("app: no window")
 	}
@@ -746,6 +752,9 @@ func (a *App) PickLocalUploadDir() (string, error) {
 
 // PickLocalDir opens the OS directory chooser for downloading into.
 func (a *App) PickLocalDir() (string, error) {
+	if a.headless {
+		return "", i18n.Errorf("서버 모드에서는 로컬 폴더 선택창을 열 수 없습니다")
+	}
 	if a.ctx == nil {
 		return "", errors.New("app: no window")
 	}

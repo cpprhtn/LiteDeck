@@ -49,6 +49,13 @@ type App struct {
 	// here with real concurrency in it — can be tested without a window.
 	emit func(event string, payload any)
 
+	// headless is set by StartupHeadless: the app is running as the web server
+	// binary with no webview, so clipboard reads and native file dialogs — the
+	// only things that reach for the Wails runtime with a.ctx — are unavailable
+	// and say so rather than panicking on a context that has no frontend behind
+	// it.
+	headless bool
+
 	// configDir is resolved once at startup rather than looked up per call, so
 	// integration tests can point the whole app at a temporary directory.
 	configDir  string
@@ -86,8 +93,6 @@ func New() *App {
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
 	a.emit = func(event string, payload any) { wr.EventsEmit(ctx, event, payload) }
-	a.mgr = sshcore.NewManager(sshcore.ManagerOptions{}, a.emitConnectionState)
-	a.secrets = secret.Open()
 
 	// Paths only — the frontend decides what to do with them, because only it
 	// knows which host and directory the user is looking at.
@@ -96,6 +101,30 @@ func (a *App) Startup(ctx context.Context) {
 			a.emit("files:dropped", paths)
 		}
 	})
+
+	a.boot()
+}
+
+// StartupHeadless boots the app as the web server binary (cmd/litedeck-server),
+// with events delivered by emit — a WebSocket broadcast — instead of the Wails
+// runtime. There is no webview: no file-drop hook, and the clipboard and native
+// file dialogs report themselves unavailable rather than reaching for a runtime
+// that is not there (see arch/08). Everything below the two seams is identical
+// to the desktop path, which is why they share boot().
+func (a *App) StartupHeadless(ctx context.Context, emit func(event string, payload any)) {
+	a.ctx = ctx
+	a.emit = emit
+	a.headless = true
+	a.boot()
+}
+
+// boot brings up everything that is not tied to the webview: the connection
+// manager, the credential store, the config files, and — if the user enabled it
+// — the MCP endpoint. It assumes a.emit is already wired, so both the desktop
+// Startup and the headless server reach the same state from here.
+func (a *App) boot() {
+	a.mgr = sshcore.NewManager(sshcore.ManagerOptions{}, a.emitConnectionState)
+	a.secrets = secret.Open()
 
 	dir, err := config.Dir()
 	if err != nil {
@@ -258,6 +287,11 @@ func (a *App) Platform() PlatformInfo {
 // Bound to the frontend only. MCP tools are an explicit list in mcp_tools.go
 // and this is not on it — an AI client cannot read the user's clipboard.
 func (a *App) ReadClipboard() (string, error) {
+	if a.headless {
+		// No webview, so no clipboard to read. Calling the Wails runtime with a
+		// context that has no frontend behind it would panic, not error.
+		return "", i18n.Errorf("서버 모드에서는 클립보드를 읽을 수 없습니다")
+	}
 	return wr.ClipboardGetText(a.ctx)
 }
 
