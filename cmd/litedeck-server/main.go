@@ -38,14 +38,29 @@ import (
 func main() {
 	addr := flag.String("addr", "127.0.0.1:8765", "address to listen on")
 	token := flag.String("token", "", "require this bearer token on every request (needed to bind beyond loopback)")
+	selfUser := flag.String("self", "", "manage the box this runs on: connect to its own sshd on boot as this user (Grafana/Cockpit style)")
+	selfPort := flag.Int("self-port", 22, "port of the local sshd for --self")
+	selfKey := flag.String("self-key", "", "identity file for --self (a passphrase-less key is the clean credential)")
+	selfAgent := flag.Bool("self-agent", false, "use ssh-agent for --self")
 	flag.Parse()
 
-	if err := run(*addr, *token); err != nil {
+	var self *app.SelfConfig
+	if *selfUser != "" {
+		self = &app.SelfConfig{
+			User:     *selfUser,
+			Port:     *selfPort,
+			KeyFile:  *selfKey,
+			Password: os.Getenv("LITEDECK_SELF_PASSWORD"), // never on argv (visible in ps)
+			UseAgent: *selfAgent,
+		}
+	}
+
+	if err := run(*addr, *token, self); err != nil {
 		log.Fatalf("litedeck-server: %v", err)
 	}
 }
 
-func run(addr, token string) error {
+func run(addr, token string, self *app.SelfConfig) error {
 	if err := guardExposure(addr, token); err != nil {
 		return err
 	}
@@ -58,6 +73,17 @@ func run(addr, token string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	a.StartupHeadless(ctx, srv.Emit)
+
+	// "This server" mode: connect to the local box's own sshd so opening the UI
+	// lands already inside it. A failure here is logged, not fatal — the UI
+	// still comes up and the user can connect by hand.
+	if self != nil {
+		if err := a.ConnectSelf(ctx, *self); err != nil {
+			log.Printf("litedeck-server: --self connect failed: %v", err)
+		} else {
+			log.Printf("litedeck-server: connected to this server as %s@127.0.0.1:%d", self.User, self.Port)
+		}
+	}
 
 	mux := srv.Handler()          // owns /rpc/ and /ws
 	mux.Handle("/", staticSite()) // the embedded UI, with SPA fallback

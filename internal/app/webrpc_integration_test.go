@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -315,4 +316,47 @@ func postUpload(t *testing.T, ts *httptest.Server, hostID, dir, name, body strin
 	}
 	defer res.Body.Close()
 	return res.StatusCode
+}
+
+// "This server" mode: the box connects to its own sshd on boot with no prompt,
+// and opening the UI must already be inside it — the host connected, its tabs'
+// data reachable. Proven against the real fixture sshd standing in for "the
+// local box"; a password credential here (a key is the production default).
+func TestConnectSelfLandsAlreadyConnected(t *testing.T) {
+	a, _ := liveApp(t) // sets configDir, mgr, secrets, empty hosts
+
+	var port int
+	fmt.Sscanf(sysAddr[strings.LastIndex(sysAddr, ":")+1:], "%d", &port)
+
+	if err := a.ConnectSelf(context.Background(), SelfConfig{
+		User:     sysUser,
+		Port:     port,
+		Password: sysPass,
+		Label:    "this server",
+	}); err != nil {
+		t.Fatalf("ConnectSelf: %v", err)
+	}
+
+	// The host exists and is connected — no click, no prompt.
+	if a.HostState(SelfID) != "connected" {
+		t.Fatalf("self host state = %q, want connected", a.HostState(SelfID))
+	}
+	views := a.ListHosts()
+	var self *HostView
+	for i := range views {
+		if views[i].ID == SelfID {
+			self = &views[i]
+		}
+	}
+	if self == nil || self.State != "connected" {
+		t.Fatalf("self not in host list as connected: %+v", views)
+	}
+
+	// The tabs must be live: a real read against the connected self host works.
+	if _, err := a.HostMetrics(SelfID); err != nil {
+		t.Errorf("monitoring tab data unavailable on self: %v", err)
+	}
+	if home, err := a.HomeDir(SelfID); err != nil || home == "" {
+		t.Errorf("files tab: HomeDir on self failed: %v (%q)", err, home)
+	}
 }

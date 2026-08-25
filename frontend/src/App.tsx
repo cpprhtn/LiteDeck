@@ -140,7 +140,12 @@ export default function App() {
         setBoot(b)
         setHosts(b.hosts)
         if (b.startupError) setError(b.startupError)
-        if (b.hosts.length > 0) setActiveID(b.hosts[0].id)
+        // Prefer a host that is already connected — in server "this server" mode
+        // the box auto-connects itself, so opening the UI should land inside it
+        // rather than on whatever happens to be first.
+        const connected = b.hosts.find((h) => h.state === 'connected')
+        if (connected) setActiveID(connected.id)
+        else if (b.hosts.length > 0) setActiveID(b.hosts[0].id)
       } catch (e) {
         setBenchMode(false)
         setError(String(e))
