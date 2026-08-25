@@ -12,6 +12,24 @@ import { t } from './i18n'
 
 type Handler = (payload: unknown) => void
 
+// A deployment that binds beyond loopback requires a token (see arch/08 / the
+// server refusing 0.0.0.0 without --token). The browser cannot set an
+// Authorization header on a WebSocket handshake and has no other channel, so it
+// arrives in the URL: open http://host:port/?token=SECRET. Read once; the query
+// string is not used for anything else. Behind a reverse proxy that does the
+// auth there is no token and this stays empty.
+const authToken = new URLSearchParams(window.location.search).get('token') ?? ''
+
+function authHeaders(): Record<string, string> {
+  return authToken ? { Authorization: `Bearer ${authToken}` } : {}
+}
+
+/** Appends the token to a URL for channels that cannot carry a header (WS). */
+function withToken(url: string): string {
+  if (!authToken) return url
+  return url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(authToken)
+}
+
 // The path the app is served under, so a reverse proxy mounting it at
 // `/litedeck/` still resolves `/litedeck/rpc/...` (the proxy must not strip the
 // prefix, or bind the app at the root — see arch/08).
@@ -26,7 +44,7 @@ async function rpc(method: string, args: unknown[]): Promise<unknown> {
     // application/json is load-bearing: it forces a CORS preflight for any
     // cross-origin caller, which the server's Origin check then fails. A
     // same-origin call (the app itself) needs no preflight.
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(args),
   })
 
@@ -56,7 +74,7 @@ class EventBus {
 
   connect() {
     const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const ws = new WebSocket(`${scheme}://${window.location.host}${basePath()}ws`)
+    const ws = new WebSocket(withToken(`${scheme}://${window.location.host}${basePath()}ws`))
 
     ws.onopen = () => {
       this.retry = 0
@@ -145,7 +163,7 @@ export async function uploadFiles(
   const form = new FormData()
   for (const f of Array.from(files)) form.append('file', f, f.name)
   const url = `${basePath()}upload?hostId=${encodeURIComponent(hostId)}&dir=${encodeURIComponent(remoteDir)}`
-  const res = await fetch(url, { method: 'POST', body: form })
+  const res = await fetch(url, { method: 'POST', body: form, headers: authHeaders() })
   if (!res.ok) {
     let msg = t('업로드 실패: HTTP {status}', { status: res.status })
     try {
