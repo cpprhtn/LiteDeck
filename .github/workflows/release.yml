@@ -331,10 +331,26 @@ jobs:
 
             SmartScreen 경고는 **추가 정보 → 실행** 으로 넘깁니다.
 
-            ### Linux
+            ### Linux (데스크톱)
 
             `libwebkit2gtk`와 `libgtk-3`가 필요합니다.
 
             ```
             tar xzf litedeck-linux-amd64.tar.gz && chmod +x litedeck && ./litedeck
             ```
+
+            ## 서버 모드 (브라우저로 접근 · 선택)
+
+            데스크톱 앱과는 **다른 별개 바이너리**입니다. 웹킷·GTK 의존이 없는
+            정적 단일 바이너리로, 서버에 올려두고 브라우저로 씁니다(그라파나 방식).
+            위의 `litedeck-linux-amd64.tar.gz`(데스크톱 GUI)와 혼동하지 마세요.
+
+            `litedeck-server-linux-amd64.tar.gz` · `litedeck-server-linux-arm64.tar.gz`
+
+            ```
+            tar xzf litedeck-server-linux-amd64.tar.gz
+            ./litedeck-server            # 127.0.0.1:8765, 로그인 기본 비밀번호: litedeck
+            ```
+
+            띄운 뒤 브라우저로 그 주소를 엽니다. 바깥 노출·리버스 프록시·비밀번호
+            변경은 [docs/server-mode.md](https://github.com/cpprhtn/LiteDeck/blob/main/docs/server-mode.md) 를 보세요.
