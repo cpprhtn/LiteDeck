@@ -122,7 +122,10 @@ export default function App() {
   useEffect(() => {
     ;(async () => {
       try {
-        if (await BenchMode()) {
+        // BenchMode is a dev-only spike (report.go); the server binary does not
+        // expose it, so its absence means "not in bench mode", not a boot
+        // failure. Catching keeps a missing dev endpoint from aborting boot.
+        if (await BenchMode().catch(() => false)) {
           setBenchMode(true)
           return
         }
