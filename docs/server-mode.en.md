@@ -53,9 +53,13 @@ location / {
 ```
 
 > [!IMPORTANT]
-> To bind a non-loopback address directly without a proxy (`--addr 0.0.0.0:...`)
-> a **`--token` is required**; the server refuses to start otherwise — so an
-> unauthenticated SSH gateway is never opened by accident.
+> **To bind a non-loopback address (`--addr 0.0.0.0:...`) authentication must be
+> on** — either the login (on by default) or a `--token` satisfies it. Only when
+> both are off (`--no-auth`) does the server refuse to start, so an
+> unauthenticated SSH gateway is never opened by accident. That is the floor, not
+> the recommendation: do not expose it on the default password `litedeck`, and
+> keep real exposure behind the reverse proxy (TLS) above so credentials never
+> travel over plain HTTP.
 
 ## Password (login)
 
