@@ -12,7 +12,7 @@ This section separates **what has actually been run** from what merely ought to 
 |---|---|---|
 | **Client** | macOS 26.5.2 (arm64) | Development, daily use, every feature. Release binary launch confirmed |
 | **Client** | Windows | Release `litedeck.exe` launch confirmed |
-| **Client** | **Ubuntu 24.04.3 (Proxmox VM)** | Release `litedeck-linux-amd64.tar.gz` launch confirmed: the window opens, connects to a real server, and shows monitoring and a file listing. No keychain there, so the **credential-storage fallback** was exercised too |
+| **Client** | **Ubuntu 24.04.3 (Proxmox VM)** | Release Linux desktop binary launch confirmed: the window opens, connects to a real server, and shows monitoring and a file listing. No keychain there, so the **credential-storage fallback** was exercised too |
 | **Server** | **Windows 10 Pro / PowerShell 5.1 (a real SSH server)** | Services, processes, network, monitoring. Not a container |
 | **Server** | **Ubuntu 24.04.4 (a real SSH server)** | The whole read side (metrics, services and failed detection, containers, exposed ports, journal) plus reading, writing and deleting files, including the permission-denied path |
 | **Server** | Ubuntu 22.04.5 / systemd 249 | Full flow: services (JSON path), files, processes, timers, log tailing, privilege escalation |

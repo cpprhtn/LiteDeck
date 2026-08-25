@@ -141,7 +141,7 @@ jobs:
             ls -la
             exit 1
           fi
-          zip -ry litedeck-macos.zip "${apps[0]}"
+          zip -ry litedeck-desktop-macos.zip "${apps[0]}"
           rm -rf "${apps[0]}"
 
       # Windows is the only platform that was uploading a bare executable, and a
@@ -163,14 +163,14 @@ jobs:
             ls -la
             exit 1
           fi
-          7z a -tzip litedeck-windows-amd64.zip litedeck.exe
+          7z a -tzip litedeck-desktop-windows-amd64.zip litedeck.exe
           rm -f litedeck.exe
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
         run: |
           cd build/bin
-          tar czf litedeck-linux-amd64.tar.gz litedeck
+          tar czf litedeck-desktop-linux-amd64.tar.gz litedeck
           rm -f litedeck
 
       - name: Checksums
@@ -298,7 +298,7 @@ jobs:
 
             ### macOS
 
-            `litedeck-macos.zip` 압축 해제 후 `litedeck.app`.
+            `litedeck-desktop-macos.zip` 압축 해제 후 `litedeck.app`.
             Intel·Apple Silicon 공용 바이너리입니다.
 
             첫 실행에서 `Apple could not verify "litedeck" is free of malware…`
@@ -313,7 +313,7 @@ jobs:
 
             ### Windows
 
-            `litedeck-windows-amd64.zip` 압축을 풀면 `litedeck.exe` 하나입니다.
+            `litedeck-desktop-windows-amd64.zip` 압축을 풀면 `litedeck.exe` 하나입니다.
             설치 관리자는 없습니다 — 원하는 곳에 두고 쓰시고, 지울 때는 파일만
             지우면 됩니다. WebView2가 없으면 설치 프롬프트가 뜹니다.
 
@@ -334,14 +334,14 @@ jobs:
             `libwebkit2gtk`와 `libgtk-3`가 필요합니다.
 
             ```
-            tar xzf litedeck-linux-amd64.tar.gz && chmod +x litedeck && ./litedeck
+            tar xzf litedeck-desktop-linux-amd64.tar.gz && chmod +x litedeck && ./litedeck
             ```
 
             ## 서버 모드 (브라우저로 접근 · 선택)
 
             데스크톱 앱과는 **다른 별개 바이너리**입니다. 웹킷·GTK 의존이 없는
             정적 단일 바이너리로, 서버에 올려두고 브라우저로 씁니다(그라파나 방식).
-            위의 `litedeck-linux-amd64.tar.gz`(데스크톱 GUI)와 혼동하지 마세요.
+            위의 `litedeck-desktop-linux-amd64.tar.gz`(데스크톱 GUI)와 혼동하지 마세요.
 
             `litedeck-server-linux-amd64.tar.gz` · `litedeck-server-linux-arm64.tar.gz`
 

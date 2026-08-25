@@ -26,7 +26,7 @@ xattr -d com.apple.quarantine /Applications/litedeck.app
 [직접 빌드](building.md)하세요.
 
 ```bash
-tar xzf litedeck-linux-amd64.tar.gz && chmod +x litedeck && ./litedeck
+tar xzf litedeck-desktop-linux-amd64.tar.gz && chmod +x litedeck && ./litedeck
 ```
 
 ## 서버 준비

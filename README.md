@@ -101,9 +101,9 @@ claude mcp add --transport http litedeck http://127.0.0.1:<포트>/mcp \
 
 | 파일 | 대상 |
 |---|---|
-| `litedeck-macos.zip` | macOS (Intel·Apple Silicon 공용) |
-| `litedeck-windows-amd64.zip` | Windows 10/11 (amd64). 압축을 풀면 `litedeck.exe` 하나, 설치 없이 바로 실행 |
-| `litedeck-linux-amd64.tar.gz` | Linux (amd64). **Ubuntu 24.04 이상** — `libwebkit2gtk-4.1` 이 필요합니다. 22.04 라면 [직접 빌드](docs/building.md) |
+| `litedeck-desktop-macos.zip` | macOS (Intel·Apple Silicon 공용) |
+| `litedeck-desktop-windows-amd64.zip` | Windows 10/11 (amd64). 압축을 풀면 `litedeck.exe` 하나, 설치 없이 바로 실행 |
+| `litedeck-desktop-linux-amd64.tar.gz` | Linux (amd64). **Ubuntu 24.04 이상** — `libwebkit2gtk-4.1` 이 필요합니다. 22.04 라면 [직접 빌드](docs/building.md) |
 
 > [!WARNING]
 > **현재 릴리스는 코드 서명이 되어 있지 않습니다.** 서명·공증에는 비용이 들어 초기에는 미서명으로 배포하며,

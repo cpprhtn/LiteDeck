@@ -104,9 +104,9 @@ Grab a build from the [releases page](https://github.com/cpprhtn/LiteDeck/releas
 
 | File | For |
 |---|---|
-| `litedeck-macos.zip` | macOS (universal, Intel and Apple Silicon) |
-| `litedeck-windows-amd64.zip` | Windows 10/11 (amd64). Unzip to a single `litedeck.exe`, no installer |
-| `litedeck-linux-amd64.tar.gz` | Linux (amd64). **Ubuntu 24.04 or newer** — it needs `libwebkit2gtk-4.1`. On 22.04, [build from source](docs/building.en.md) |
+| `litedeck-desktop-macos.zip` | macOS (universal, Intel and Apple Silicon) |
+| `litedeck-desktop-windows-amd64.zip` | Windows 10/11 (amd64). Unzip to a single `litedeck.exe`, no installer |
+| `litedeck-desktop-linux-amd64.tar.gz` | Linux (amd64). **Ubuntu 24.04 or newer** — it needs `libwebkit2gtk-4.1`. On 22.04, [build from source](docs/building.en.md) |
 
 > [!WARNING]
 > **These builds are not code-signed.** Signing and notarisation both cost money, so early releases ship unsigned, and
