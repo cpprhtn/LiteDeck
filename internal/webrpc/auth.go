@@ -148,24 +148,36 @@ func loginPage(errMsg string) string {
 	}
 	return `<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="favicon.png">
 <title>LiteDeck</title>
 <style>
   :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
   body { margin:0; min-height:100vh; display:grid; place-items:center;
     font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
     background:#f6f7f9; color:#1a1a1a; }
-  @media (prefers-color-scheme: dark){ body{ background:#0f1115; color:#e6e6e6; } .card{ background:#171a21; border-color:#262b36; } input{ background:#0f1115; color:#e6e6e6; border-color:#2a2f3a; } }
-  .card { width:320px; padding:32px 28px; background:#fff; border:1px solid #e5e7eb;
+  .card { width:320px; padding:32px 28px; background:#ffffff; border:1px solid #e5e7eb;
     border-radius:12px; box-shadow:0 4px 24px rgba(0,0,0,.06); }
-  h1 { margin:0 0 4px; font-size:20px; } .sub{ margin:0 0 20px; opacity:.6; font-size:13px; }
-  label { display:block; font-size:13px; margin-bottom:6px; opacity:.8; }
-  input { width:100%; box-sizing:border-box; padding:10px 12px; font-size:15px;
-    border:1px solid #d1d5db; border-radius:8px; }
+  h1 { margin:0 0 4px; font-size:20px; color:inherit; }
+  .sub { margin:0 0 20px; color:#6b7280; font-size:13px; }
+  label { display:block; font-size:13px; margin-bottom:6px; color:#4b5563; }
+  input { width:100%; padding:10px 12px; font-size:15px; color:#1a1a1a;
+    background:#ffffff; border:1px solid #d1d5db; border-radius:8px; }
+  input:focus { outline:2px solid #2563eb; outline-offset:0; border-color:#2563eb; }
   button { width:100%; margin-top:16px; padding:10px; font-size:15px; font-weight:600;
-    color:#fff; background:#2563eb; border:0; border-radius:8px; cursor:pointer; }
+    color:#ffffff; background:#2563eb; border:0; border-radius:8px; cursor:pointer; }
   button:hover { background:#1d4ed8; }
   .err { margin:0 0 14px; padding:9px 12px; font-size:13px; color:#b91c1c;
-    background:#fef2f2; border-radius:8px; } @media (prefers-color-scheme: dark){ .err{ background:#3a1414; color:#fca5a5; } }
+    background:#fef2f2; border-radius:8px; }
+  /* Dark overrides LAST so they always win over the base rules above. */
+  @media (prefers-color-scheme: dark) {
+    body { background:#0f1115; color:#e6e6e6; }
+    .card { background:#171a21; border-color:#262b36; box-shadow:0 4px 24px rgba(0,0,0,.4); }
+    .sub { color:#9aa4b2; }
+    label { color:#c2c8d0; }
+    input { background:#0f1115; color:#e6e6e6; border-color:#2a2f3a; }
+    .err { background:#3a1414; color:#fca5a5; }
+  }
 </style></head><body>
   <form class="card" method="post" action="login">
     <h1>LiteDeck</h1><p class="sub">이 서버에 접속하려면 로그인하세요</p>

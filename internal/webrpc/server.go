@@ -125,9 +125,16 @@ func (s *Server) Handler(static http.Handler) *http.ServeMux {
 // gateStatic sends an unauthenticated browser to the login page instead of the
 // app. The login page and its POST are exempt (handled on their own routes); a
 // request with no login configured passes straight through.
+func isPublicAsset(p string) bool {
+	return p == "/favicon.png" || p == "/favicon.ico"
+}
+
 func (s *Server) gateStatic(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.password != "" && !s.authed(r) {
+		// The favicon is referenced by the login page itself, so it must load
+		// before there is a session. It is the public app icon; nothing else
+		// static is served before login.
+		if s.password != "" && !s.authed(r) && !isPublicAsset(r.URL.Path) {
 			http.Redirect(w, r, "login", http.StatusFound)
 			return
 		}
