@@ -116,6 +116,11 @@ Grab a build from the [releases page](https://github.com/cpprhtn/LiteDeck/releas
 > That is also why the first launch trips macOS Gatekeeper and Windows SmartScreen. How to get past
 > both is in [Install and server setup](docs/install.en.md).
 
+**Use it from a browser — server mode.** There is also a headless build you put on one server and
+open in a browser instead of running the desktop app — `litedeck-server-linux-amd64.tar.gz` ·
+`litedeck-server-linux-arm64.tar.gz`. Like Grafana, you just open a URL. Running it, exposing it and
+login are covered in [server mode](docs/server-mode.en.md).
+
 **On the server side.** Linux needs nothing if you can already SSH into it. Windows needs the OpenSSH
 server switched on. To reach a machine at home from outside, a mesh VPN beats opening a port on your
 router — [preparing the server](docs/install.en.md#preparing-the-server) ·
