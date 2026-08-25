@@ -26,7 +26,7 @@ CI runner has. On a distribution that only ships `libwebkit2gtk-4.0`, such as 22
 start — [build from source](building.en.md) instead.
 
 ```bash
-tar xzf litedeck-linux-amd64.tar.gz && chmod +x litedeck && ./litedeck
+tar xzf litedeck-desktop-linux-amd64.tar.gz && chmod +x litedeck && ./litedeck
 ```
 
 ## Preparing the server

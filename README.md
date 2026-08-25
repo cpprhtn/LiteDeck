@@ -101,9 +101,9 @@ claude mcp add --transport http litedeck http://127.0.0.1:<포트>/mcp \
 
 | 파일 | 대상 |
 |---|---|
-| `litedeck-macos.zip` | macOS (Intel·Apple Silicon 공용) |
-| `litedeck-windows-amd64.zip` | Windows 10/11 (amd64). 압축을 풀면 `litedeck.exe` 하나, 설치 없이 바로 실행 |
-| `litedeck-linux-amd64.tar.gz` | Linux (amd64). **Ubuntu 24.04 이상** — `libwebkit2gtk-4.1` 이 필요합니다. 22.04 라면 [직접 빌드](docs/building.md) |
+| `litedeck-desktop-macos.zip` | macOS (Intel·Apple Silicon 공용) |
+| `litedeck-desktop-windows-amd64.zip` | Windows 10/11 (amd64). 압축을 풀면 `litedeck.exe` 하나, 설치 없이 바로 실행 |
+| `litedeck-desktop-linux-amd64.tar.gz` | Linux (amd64). **Ubuntu 24.04 이상** — `libwebkit2gtk-4.1` 이 필요합니다. 22.04 라면 [직접 빌드](docs/building.md) |
 
 > [!WARNING]
 > **현재 릴리스는 코드 서명이 되어 있지 않습니다.** 서명·공증에는 비용이 들어 초기에는 미서명으로 배포하며,
@@ -112,6 +112,10 @@ claude mcp add --transport http litedeck http://127.0.0.1:<포트>/mcp \
 >
 > 그래서 첫 실행에 macOS Gatekeeper와 Windows SmartScreen 경고가 뜹니다. 넘어가는 방법은
 > [설치와 서버 준비](docs/install.md)에 적어두었습니다.
+
+**브라우저로 쓰기 — 서버 모드.** 데스크톱 앱 대신 서버 한 대에 올려두고 브라우저로 접근하는
+헤드리스 빌드도 있습니다 — `litedeck-server-linux-amd64.tar.gz` · `litedeck-server-linux-arm64.tar.gz`.
+그라파나처럼 URL로 붙어서 씁니다. 실행·노출·로그인은 [서버 모드](docs/server-mode.md)에 적어두었습니다.
 
 **서버 쪽 준비.** Linux는 이미 SSH로 접속하고 계시면 끝입니다. Windows는 OpenSSH 서버만 켜면 됩니다.
 집에 있는 PC를 외부에서 다루려면 포트포워딩 대신 메시 VPN을 권합니다 —

@@ -35,5 +35,5 @@ go test ./... -race           # includes integration tests (needs Docker)
 
 Integration tests bring up real servers. `testdata/` holds sshd, systemd and Docker-in-Docker fixtures. Without Docker they skip rather than fail, so **if `-race` finishes in a few seconds the integration tests did not run** (with Docker up it takes about a minute).
 
-v1.6.0 was built with Go 1.26.6, Node 22.13.1, Wails CLI 2.13.0 (library 2.14.0), Docker 29.4.0 on macOS 26.5.2 arm64.
+v1.6.1 was built with Go 1.26.6, Node 22.13.1, Wails CLI 2.13.0 (library 2.14.0), Docker 29.4.0 on macOS 26.5.2 arm64.
 The release workflow pins the same CLI. `@latest` above may hand you a newer one; it still builds.
