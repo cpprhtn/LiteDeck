@@ -42,7 +42,13 @@ func main() {
 	selfPort := flag.Int("self-port", 22, "port of the local sshd for --self")
 	selfKey := flag.String("self-key", "", "identity file for --self (a passphrase-less key is the clean credential)")
 	selfAgent := flag.Bool("self-agent", false, "use ssh-agent for --self")
+	password := flag.String("password", "", "require this password at a login page (or set LITEDECK_PASSWORD); the Grafana-style way to expose it without a proxy")
 	flag.Parse()
+
+	pw := *password
+	if pw == "" {
+		pw = os.Getenv("LITEDECK_PASSWORD")
+	}
 
 	var self *app.SelfConfig
 	if *selfUser != "" {
@@ -55,19 +61,20 @@ func main() {
 		}
 	}
 
-	if err := run(*addr, *token, self); err != nil {
+	if err := run(*addr, *token, pw, self); err != nil {
 		log.Fatalf("litedeck-server: %v", err)
 	}
 }
 
-func run(addr, token string, self *app.SelfConfig) error {
-	if err := guardExposure(addr, token); err != nil {
+func run(addr, token, password string, self *app.SelfConfig) error {
+	if err := guardExposure(addr, token, password); err != nil {
 		return err
 	}
 
 	a := app.New()
 	srv := webrpc.NewServer(webrpc.New(a), token)
-	srv.SetUploader(a) // POST /upload streams browser files to the remote over SFTP
+	srv.SetUploader(a)        // POST /upload streams browser files to the remote over SFTP
+	srv.SetPassword(password) // "" leaves the login page off
 
 	// Events reach the browser over the WebSocket instead of the Wails runtime.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -85,8 +92,7 @@ func run(addr, token string, self *app.SelfConfig) error {
 		}
 	}
 
-	mux := srv.Handler()          // owns /rpc/ and /ws
-	mux.Handle("/", staticSite()) // the embedded UI, with SPA fallback
+	mux := srv.Handler(staticSite()) // /rpc, /ws, /upload, /login, and the gated UI
 
 	httpSrv := &http.Server{
 		Addr:    addr,
@@ -107,7 +113,7 @@ func run(addr, token string, self *app.SelfConfig) error {
 		a.Shutdown(context.Background())
 	}()
 
-	log.Printf("litedeck-server: listening on http://%s (bind %s)", addr, bindNote(addr, token))
+	log.Printf("litedeck-server: listening on http://%s (bind %s)", addr, bindNote(addr, token, password))
 	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return err
 	}
@@ -119,12 +125,12 @@ func run(addr, token string, self *app.SelfConfig) error {
 // endpoint safe is that it cannot be reached, or that reaching it needs a
 // secret. A reverse proxy in front satisfies neither by itself, so the operator
 // opts in explicitly with --token when they front it.
-func guardExposure(addr, token string) error {
+func guardExposure(addr, token, password string) error {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		return fmt.Errorf("addr %q is not host:port: %w", addr, err)
 	}
-	if token != "" {
+	if token != "" || password != "" {
 		return nil
 	}
 	ip := net.ParseIP(host)
@@ -137,11 +143,15 @@ func guardExposure(addr, token string) error {
 	return nil
 }
 
-func bindNote(addr, token string) string {
-	if token != "" {
+func bindNote(addr, token, password string) string {
+	switch {
+	case password != "":
+		return "login page"
+	case token != "":
 		return "token required"
+	default:
+		return "loopback, open — put a reverse proxy in front to expose it"
 	}
-	return "loopback, no token — put a reverse proxy in front to expose it"
 }
 
 // staticSite serves the embedded UI. Anything that is not a real asset falls

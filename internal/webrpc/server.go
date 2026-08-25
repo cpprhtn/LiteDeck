@@ -42,6 +42,8 @@ type Server struct {
 	// in the query string — logged by some proxies, which is why loopback +
 	// Origin remain the primary defence and this is the fallback.
 	token    string
+	password string        // "" = no login page; a value gates access behind /login
+	sessions *sessionStore // live login sessions
 	uploader Uploader
 
 	mu      sync.Mutex
@@ -57,41 +59,80 @@ type Uploader interface {
 
 // NewServer wraps a dispatcher. token may be empty (loopback deployments).
 func NewServer(disp *Dispatcher, token string) *Server {
-	return &Server{disp: disp, token: token, clients: map[*wsClient]struct{}{}}
+	return &Server{disp: disp, token: token, sessions: newSessionStore(), clients: map[*wsClient]struct{}{}}
+}
+
+// SetPassword turns on the built-in login: unauthenticated requests to /rpc,
+// /ws, /upload and the app itself are sent to /login, and a correct password
+// mints a session cookie. Empty leaves login off.
+func (s *Server) SetPassword(pw string) { s.password = pw }
+
+// authed reports whether a request may reach a guarded route. Open only when no
+// auth is configured at all (loopback dev); otherwise a valid token OR a live
+// session cookie.
+func (s *Server) authed(r *http.Request) bool {
+	if s.token == "" && s.password == "" {
+		return true
+	}
+	if s.token != "" && s.bearerOK(r) {
+		return true
+	}
+	return s.sessionValid(r)
+}
+
+// bearerOK checks the Authorization header token (machine/proxy path).
+func (s *Server) bearerOK(r *http.Request) bool {
+	got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	return ok && subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) == 1
 }
 
 // SetUploader enables POST /upload, backed by u. Left unset, uploads are simply
 // not offered.
 func (s *Server) SetUploader(u Uploader) { s.uploader = u }
 
-// authOK checks the bearer token for /rpc (header) — empty token means open.
-func (s *Server) authOK(r *http.Request) bool {
-	if s.token == "" {
+// wsAuthed authorises a WebSocket handshake. The session cookie rides the
+// handshake automatically; the token, which cannot, falls back to a query param.
+func (s *Server) wsAuthed(r *http.Request) bool {
+	if s.token == "" && s.password == "" {
 		return true
 	}
-	h := r.Header.Get("Authorization")
-	got, ok := strings.CutPrefix(h, "Bearer ")
-	return ok && subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) == 1
-}
-
-// wsAuthOK checks the token for the WS handshake (query param).
-func (s *Server) wsAuthOK(r *http.Request) bool {
-	if s.token == "" {
+	if s.password != "" && s.sessionValid(r) {
 		return true
 	}
-	return subtle.ConstantTimeCompare([]byte(r.URL.Query().Get("token")), []byte(s.token)) == 1
+	return s.token != "" && subtle.ConstantTimeCompare([]byte(r.URL.Query().Get("token")), []byte(s.token)) == 1
 }
 
-// Handler returns the mux: static assets are the caller's job (they embed the
-// frontend), this owns /rpc/ and /ws.
-func (s *Server) Handler() *http.ServeMux {
+// Handler returns the mux. static serves the embedded UI at "/" (pass nil in
+// tests that only exercise the API). When a password is set, "/login" and
+// "/logout" are added and the app itself is gated behind a session.
+func (s *Server) Handler(static http.Handler) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/rpc/", s.handleRPC)
 	mux.HandleFunc("/ws", s.handleWS)
 	if s.uploader != nil {
 		mux.HandleFunc("/upload", s.handleUpload)
 	}
+	if s.password != "" {
+		mux.HandleFunc("/login", s.handleLogin)
+		mux.HandleFunc("/logout", s.handleLogout)
+	}
+	if static != nil {
+		mux.Handle("/", s.gateStatic(static))
+	}
 	return mux
+}
+
+// gateStatic sends an unauthenticated browser to the login page instead of the
+// app. The login page and its POST are exempt (handled on their own routes); a
+// request with no login configured passes straight through.
+func (s *Server) gateStatic(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.password != "" && !s.authed(r) {
+			http.Redirect(w, r, "login", http.StatusFound)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // maxUploadMem is how much of a multipart upload is buffered in memory before
@@ -113,7 +154,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden origin", http.StatusForbidden)
 		return
 	}
-	if !s.authOK(r) {
+	if !s.authed(r) {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="litedeck"`)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -197,7 +238,7 @@ func (s *Server) handleRPC(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden origin", http.StatusForbidden)
 		return
 	}
-	if !s.authOK(r) {
+	if !s.authed(r) {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="litedeck"`)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -257,7 +298,7 @@ type wsClient struct {
 }
 
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
-	if !s.wsAuthOK(r) {
+	if !s.wsAuthed(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}

@@ -11,7 +11,7 @@ import (
 
 func testServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	srv := httptest.NewServer(NewServer(New(&fakeApp{}), "").Handler())
+	srv := httptest.NewServer(NewServer(New(&fakeApp{}), "").Handler(nil))
 	t.Cleanup(srv.Close)
 	return srv
 }
@@ -147,7 +147,7 @@ func TestOriginOKMatrix(t *testing.T) {
 // the only guard on the event stream.
 func TestWSDeliversEventsAndChecksOrigin(t *testing.T) {
 	s := NewServer(New(&fakeApp{}), "")
-	srv := httptest.NewServer(s.Handler())
+	srv := httptest.NewServer(s.Handler(nil))
 	defer srv.Close()
 	wsURL := "ws" + srv.URL[len("http"):] + "/ws"
 
@@ -187,7 +187,7 @@ func TestWSDeliversEventsAndChecksOrigin(t *testing.T) {
 // other tab — Emit runs on the PTY/log reader path.
 func TestSlowClientIsDroppedNotBlocking(t *testing.T) {
 	s := NewServer(New(&fakeApp{}), "")
-	srv := httptest.NewServer(s.Handler())
+	srv := httptest.NewServer(s.Handler(nil))
 	defer srv.Close()
 	wsURL := "ws" + srv.URL[len("http"):] + "/ws"
 

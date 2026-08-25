@@ -33,3 +33,7 @@ func waitClients(t *testing.T, s *Server, n int) {
 	}
 	t.Fatalf("client count never reached %d", n)
 }
+
+func dialWSWithHeader(url string, h http.Header) (*websocket.Conn, *http.Response, error) {
+	return websocket.DefaultDialer.Dial(url, h)
+}

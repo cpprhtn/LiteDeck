@@ -54,6 +54,12 @@ async function rpc(method: string, args: unknown[]): Promise<unknown> {
   } catch {
     /* empty or non-JSON body */
   }
+  if (res.status === 401) {
+    // The session expired (or was never established). Send the browser to the
+    // login page rather than surfacing a raw 401 in the UI.
+    window.location.href = `${basePath()}login`
+    throw new Error(t('로그인이 필요합니다'))
+  }
   if (!res.ok) {
     throw new Error(body.error ?? `RPC ${method}: HTTP ${res.status}`)
   }

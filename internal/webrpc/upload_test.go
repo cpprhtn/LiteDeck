@@ -27,7 +27,7 @@ func uploadServer(t *testing.T) (*httptest.Server, *fakeUploader) {
 	up := &fakeUploader{}
 	s := NewServer(New(&fakeApp{}), "")
 	s.SetUploader(up)
-	srv := httptest.NewServer(s.Handler())
+	srv := httptest.NewServer(s.Handler(nil))
 	t.Cleanup(srv.Close)
 	return srv, up
 }
@@ -112,7 +112,7 @@ func TestUploadEndpointRequiresHostAndDir(t *testing.T) {
 // 500 — a deployment that does not want uploads just does not get the route.
 func TestUploadNotRegisteredWithoutUploader(t *testing.T) {
 	s := NewServer(New(&fakeApp{}), "")
-	srv := httptest.NewServer(s.Handler())
+	srv := httptest.NewServer(s.Handler(nil))
 	defer srv.Close()
 	body, ct := multipartBody(t, map[string]string{"a.txt": "x"})
 	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/upload?hostId=h&dir=/tmp", body)

@@ -41,7 +41,7 @@ func TestPromptsRoundTripOverWebTransport(t *testing.T) {
 	// call time, so overriding it here is enough.
 	a.emit = srv.Emit
 
-	ts := httptest.NewServer(srv.Handler())
+	ts := httptest.NewServer(srv.Handler(nil))
 	defer ts.Close()
 
 	ws := dialWSClient(t, ts)
@@ -201,7 +201,7 @@ func TestUploadOverWebAfterConnect(t *testing.T) {
 	srv.SetUploader(a)
 	a.emit = srv.Emit
 
-	ts := httptest.NewServer(srv.Handler())
+	ts := httptest.NewServer(srv.Handler(nil))
 	defer ts.Close()
 
 	ws := dialWSClient(t, ts)
