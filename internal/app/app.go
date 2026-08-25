@@ -49,6 +49,11 @@ type App struct {
 	// here with real concurrency in it — can be tested without a window.
 	emit func(event string, payload any)
 
+	// selfMode is set when the server auto-connected the local box (--self). The
+	// frontend hides the host sidebar for it — there is only ever the one "this
+	// server" host — and keeps just the version and language controls.
+	selfMode bool
+
 	// headless is set by StartupHeadless: the app is running as the web server
 	// binary with no webview, so clipboard reads and native file dialogs — the
 	// only things that reach for the Wails runtime with a.ctx — are unavailable
@@ -201,6 +206,9 @@ type Bootstrap struct {
 	// on when the webview has nothing useful to report.
 	SystemLanguage string `json:"systemLanguage"`
 	StartupError   string `json:"startupError,omitempty"`
+	// SelfMode tells the UI this is a "this server" instance: one auto-connected
+	// host, so the sidebar is redundant.
+	SelfMode bool `json:"selfMode,omitempty"`
 }
 
 // Bootstrap reports the initial application state.
@@ -214,6 +222,7 @@ func (a *App) Bootstrap() Bootstrap {
 		ConfigDir:      a.configDir,
 		StartupError:   a.startupErr,
 		SystemLanguage: systemLanguage(),
+		SelfMode:       a.selfMode,
 	}
 	if a.settings != nil {
 		b.Language = a.settings.Get().Language

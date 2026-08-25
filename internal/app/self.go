@@ -96,6 +96,7 @@ func (a *App) ConnectSelf(ctx context.Context, cfg SelfConfig) error {
 	}, a.log); err != nil {
 		return fmt.Errorf("app: connect to this server (127.0.0.1:%d): %w", port, err)
 	}
+	a.selfMode = true
 	return nil
 }
 

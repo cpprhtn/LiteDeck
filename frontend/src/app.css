@@ -189,6 +189,24 @@
   font-weight: 600;
 }
 
+/* Server "this server" mode: no host sidebar (one auto-connected host), so the
+   grid drops to a single column and the shell controls move into the header. */
+.app[data-self] {
+  grid-template-columns: 1fr;
+  grid-template-areas:
+    'main'
+    'cmdlog';
+}
+.self-controls {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.self-controls .spacer {
+  display: none;
+}
+
 .tabs {
   display: flex;
   gap: 2px;
