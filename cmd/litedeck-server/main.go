@@ -35,6 +35,13 @@ import (
 	"github.com/cpprhtn/LiteDeck/internal/webrpc"
 )
 
+// defaultPassword is what the login page accepts out of the box. It is the app's
+// own name on purpose — a friendly, memorable default for a single-user tool, so
+// a fresh instance is usable in one guess. It is not a secret: exposing an
+// instance still on the default is called out loudly at startup, and changing it
+// is a one-line config edit (LITEDECK_PASSWORD) plus a restart.
+const defaultPassword = "litedeck"
+
 func main() {
 	addr := flag.String("addr", "127.0.0.1:8765", "address to listen on")
 	token := flag.String("token", "", "require this bearer token on every request (needed to bind beyond loopback)")
@@ -42,12 +49,18 @@ func main() {
 	selfPort := flag.Int("self-port", 22, "port of the local sshd for --self")
 	selfKey := flag.String("self-key", "", "identity file for --self (a passphrase-less key is the clean credential)")
 	selfAgent := flag.Bool("self-agent", false, "use ssh-agent for --self")
-	password := flag.String("password", "", "require this password at a login page (or set LITEDECK_PASSWORD); the Grafana-style way to expose it without a proxy")
+	password := flag.String("password", "", "login password (or set LITEDECK_PASSWORD); defaults to \"litedeck\" — change it before exposing")
+	noAuth := flag.Bool("no-auth", false, "turn the login off entirely (loopback only; refused on a non-loopback bind)")
 	flag.Parse()
 
+	// --password wins, then the env, then the memorable default. --no-auth means
+	// no login at all — the escape hatch for a purely local dev instance.
 	pw := *password
 	if pw == "" {
 		pw = os.Getenv("LITEDECK_PASSWORD")
+	}
+	if pw == "" && !*noAuth {
+		pw = defaultPassword
 	}
 
 	var self *app.SelfConfig
@@ -61,6 +74,10 @@ func main() {
 		}
 	}
 
+	if pw == defaultPassword {
+		log.Printf("⚠ litedeck-server: the login password is the default %q — change it with "+
+			"LITEDECK_PASSWORD (or --password) and restart before exposing this (see docs/server-mode.md)", defaultPassword)
+	}
 	if err := run(*addr, *token, pw, self); err != nil {
 		log.Fatalf("litedeck-server: %v", err)
 	}
@@ -136,9 +153,9 @@ func guardExposure(addr, token, password string) error {
 	ip := net.ParseIP(host)
 	loopback := host == "localhost" || (ip != nil && ip.IsLoopback())
 	if !loopback {
-		return fmt.Errorf("refusing to bind %s without --token: this endpoint can open SSH "+
-			"sessions to your servers, so a non-loopback bind must require a token (or put it "+
-			"behind a reverse proxy and bind 127.0.0.1)", addr)
+		return fmt.Errorf("refusing to bind %s with no authentication: this endpoint can open "+
+			"SSH sessions to your servers, so a non-loopback bind needs a login (the default is "+
+			"on), a --token, or a reverse proxy in front with 127.0.0.1 — not --no-auth", addr)
 	}
 	return nil
 }

@@ -57,6 +57,28 @@ location / {
 > a **`--token` is required**; the server refuses to start otherwise — so an
 > unauthenticated SSH gateway is never opened by accident.
 
+## Password (login)
+
+The server binary has **login on by default.** Open the port and you get a login
+page; pass it and a session cookie lets you in — no URL token, no reverse proxy
+(the Grafana way).
+
+- **The default password is `litedeck`** — the app's own name, a memorable
+  default so a fresh instance works in one guess. It is not a secret.
+- **Changing it is a deploy-config edit only.** There is no web change form
+  (single-user, and a change form is only attack surface). From a terminal:
+  ```bash
+  # via the environment (systemd unit, docker run, a shell, ...)
+  LITEDECK_PASSWORD='your-password' litedeck-server --self <user>
+  # or a flag (but argv is visible in ps, so prefer the env var)
+  litedeck-server --password 'your-password' ...
+  ```
+  To change it, edit that config and **restart** — the same as Grafana or Cockpit.
+- **Leaving the default prints a warning at startup.** Change it before exposing
+  the instance — anyone who knows it is `litedeck` can log in.
+- To turn login off entirely, `--no-auth` (loopback only — refused on a
+  non-loopback bind).
+
 ## What to know (verification and limits)
 
 - **Passwords leave the process over the network.** A headless server has no OS
