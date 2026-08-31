@@ -13,7 +13,7 @@ An MCP client (Claude Code, Claude Desktop) can **read and change** your servers
 app. Turn it on with the **MCP** button at the bottom of the sidebar.
 
 > [!IMPORTANT]
-> **Changes are confirmed one at a time by default**, and the dialog shows the literal
+> **File changes are confirmed by default**, and the dialog shows the literal
 > command or file diff. That policy is **owned by the app; the AI cannot turn it off.**
 
 ```

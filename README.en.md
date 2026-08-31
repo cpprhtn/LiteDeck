@@ -87,9 +87,10 @@ All of it read from `/proc` and `df`. **There is still nothing installed on the 
 
 MCP clients like Claude Code and Claude Desktop **sit where the GUI sat**: the same adapter, the same
 already-authenticated SSH connection, the same Command Log. They get 12 read tools and 5 write tools,
-and **changes are confirmed every time by default.** That policy is owned by the app and cannot be
-turned off from the client side. Whatever MCP changed can be undone, and nothing is installed on the
-server.
+and **file changes are held for approval by default** — the dialog shows a diff against what is on the
+server right now, which is information no client has. Per host you can raise that to confirming
+everything. The policy is owned by the app and cannot be relaxed from the client side. Files MCP
+changed can be rolled back, and nothing is installed on the server.
 
 ```bash
 claude mcp add --transport http litedeck http://127.0.0.1:<port>/mcp \
