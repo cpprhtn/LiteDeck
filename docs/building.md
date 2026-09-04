@@ -3,7 +3,7 @@
 [← README](../README.md)
 
 ```bash
-# 필요: Go 1.25+, Node 20+, Wails v2
+# 필요: Go 1.26+, Node 20+, Wails v2
 #
 # Go가 더 낮아도 됩니다. Go 1.21+ 라면 `go build`가 필요한 툴체인을 스스로
 # 받아옵니다(GOTOOLCHAIN=auto, 기본값). Ubuntu 22.04의 기본 Go 1.18만 아니면

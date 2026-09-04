@@ -1,13 +1,13 @@
 module github.com/cpprhtn/LiteDeck
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/pkg/sftp v1.13.11
 	github.com/wailsapp/wails/v2 v2.14.0
 	github.com/zalando/go-keyring v0.2.8
-	golang.org/x/crypto v0.54.0
+	golang.org/x/crypto v0.56.0
 )
 
 require (
@@ -36,7 +36,7 @@ require (
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/wailsapp/go-webview2 v1.0.22 // indirect
 	github.com/wailsapp/mimetype v1.4.1 // indirect
-	golang.org/x/net v0.56.0 // indirect
+	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 )

@@ -11,7 +11,7 @@ cd LiteDeck
 wails dev
 ```
 
-Wails v2.13이 **Go 1.25+** 를 요구합니다. 설치된 Go가 1.21 이상이면 `go build`가
+go.mod 이 **Go 1.26+** 를 요구합니다(`golang.org/x/crypto` 가 그 버전을 요구합니다). 설치된 Go가 1.21 이상이면 `go build`가
 필요한 툴체인을 스스로 받아오므로(`GOTOOLCHAIN=auto`) 대개 신경 쓸 것이 없습니다.
 
 Linux에서는 `build-essential`과 webkit 개발 헤더가 필요합니다 — 웹뷰가 cgo로
