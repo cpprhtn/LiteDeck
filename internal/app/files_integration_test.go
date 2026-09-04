@@ -1009,3 +1009,122 @@ func TestUploadFileConfinesTheClientChosenName(t *testing.T) {
 		t.Error("a name of just .. was accepted")
 	}
 }
+
+// TestDirectoryTransferResumesAtTheFileItStoppedOn: a cancelled tree picks up
+// at the file that was in flight instead of sending everything again. Proven by
+// the offset it restarts at, not by the result — a tree that quietly began
+// again at the first file would end up just as correct and take twice as long.
+func TestDirectoryTransferResumesAtTheFileItStoppedOn(t *testing.T) {
+	a := connectedApp(t)
+	remoteParent := scratchDir(t, a, "litedeck-dirresume")
+
+	// Several files rather than one big one: the resume unit here is a file,
+	// so the cancel has to be able to land between two of them.
+	local := filepath.Join(t.TempDir(), "tree")
+	names := []string{"part-a.bin", "part-b.bin", "part-c.bin", "part-d.bin", "part-e.bin", "part-f.bin"}
+	bodies := make(map[string]string, len(names))
+	for _, rel := range names {
+		bodies[rel] = strings.Repeat("litedeck "+rel+" 0123456789abcdef\n", 30000) // ~1 MB each
+	}
+	for rel, body := range bodies {
+		p := filepath.Join(local, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ids, err := a.StartUpload("fixture", []string{local}, remoteParent)
+	if err != nil {
+		t.Fatalf("StartUpload(dir): %v", err)
+	}
+	waitTransfer(t, a, ids[0], TransferDone)
+	remoteTree := path.Join(remoteParent, "tree")
+
+	// Back down, cut once at least one file has landed whole.
+	downDir := t.TempDir()
+	ids, err = a.StartDownload("fixture", []string{remoteTree}, downDir)
+	if err != nil {
+		t.Fatalf("StartDownload(dir): %v", err)
+	}
+	id := ids[0]
+	cutBetweenFiles(t, a, id)
+
+	stopped := findTransfer(t, a, id)
+	if !stopped.Resumable {
+		t.Fatalf("a cancelled tree with %d/%d files done was not marked resumable", stopped.FilesDone, stopped.Files)
+	}
+	skipped := stopped.FilesDone
+
+	if err := a.ResumeTransfer(id); err != nil {
+		t.Fatalf("ResumeTransfer: %v", err)
+	}
+	waitTransfer(t, a, id, TransferDone)
+
+	// The assertion that matters: the finished files were credited up front
+	// rather than sent again.
+	done := findTransfer(t, a, id)
+	if done.Resumed == 0 {
+		t.Error("the resumed tree started from zero — it re-sent files it already had")
+	}
+	var want int64
+	for _, rel := range names[:skipped] {
+		want += int64(len(bodies[rel]))
+	}
+	if done.Resumed != want {
+		t.Errorf("resumed at %d bytes, want the %d already-finished files' %d", done.Resumed, skipped, want)
+	}
+	if done.FilesDone != done.Files {
+		t.Errorf("finished with %d/%d files", done.FilesDone, done.Files)
+	}
+
+	for rel, body := range bodies {
+		got, err := os.ReadFile(filepath.Join(downDir, "tree", rel))
+		if err != nil {
+			t.Errorf("%s missing after the resume: %v", rel, err)
+			continue
+		}
+		if string(got) != body {
+			t.Errorf("%s differs after the resume (%d vs %d bytes)", rel, len(got), len(body))
+		}
+	}
+}
+
+// cutBetweenFiles cancels a directory transfer once it has finished at least
+// one file and still has some left — the only window where resuming a tree
+// means anything.
+func cutBetweenFiles(t *testing.T, a *App, id string) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		tr := findTransfer(t, a, id)
+		if tr.Status == TransferDone {
+			t.Skip("the tree finished before it could be interrupted; too fast to test here")
+		}
+		if tr.Files > 0 && tr.FilesDone > 0 && tr.FilesDone < tr.Files {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("transfer never reached a cancellable point: %+v", tr)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if err := a.CancelTransfer(id); err != nil {
+		t.Fatalf("CancelTransfer: %v", err)
+	}
+	deadline = time.Now().Add(30 * time.Second)
+	for {
+		switch findTransfer(t, a, id).Status {
+		case TransferCancelled:
+			return
+		case TransferDone:
+			t.Skip("the tree finished before the cancel took effect")
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the cancelled tree never settled")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}

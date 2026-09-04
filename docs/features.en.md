@@ -118,8 +118,15 @@ bytes at the seam disagree, the resume is refused and the half-finished file is 
 > exactly the same length, only outside that 64KB window, would still get through.** Written down
 > because a limit nobody states is a limit people trust past.
 
-Folder transfers are not resumable. Skipping already-copied files on size alone would keep a stale
-copy of anything that changed without changing length.
+**Folder transfers resume too**, with the file as the unit. A tree writes each file straight to its
+final name, so a resume **skips the files that already arrived and rewrites only the one that was in
+flight**, from the start. There is no seam to append to, so the 64KB check above does not apply here.
+
+> The skipped files are taken on trust. If the source changed after the interruption, those files
+> keep the copy that was already made. Comparing sizes instead would not help — a file edited to
+> exactly the same length is what defeats that. What the resume does guarantee is the numbering: it
+> reuses **the list the first walk built**, so a file created or deleted in between cannot shift the
+> index and make it skip the wrong one.
 
 ## Compose: act on the project, not one container
 
