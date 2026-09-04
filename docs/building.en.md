@@ -3,7 +3,7 @@
 [← README](../README.en.md)
 
 ```bash
-# Needs: Go 1.25+, Node 20+, Wails v2
+# Needs: Go 1.26+, Node 20+, Wails v2
 #
 # An older Go is fine. Go 1.21+ means the toolchain fetches what it needs
 # (GOTOOLCHAIN=auto, the default). Only Ubuntu 22.04's stock Go 1.18 needs
