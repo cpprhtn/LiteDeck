@@ -15,7 +15,7 @@ This section separates **what has actually been run** from what merely ought to 
 | **Client** | **Ubuntu 24.04.3 (Proxmox VM)** | Release Linux desktop binary launch confirmed: the window opens, connects to a real server, and shows monitoring and a file listing. No keychain there, so the **credential-storage fallback** was exercised too |
 | **Server** | **Windows 10 Pro / PowerShell 5.1 (a real SSH server)** | Services, processes, network, monitoring. Not a container |
 | **Server** | **Ubuntu 24.04.4 (a real SSH server)** | The whole read side (metrics, services and failed detection, containers, exposed ports, journal) plus reading, writing and deleting files, including the permission-denied path |
-| **Server** | **Raspberry Pi 4 Model B / Debian 12 (bookworm), systemd 252, arm64 (a real SSH server)** | The whole monitoring tab — CPU breakdown, per-core, memory and swap, disk I/O, per-interface network, filesystems including inodes, and the system panel (CPU model, kernel, boot time, timezone, open descriptors, context switches). **The first arm64 Linux server**, on a box with 314 days of uptime |
+| **Server** | **Raspberry Pi 4 Model B / Debian 12 (bookworm), systemd 252, arm64 (a real SSH server)** | **Nearly everything.** The whole monitoring tab (CPU breakdown, per-core, memory and swap, disk I/O, per-interface network, filesystems including inodes, the system panel) and the journal events pane; starting, stopping and restarting services and containers; saving, deleting and transferring files; **completing a sudo escalation**; the terminal PTY; and live log tailing. **The first arm64 Linux server**, on a box with 314 days of uptime |
 | **Server** | Ubuntu 22.04.5 / systemd 249 | Full flow: services (JSON path), files, processes, timers, log tailing, privilege escalation |
 | **Server** | Ubuntu 20.04.6 / systemd 245 | Service **table-parsing fallback** (the version with no JSON output) |
 | **Server** | Alpine 3.20 + OpenSSH | Transport: SFTP, reconnect, injection defence, concurrent sessions |
@@ -25,9 +25,10 @@ This section separates **what has actually been run** from what merely ought to 
 
 **Two of the rows above are real Linux SSH servers.** An Ubuntu 24.04.4 server was driven through
 the MCP integration, covering the read side and reading, writing and deleting files; a Raspberry
-Pi 4 (Debian 12, arm64) was checked through the monitoring tab. **The paths the GUI writes
-through** — file transfers, completing a sudo escalation, the terminal PTY, live log tailing —
-**are still container fixtures only** (`testdata/`).
+Pi 4 (Debian 12, arm64) went further and exercised **the paths the GUI writes through** — service
+and container control, saving, deleting and transferring files, completing a sudo escalation, the
+terminal PTY and live log tailing. **Only whole-folder transfers and resuming are still container
+fixtures** (`testdata/`).
 
 The Linux client has been **opened, connected and read from**. Transfers, the terminal and the GTK
 file chooser have not.
@@ -41,7 +42,7 @@ file chooser have not.
 
 | | Status |
 |---|---|
-| **Write paths on real Linux hardware** | Transfers (whole folders and resuming included), completing a sudo escalation, the terminal PTY and log tailing were only exercised in containers |
+| **Whole-folder transfers and resuming** | Transferring files was confirmed on real hardware, but pulling or pushing an entire folder and resuming an interrupted transfer are still container fixtures only |
 | **The rest of the Linux client** | Window, connecting and the read side are confirmed. Transfers, the terminal, the GTK file chooser and keychain storage are not |
 | **RHEL/Rocky 8** | Share the systemd 245 table-parsing path, so they should work, but untested |
 | **Podman** | Docker-compatible CLI, so the parser is shared, but never run |
