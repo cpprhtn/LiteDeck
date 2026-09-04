@@ -68,9 +68,11 @@ type Transfer struct {
 	FilesDone  int    `json:"filesDone,omitempty"`
 	CurrentRel string `json:"currentRel,omitempty"`
 
-	// Resumable means the bytes already moved are still on disk under the
-	// temporary name, so this can pick up where it stopped rather than start
-	// over. Only single files: see resumeOffset.
+	// Resumable means this can pick up where it stopped rather than start over.
+	// A single file resumes mid-file: the bytes already moved are still on disk
+	// under the temporary name (see resumeOffset). A directory resumes by file
+	// index instead — everything before FilesDone already arrived under its
+	// final name, so the tree picks up at the file that was in flight.
 	Resumable bool `json:"resumable,omitempty"`
 	// Resumed is the offset this attempt began at, so a bar that is 90% along
 	// does not appear to restart at zero.
@@ -86,6 +88,12 @@ type transferJob struct {
 	// edited between the two attempts would otherwise produce a result that is
 	// half one version and half another, and nothing about it would look wrong.
 	srcModTime int64
+	// files is the walked tree of a directory transfer, kept so a resume
+	// continues against the list the first attempt used. Re-walking would
+	// renumber it, and FilesDone is an index into this list — one file created
+	// or deleted in between would make that index point at the wrong file and
+	// silently skip something.
+	files []relFile
 }
 
 // snapshot copies the row for the UI. The caller must hold q.mu: this reads
@@ -235,8 +243,10 @@ func (q *transferQueue) run(j *transferJob, body func(ctx context.Context, j *tr
 		case err == nil:
 			q.setStatus(j, TransferDone, nil)
 		case errors.Is(err, context.Canceled):
+			q.keepDirPartial(j)
 			q.setStatus(j, TransferCancelled, nil)
 		default:
+			q.keepDirPartial(j)
 			q.setStatus(j, TransferFailed, err)
 		}
 	}()
@@ -295,8 +305,8 @@ func (a *App) StartUpload(hostID string, localPaths []string, remoteDir string) 
 				if err != nil {
 					return err
 				}
-				a.transfers.setTotals(job, len(files), total)
-				return a.uploadDir(ctx, job, files)
+				a.transfers.setTotals(job, files, total)
+				return a.uploadDir(ctx, job, files, 0)
 			})
 			continue
 		}
@@ -429,8 +439,8 @@ func (a *App) StartDownload(hostID string, remotePaths []string, localDir string
 				if err != nil {
 					return err
 				}
-				a.transfers.setTotals(job, len(files), total)
-				return a.downloadDir(ctx, job, files)
+				a.transfers.setTotals(job, files, total)
+				return a.downloadDir(ctx, job, files, 0)
 			})
 			continue
 		}
@@ -648,6 +658,24 @@ func (q *transferQueue) keepPartial(j *transferJob) {
 	q.mu.Unlock()
 }
 
+// keepDirPartial marks an interrupted directory transfer as resumable.
+//
+// It is called from run rather than from the copy loop because every way a tree
+// stops early — a cancel, a refused mkdir, one file failing — leaves the same
+// thing behind: the files before FilesDone, already under their final names.
+//
+// One completed file is the floor. Stopping inside the very first file has
+// nothing to skip, and calling that "resume" when it is really "start over"
+// would put a button on the row that does not do what it says.
+func (q *transferQueue) keepDirPartial(j *transferJob) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if !j.Dir {
+		return
+	}
+	j.Resumable = len(j.files) > 0 && j.FilesDone > 0
+}
+
 // dropPartial deletes the in-progress file and forgets it.
 func (q *transferQueue) dropPartial(j *transferJob) {
 	q.mu.Lock()
@@ -673,7 +701,7 @@ func (a *App) ResumeTransfer(id string) error {
 		return fmt.Errorf("app: no transfer %q", id)
 	}
 	a.transfers.mu.Lock()
-	status, resumable, direction := j.Status, j.Resumable, j.Direction
+	status, resumable, direction, isDir := j.Status, j.Resumable, j.Direction, j.Dir
 	a.transfers.mu.Unlock()
 
 	if status == TransferQueued || status == TransferRunning {
@@ -691,12 +719,48 @@ func (a *App) ResumeTransfer(id string) error {
 	j.Status = TransferQueued
 	a.transfers.mu.Unlock()
 
-	if direction == "upload" {
+	switch {
+	case isDir:
+		a.transfers.run(j, a.resumeDir)
+	case direction == "upload":
 		a.transfers.run(j, a.uploadOne)
-	} else {
+	default:
 		a.transfers.run(j, a.downloadOne)
 	}
 	return nil
+}
+
+// resumeDir restarts a directory transfer at the file it stopped on.
+//
+// Everything before FilesDone is already on the other side under its final
+// name, so those files are skipped and their bytes are credited up front — the
+// bar carries on instead of snapping back to zero. The file that was in flight
+// is copied again from the start rather than continued: a tree writes each file
+// directly to its final name, so the partial one is simply truncated and
+// rewritten, which costs one file and needs no seam check.
+//
+// The skipped files are taken on trust. If the source changed under them
+// between attempts, resuming keeps the copy that was already made — the same
+// bargain every resume makes, and the reason a transfer that matters should be
+// started over rather than resumed.
+func (a *App) resumeDir(ctx context.Context, j *transferJob) error {
+	a.transfers.mu.Lock()
+	files, start, direction := j.files, j.FilesDone, j.Direction
+	a.transfers.mu.Unlock()
+
+	if start < 0 || start > len(files) {
+		start = 0
+	}
+	var already int64
+	for _, f := range files[:start] {
+		already += f.Size
+	}
+	a.transfers.beginAt(j, already)
+
+	if direction == "upload" {
+		return a.uploadDir(ctx, j, files, start)
+	}
+	return a.downloadDir(ctx, j, files, start)
 }
 
 // CancelTransfer stops a running or queued transfer.
@@ -912,7 +976,7 @@ func walkRemoteDir(ctx context.Context, client *sftp.Client, root string) ([]rel
 	return files, total, nil
 }
 
-func (a *App) uploadDir(ctx context.Context, j *transferJob, files []relFile) error {
+func (a *App) uploadDir(ctx context.Context, j *transferJob, files []relFile, start int) error {
 	client, err := a.mgr.SFTP(j.HostID)
 	if err != nil {
 		return err
@@ -921,7 +985,8 @@ func (a *App) uploadDir(ctx context.Context, j *transferJob, files []relFile) er
 		return err
 	}
 
-	for i, f := range files {
+	for i := start; i < len(files); i++ {
+		f := files[i]
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -942,7 +1007,7 @@ func (a *App) uploadDir(ctx context.Context, j *transferJob, files []relFile) er
 	return nil
 }
 
-func (a *App) downloadDir(ctx context.Context, j *transferJob, files []relFile) error {
+func (a *App) downloadDir(ctx context.Context, j *transferJob, files []relFile, start int) error {
 	client, err := a.mgr.SFTP(j.HostID)
 	if err != nil {
 		return err
@@ -951,7 +1016,8 @@ func (a *App) downloadDir(ctx context.Context, j *transferJob, files []relFile) 
 		return err
 	}
 
-	for i, f := range files {
+	for i := start; i < len(files); i++ {
+		f := files[i]
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -1018,10 +1084,12 @@ func (a *App) copyFromRemote(ctx context.Context, j *transferJob, client *sftp.C
 }
 
 // setTotals fills in what the walk found, turning a row that was showing
-// "reading the listing" into one with a progress bar.
-func (q *transferQueue) setTotals(j *transferJob, files int, size int64) {
+// "reading the listing" into one with a progress bar. The list itself is kept
+// on the job because a resume has to continue against it rather than re-walk.
+func (q *transferQueue) setTotals(j *transferJob, files []relFile, size int64) {
 	q.mu.Lock()
-	j.Files = files
+	j.files = files
+	j.Files = len(files)
 	j.Size = size
 	q.mu.Unlock()
 	q.emit(j)

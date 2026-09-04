@@ -157,3 +157,46 @@ func TestUnsafeNameErrorNeutralisesTheName(t *testing.T) {
 		t.Errorf("a control character survived into the message: %q", err.Error())
 	}
 }
+
+// Resuming a directory means skipping the files that already landed, so a tree
+// that stopped inside its very first file has nothing to skip. Offering
+// "resume" there would be offering to start over under a friendlier name.
+func TestDirectoryResumeNeedsAFinishedFile(t *testing.T) {
+	tree := []relFile{{Rel: "a", Size: 1}, {Rel: "b", Size: 1}}
+
+	// transferJob carries an atomic counter, so each case builds its own rather
+	// than being copied out of the table.
+	for _, tc := range []struct {
+		name      string
+		dir       bool
+		filesDone int
+		files     []relFile
+		before    bool
+		want      bool
+	}{
+		{name: "a finished file is something to skip", dir: true, filesDone: 1, files: tree, want: true},
+		{name: "stopped inside the first file", dir: true, filesDone: 0, files: tree, want: false},
+		{name: "no walk to resume against", dir: true, filesDone: 2, want: false},
+		{
+			// Single files carry their own answer, written by keepPartial from
+			// inside the copy. This must not reach across and clear it.
+			name: "a single file's flag is left alone", dir: false, before: true, want: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			q := &transferQueue{}
+			j := &transferJob{Transfer: Transfer{
+				Dir:       tc.dir,
+				FilesDone: tc.filesDone,
+				Resumable: tc.before,
+			}}
+			j.files = tc.files
+
+			q.keepDirPartial(j)
+
+			if j.Resumable != tc.want {
+				t.Errorf("Resumable = %v, want %v", j.Resumable, tc.want)
+			}
+		})
+	}
+}
