@@ -326,9 +326,11 @@ export function McpPanel({
 
                       {/* Its own switch again, and not folded into the one
                           above: letting an agent clear a log file is not the
-                          same decision as letting it run anything. This one is
-                          never covered by the modes on the left — it asks every
-                          time, because nothing it does can be put back. */}
+                          same decision as letting it run anything. What it does
+                          not do is override the mode on the left — that answers
+                          a different question, and an agent left to work
+                          overnight that stops at the first command has not been
+                          left anywhere. */}
                       <label className="mcp-toggle">
                         <input
                           type="checkbox"
@@ -338,7 +340,7 @@ export function McpPanel({
                             void apply(() => SetMCPHostExec(h.id, e.target.checked))
                           }
                         />
-                        <span className="small">{t('명령 실행 허용 (매번 물어봄)')}</span>
+                        <span className="small">{t('명령 실행 허용')}</span>
                       </label>
                     </div>
                   )}

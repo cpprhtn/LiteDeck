@@ -111,11 +111,13 @@ safe ([`internal/mcp/http.go`](../internal/mcp/http.go)).
 - **Only files can be undone.** A service restart or a killed process has no copy behind it. Those
   are the recoverable kind, which is why they are offered; recursive directory deletion and removing
   containers or images are not offered at all
-- **Running a command cannot be undone, so it is handled differently.** `run_command` has to be
-  switched on per server (off by default), and even then it asks **every time, regardless of the
-  approval mode** — "don't ask overnight" does not cover it. The reason it exists at all is
-  auditing: the same command typed in the terminal tab leaves nothing in the Command Log, and one
-  that goes through MCP leaves all of it. The reasoning is in the [MCP doc](mcp.en.md)
+- **Running a command cannot be undone.** `run_command` has to be switched on per server (off by
+  default), and with it on the default mode still asks every time. "Don't ask overnight" **does**
+  cover it, though: that mode is switched on for unattended work, and stopping at the first command
+  would defeat the point — and killing a process or restarting a service is just as irreversible.
+  The reason it exists at all is auditing: the same command typed in the terminal tab leaves
+  nothing in the Command Log, and one that goes through MCP leaves all of it. The reasoning is in
+  the [MCP doc](mcp.en.md)
 - **The MCP layer never touches credentials.** The token is for this endpoint only, and SSH
   credentials stay in the OS keychain as described above
 

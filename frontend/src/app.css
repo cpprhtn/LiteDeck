@@ -461,9 +461,14 @@
   padding: 0 var(--sp-4) var(--sp-2);
 }
 
+/* The first column holds the marker, and the marker is not always one
+   character: an MCP line carries `MCP` where a shell line carries `$`. Sized
+   for `$` it was 12px, so `MCP` ran straight over the command next to it. The
+   column is fixed rather than min-content because every row is its own grid —
+   sizing to content would step the commands in and out by row. */
 .cmdlog-row {
   display: grid;
-  grid-template-columns: 12px 1fr auto auto;
+  grid-template-columns: 26px 1fr auto auto;
   align-items: baseline;
   gap: var(--sp-2);
   padding: 3px 0;
@@ -474,8 +479,11 @@
 .cmdlog-row:hover {
   background: var(--bg-hover);
 }
+/* Right-aligned so `$` still sits against the command it belongs to, and the
+   wider `MCP` fills the column from the other side. */
 .cmdlog-marker {
   color: var(--fg-faint);
+  text-align: right;
 }
 .cmdlog-line {
   overflow: hidden;

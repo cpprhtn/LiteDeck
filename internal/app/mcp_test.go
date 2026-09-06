@@ -167,13 +167,13 @@ func TestRunCommandIsOffUntilTurnedOn(t *testing.T) {
 	}
 }
 
-// Every other write tool can be waved through for a while. This one cannot:
-// there is no copy to put back, so "stop asking" has nothing to fall back on.
-func TestRunCommandAsksEvenWhenNothingElseDoes(t *testing.T) {
+// The default mode asks about a command. `svc_control(restart, nginx.service)`
+// is fully described by its own call, so the dialog would add nothing; a shell
+// line is not, and this is the only place a person sees it.
+func TestRunCommandAsksInTheDefaultMode(t *testing.T) {
 	a := appWithSettings(t)
 	seedSharedHost(t, a)
 	a.SetMCPHostExec("h1", true)
-	a.SetMCPWritePolicy("h1", WriteBypass, 30)
 
 	raised := make(chan MCPWritePrompt, 1)
 	a.emit = func(event string, payload any) {
@@ -190,7 +190,7 @@ func TestRunCommandAsksEvenWhenNothingElseDoes(t *testing.T) {
 	if _, err := tool.Handler(context.Background(), map[string]any{
 		"hostId": "h1", "command": "rm -rf /tmp/nothing",
 	}); err == nil {
-		t.Fatal("bypass waved an arbitrary command through")
+		t.Fatal("the default mode ran a command without asking")
 	}
 
 	select {
@@ -200,7 +200,37 @@ func TestRunCommandAsksEvenWhenNothingElseDoes(t *testing.T) {
 			t.Errorf("dialog did not carry the command: %+v", p)
 		}
 	default:
-		t.Error("no dialog was raised — bypass reached a tool that has no undo")
+		t.Error("no dialog was raised in the mode whose whole job is asking")
+	}
+}
+
+// The relaxed mode covers it, like every other write tool.
+//
+// Leaving it out was the first cut of this design and it was wrong: somebody
+// who turned on "don't ask overnight" has decided to let an agent work
+// unattended, and an agent that stops dead at the first command has not been
+// let anywhere. Whether the tool exists at all is already a separate switch,
+// which is where that decision belongs — the mode answers a different question
+// (§4.2, the same split fs_delete uses).
+func TestRelaxedModeCoversCommandsToo(t *testing.T) {
+	a := appWithSettings(t)
+	seedSharedHost(t, a)
+	a.SetMCPHostExec("h1", true)
+	a.SetMCPWritePolicy("h1", WriteBypass, 30)
+
+	raised := false
+	a.emit = func(event string, _ any) {
+		if event == "prompt:mcpwrite" {
+			raised = true
+		}
+	}
+	if out, err := a.approveWrite(writeRequest{
+		hostID: "h1", tool: "run_command", summary: "run df -h", command: "df -h",
+	}); err != nil || out != outcomeAuto {
+		t.Fatalf("bypass did not cover run_command: out=%q err=%v", out, err)
+	}
+	if raised {
+		t.Error("a dialog was raised in the mode that exists not to raise them")
 	}
 }
 
@@ -256,13 +286,16 @@ func TestWhichModeAsksAboutWhat(t *testing.T) {
 		{WriteAsk, "fs_write", true},
 		{WriteAsk, "fs_edit", true},
 		{WriteAsk, "fs_delete", true},
+		{WriteAsk, "run_command", true},
 
 		{WriteStrict, "svc_control", true},
 		{WriteStrict, "proc_signal", true},
 		{WriteStrict, "fs_write", true},
+		{WriteStrict, "run_command", true},
 
 		{WriteBypass, "svc_control", false},
 		{WriteBypass, "fs_write", false},
+		{WriteBypass, "run_command", false},
 	} {
 		if got := asksAbout(tc.mode, tc.tool); got != tc.asks {
 			t.Errorf("%s/%s: asks = %v, want %v", tc.mode, tc.tool, got, tc.asks)

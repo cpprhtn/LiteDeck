@@ -302,11 +302,11 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 	s.Register(mcp.Tool{
 		Name: "run_command",
 		Description: "Run a shell command on the server and return its output. Off unless the " +
-			"user turned it on for that server, and it asks them every single time — there is " +
-			"no mode that stops it asking, because nothing here can be undone. There is no " +
-			"sudo: the command runs as the login user with no terminal attached, so anything " +
-			"that wants a password fails rather than waiting. Prefer the narrower tools when " +
-			"one of them answers the question: they are cheaper, they read as intent in the " +
+			"user turned it on for that server, and by default they are asked before each one. " +
+			"Nothing it does can be undone — no copy is kept, the way one is for a file write. " +
+			"There is no sudo: the command runs as the login user with no terminal attached, so " +
+			"anything that wants a password fails rather than waiting. Prefer the narrower tools " +
+			"when one of them answers the question: they are cheaper, they read as intent in the " +
 			"user's Command Log, and they cannot go wrong in a way nobody expected.",
 		InputSchema: obj(map[string]any{
 			"hostId": hostArg,

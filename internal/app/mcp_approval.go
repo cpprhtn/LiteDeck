@@ -68,23 +68,20 @@ const (
 
 // asksAbout reports whether a mode wants a dialog for this tool.
 func asksAbout(mode, tool string) bool {
-	// An arbitrary command is outside the modes. Every other write tool leaves
-	// a copy behind, which is what makes "stop asking for a while" a bounded
-	// decision; this one leaves nothing, so there is nothing for a relaxed mode
-	// to fall back on. It is also the only tool whose blast radius the user
-	// cannot infer from the tool name.
-	if tool == "run_command" {
-		return true
-	}
 	switch mode {
 	case WriteBypass:
 		return false
 	case WriteStrict:
 		return true
 	default:
-		// Only the tools whose dialog shows something the client could not:
-		// a diff against what is on the server right now.
-		return tool == "fs_write" || tool == "fs_edit" || tool == "fs_delete"
+		// The tools whose dialog shows something the client could not. For a
+		// file that is the diff against what is on the server right now. For a
+		// command it is the command: `svc_control(restart, nginx.service)` is
+		// fully described by the call the client already displayed, and a shell
+		// line is not — the schema bounds the first and says nothing about the
+		// second.
+		return tool == "fs_write" || tool == "fs_edit" || tool == "fs_delete" ||
+			tool == "run_command"
 	}
 }
 
