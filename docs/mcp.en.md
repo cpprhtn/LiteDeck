@@ -30,8 +30,8 @@ context-gathering hammers a small box's I/O. All of that load stays on the clien
 `sessions_list`. One `health_snapshot` returns CPU, memory, disk, failed units, unhealthy
 containers and exposed ports; `svc_logs` is what says *why* something died.
 
-**Five write tools**: `svc_control` (start/stop/restart), `container_control`, `proc_signal`
-(TERM/KILL), `fs_write` and `fs_delete`.
+**Six write tools**: `svc_control` (start/stop/restart), `container_control`, `proc_signal`
+(TERM/KILL), `fs_write`, `fs_delete` and `run_command`.
 
 **They can be undone.** Before MCP overwrites or deletes a file, the previous contents are kept
 **on this machine**, and the **Changed files** tab restores them one at a time. When you have told
