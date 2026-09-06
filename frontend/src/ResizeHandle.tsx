@@ -1,4 +1,4 @@
-import { DEFAULTS, getPref, setPref, type Prefs } from './prefs'
+import { DEFAULTS, getPref, setPref, type NumericPref } from './prefs'
 
 // The grab strip on the edge of a panel (§4.7-1).
 //
@@ -17,7 +17,7 @@ export function ResizeHandle({
   axis = 'y',
 }: {
   /** Which stored size this drag adjusts. */
-  pref: keyof Prefs
+  pref: NumericPref
   label: string
   /** 'y' grows the panel upward from its top edge; 'x' grows it leftward from
    *  its left edge. Both are "drag away from the content". */

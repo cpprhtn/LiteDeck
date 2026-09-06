@@ -8,6 +8,7 @@ import { ContainerView } from './ContainerView'
 import { FileExplorer } from './FileExplorer'
 import { HostEditor, emptyHost } from './HostEditor'
 import { HostSidebar } from './HostSidebar'
+import { setPref, usePref } from './prefs'
 import { ShellControls } from './ShellControls'
 import { MetricsBar } from './MetricsBar'
 import { NetworkView } from './NetworkView'
@@ -269,6 +270,11 @@ export default function App() {
     }
   }
 
+  // Above the bench short-circuits: everything below them is unreachable on a
+  // bench render, and a hook that only sometimes runs is a hook React counts
+  // wrong on the next pass.
+  const sidebarOpen = usePref('sidebarOpen')
+
   if (benchMode === null) return <div className="boot">{t('시작 중…')}</div>
   if (benchMode) return <Bench />
 
@@ -306,8 +312,29 @@ export default function App() {
   const selfMode = boot?.selfMode
 
   return (
-    <div className="app" data-self={selfMode || undefined}>
-      {!selfMode && (
+    <div
+      className="app"
+      data-self={selfMode || undefined}
+      data-sidebar={!selfMode && !sidebarOpen ? 'off' : undefined}
+    >
+      {/* Collapsed to a rail rather than removed. The button has to stay where
+          the list was — that is where somebody who folded it away will look for
+          it — and a control that vanishes with the thing it controls is a
+          setting people cannot find their way out of. */}
+      {!selfMode && !sidebarOpen && (
+        <aside className="sidebar-rail">
+          <button
+            className="ghost icon-btn"
+            onClick={() => setPref('sidebarOpen', true)}
+            title={t('호스트 목록 펼치기')}
+            aria-label={t('호스트 목록 펼치기')}
+          >
+            »
+          </button>
+        </aside>
+      )}
+
+      {!selfMode && sidebarOpen && (
       <HostSidebar
         hosts={hosts}
         activeID={activeID}
@@ -320,6 +347,7 @@ export default function App() {
         busy={busy}
         version={boot?.version}
         onOpenMCP={() => setMcpOpen(true)}
+        onCollapse={() => setPref('sidebarOpen', false)}
       />
       )}
 

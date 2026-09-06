@@ -189,6 +189,21 @@
   font-weight: 600;
 }
 
+/* Folded away: the list drops to a rail holding only the way back. Editing a
+   file is what this is for — the host list earns its width while choosing a
+   server and none of it while reading code on one. */
+.app[data-sidebar='off'] {
+  grid-template-columns: 36px 1fr;
+}
+.sidebar-rail {
+  grid-area: sidebar;
+  display: flex;
+  justify-content: center;
+  padding-top: var(--sp-3);
+  border-right: 1px solid var(--border);
+  background: var(--bg-sunken);
+}
+
 /* Server "this server" mode: no host sidebar (one auto-connected host), so the
    grid drops to a single column and the shell controls move into the header. */
 .app[data-self] {
@@ -643,6 +658,20 @@ button.ghost {
   height: 24px;
   font-size: var(--text-sm);
   padding: 0 var(--sp-2);
+}
+
+/* Square, for a button whose whole label is one glyph. The chevrons sit a
+   little high in the line box, hence the nudge. */
+button.icon-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: var(--text-md);
+  line-height: 1;
+  color: var(--fg-muted);
+}
+button.icon-btn:hover {
+  color: var(--fg);
 }
 
 .badge {

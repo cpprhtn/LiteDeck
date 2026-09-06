@@ -582,6 +582,8 @@ export const en: Record<string, string> = {
   '허용하고 1시간 안 묻기': 'Allow, and stop asking for 1 hour',
   '허용하고 밤새 안 묻기': 'Allow, and stop asking overnight',
   '호스트': 'Hosts',
+  '호스트 목록 접기': 'Collapse host list',
+  '호스트 목록 펼치기': 'Expand host list',
   '호스트 추가': 'Add host',
   '호스트 편집': 'Edit host',
   '호스트를 삭제하시겠습니까?': 'Delete this host?',
