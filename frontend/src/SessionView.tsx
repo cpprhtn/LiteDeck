@@ -107,7 +107,10 @@ export function SessionView({
         </button>
       </div>
 
-      <div className="table">
+      {/* Sized to its content, not to the space. The history below is the long
+          half of this tab, and a table with `flex: 1` claims the room first and
+          then spills its rows over whatever follows when there is not enough. */}
+      <div className="table session-table">
         <div className="thead" style={{ gridTemplateColumns: cols }}>
           <div>{t('사용자')}</div>
           <div>{t('단말')}</div>

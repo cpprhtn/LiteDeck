@@ -2331,12 +2331,22 @@ button.danger {
 
 /* Login history, under the live session table (T-26) ---------------------- */
 
+/* The live table takes what it needs; this takes the rest and scrolls. The
+   other way round — the table on `flex: 1` — collapses it to nothing on a short
+   window and spills the header over this section, which is what it did. */
+.view > .session-table {
+  flex: none;
+  /* Its own scroller past a few rows, so twenty sessions cannot push the
+     history off the screen either. */
+  max-height: 40%;
+}
 .login-hist {
   border-top: 1px solid var(--border);
   padding: var(--sp-3);
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
+  flex: 1;
   min-height: 0;
   overflow-y: auto;
 }
@@ -2362,10 +2372,13 @@ button.danger {
 .login-auth-fail[data-hot] {
   color: var(--danger);
 }
+/* Two lists side by side, each as wide as it needs. Stretching them across a
+   wide pane put the counts a screen apart from the names they belong to. */
 .login-auth-tops {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: var(--sp-3);
+  grid-template-columns: repeat(auto-fit, minmax(200px, 260px));
+  justify-content: start;
+  gap: var(--sp-4, 20px);
   padding: var(--sp-2) 0;
 }
 .login-auth-cap {
@@ -2381,10 +2394,13 @@ button.danger {
   padding: 1px 0;
 }
 
+/* Capped rather than stretched. On a wide window the five columns were spread to
+   the edges with the time alone at the far right, which reads as five unrelated
+   things rather than one row. */
 .login-row {
   display: grid;
-  grid-template-columns: 1fr 90px 1.4fr 130px 110px;
-  gap: var(--sp-2);
+  grid-template-columns: 120px 80px minmax(0, 200px) 150px 90px;
+  gap: var(--sp-3);
   align-items: baseline;
   padding: 3px 0;
   border-bottom: 1px solid var(--border);
