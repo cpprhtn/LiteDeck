@@ -22,10 +22,49 @@ const pollTimeout = 20 * time.Second
 type detectCache struct {
 	mu   sync.Mutex
 	byID map[string]adapter.ServerInfo
+	// inFlight holds one channel per host being probed right now. Without it
+	// the cache was only locked at its two ends: everybody who missed released
+	// the lock and ran the whole probe set, so N views mounting together meant
+	// N detections. Closed when the probe finishes, which is how the others
+	// learn to look again.
+	inFlight map[string]chan struct{}
 }
 
 func newDetectCache() *detectCache {
-	return &detectCache{byID: make(map[string]adapter.ServerInfo)}
+	return &detectCache{
+		byID:     make(map[string]adapter.ServerInfo),
+		inFlight: make(map[string]chan struct{}),
+	}
+}
+
+// claim answers one of three ways: the cached info, a channel to wait on
+// because somebody else is already probing, or neither — meaning the caller
+// owns the probe and must call done when it is finished.
+//
+// A failed probe is deliberately not cached. The waiters loop back and one of
+// them takes the claim, which is the same number of attempts as before rather
+// than a wrong answer remembered.
+func (c *detectCache) claim(id string) (adapter.ServerInfo, <-chan struct{}, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if v, ok := c.byID[id]; ok {
+		return v, nil, true
+	}
+	if ch, ok := c.inFlight[id]; ok {
+		return adapter.ServerInfo{}, ch, false
+	}
+	c.inFlight[id] = make(chan struct{})
+	return adapter.ServerInfo{}, nil, false
+}
+
+func (c *detectCache) done(id string) {
+	c.mu.Lock()
+	ch, ok := c.inFlight[id]
+	delete(c.inFlight, id)
+	c.mu.Unlock()
+	if ok {
+		close(ch)
+	}
 }
 
 func (c *detectCache) get(id string) (adapter.ServerInfo, bool) {
@@ -71,9 +110,20 @@ func newServerInfoView(info adapter.ServerInfo) ServerInfoView {
 // connection. Detection is not free — several round trips — and nothing it
 // looks at changes while the user is logged in.
 func (a *App) DetectHost(hostID string) (ServerInfoView, error) {
-	if info, ok := a.detected.get(hostID); ok {
-		return newServerInfoView(info), nil
+	// One probe per host, however many callers arrive at once. Views mount
+	// together, and each one asking for itself turned a cached answer into
+	// several round trips per tab.
+	for {
+		info, wait, cached := a.detected.claim(hostID)
+		if cached {
+			return newServerInfoView(info), nil
+		}
+		if wait == nil {
+			break
+		}
+		<-wait
 	}
+	defer a.detected.done(hostID)
 
 	conn, err := a.mgr.Conn(hostID)
 	if err != nil {
