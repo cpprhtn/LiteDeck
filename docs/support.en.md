@@ -30,6 +30,13 @@ and container control, saving and deleting files, **whole-folder transfers and r
 transfer was interrupted and resumed twice), completing a sudo escalation, the terminal PTY and
 live log tailing.
 
+**The command history (the sudo journal half) was checked against a real journal.** The actual
+`journalctl -t sudo` output from an Ubuntu 24.04 server was fed to the parser, which read 19 records
+— the working directory out of `PWD=`, refused attempts told apart from commands that ran, and the
+change/edit/read classification. **One of the three permission answers was not seen on real
+hardware**: the account used is in `adm`, so the "not in the group" path was only exercised against
+the container fixture.
+
 **Atomic saving was judged by hard link.** On both servers a second link was made to the same
 content, the file was saved, and the link was read back. In a writable directory the link still
 held the old content — a rename replaces the directory entry and breaks the link. In a directory
