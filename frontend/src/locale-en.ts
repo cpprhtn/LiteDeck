@@ -333,6 +333,7 @@ export const en: Record<string, string> = {
   '1시간': '1 hour',
   '24시간': '24 hours',
   '7일': '7 days',
+  '최대': 'All',
   '다시 읽기': 'Read again',
   '재부팅': 'Rebooted',
   '유닛 실패': 'unit failed',

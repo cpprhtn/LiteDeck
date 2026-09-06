@@ -34,11 +34,21 @@ import { k, t } from './i18n'
 // `rm -rf`, and a list that runs things on click is a list nobody can safely
 // scroll.
 
-const RANGES: { id: '1h' | '24h' | '7d'; label: string }[] = [
-  { id: '1h', label: k('1시간') },
+// The window applies to sudo's journal, which is the only one of the three
+// sources that has a date on every row and can therefore be asked for one.
+//
+// `최대` drops the window rather than widening it. It is still bounded — by the
+// journal's 500-line cap, the same way the shell history is bounded by
+// HISTFILESIZE — because "everything" in a history has always meant a number of
+// lines and never a span of time. Reaching the very first entry a server ever
+// wrote is not the question anybody asks.
+const RANGES: { id: HistoryRange; label: string }[] = [
   { id: '24h', label: k('24시간') },
   { id: '7d', label: k('7일') },
+  { id: 'max', label: k('최대') },
 ]
+
+type HistoryRange = '24h' | '7d' | 'max'
 
 const EFFECT_MARK: Record<SudoRun['effect'], string> = {
   change: '●',
@@ -111,7 +121,7 @@ export function CommandHistory({
   const [view, setView] = useState<CommandHistoryView | null>(null)
   const [typed, setTyped] = useState<TypedCommand[]>([])
   const [shell, setShell] = useState<ShellHistoryView | null>(null)
-  const [range, setRange] = useState<'1h' | '24h' | '7d'>('24h')
+  const [range, setRange] = useState<HistoryRange>('24h')
   const [busy, setBusy] = useState(false)
   // Reads are folded away by default. Roughly eight lines in ten are somebody
   // looking rather than doing, and the question is what changed — that one

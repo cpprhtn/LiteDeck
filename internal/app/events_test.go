@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
@@ -80,6 +81,11 @@ func TestEventRangeIsAClosedSet(t *testing.T) {
 		{adapter.EventRangeHour, "-1h"},
 		{adapter.EventRangeDay, "-24h"},
 		{adapter.EventRangeWeek, "-7d"},
+		// "as far back as the record goes" is an empty --since, and only the
+		// exact literal gets it. Everything unrecognised still falls to a day,
+		// so a stray value cannot widen the read.
+		{adapter.EventRangeMax, ""},
+		{adapter.EventRange("max "), "-24h"},
 		{adapter.EventRange("; rm -rf /"), "-24h"},
 		{adapter.EventRange(""), "-24h"},
 	} {
@@ -107,5 +113,28 @@ func TestJournalArgsSilenceTheNotice(t *testing.T) {
 	}
 	if !noPager {
 		t.Error("--no-pager missing: the read can hang on a pager")
+	}
+}
+
+// An empty --since is an argument journalctl rejects, so the widest range has
+// to drop the flag rather than pass it empty. The line cap stays either way:
+// "everything" here means the newest 500 entries, not the whole journal.
+func TestWidestRangeDropsSinceAndKeepsTheCap(t *testing.T) {
+	for _, args := range [][]string{
+		adapter.JournalArgs(adapter.EventRangeMax.Since(), 4, 10),
+		adapter.SudoHistoryArgs(adapter.EventRangeMax.Since(), 0),
+	} {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "--since") {
+			t.Errorf("--since survived an empty range: %s", joined)
+		}
+		if !strings.Contains(joined, "-n ") {
+			t.Errorf("no line cap, so the read is unbounded: %s", joined)
+		}
+		for i, a := range args {
+			if a == "" {
+				t.Errorf("empty argv[%d], which journalctl rejects: %q", i, args)
+			}
+		}
 	}
 }
