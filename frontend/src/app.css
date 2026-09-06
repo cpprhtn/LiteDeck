@@ -431,6 +431,15 @@
   cursor: row-resize;
   z-index: 1;
 }
+.resize-handle[data-axis='x'] {
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  right: auto;
+  width: 6px;
+  height: auto;
+  cursor: col-resize;
+}
 .resize-handle:hover,
 .resize-handle:active {
   background: var(--accent);
@@ -2181,12 +2190,11 @@ button.danger {
   flex: 1;
   min-width: 0;
 }
-/* Three to one. Wide enough to read a command without wrapping, narrow enough
-   that the terminal is still the thing on this tab. */
+/* Width is the user's, dragged and remembered. The default is about a quarter
+   of a normal window — wide enough for a docker command without wrapping. */
 .term-history {
-  flex: 0 0 25%;
-  min-width: 260px;
-  max-width: 460px;
+  position: relative;
+  flex: none;
   min-height: 0;
   display: flex;
   border-left: 1px solid var(--border);
@@ -2254,17 +2262,103 @@ button.danger {
 .history-empty {
   padding: var(--sp-3);
 }
-.history-list {
-  flex: 1;
+
+/* The tree, and under it the commands from whichever directory is picked.
+   Two panes rather than one expanding list: in a panel this narrow, opening a
+   directory inline pushes everything under it off the bottom, and the thing
+   that gets pushed off is the answer. */
+.history-tree {
+  flex: 1 1 55%;
   min-height: 0;
-  overflow-y: auto;
+  overflow: auto;
+  padding: var(--sp-1) 0;
+}
+.history-dir {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-1);
+  padding-right: var(--sp-3);
+  font-size: var(--text-sm);
+}
+.history-dir:hover {
+  background: var(--bg-hover);
+}
+.history-dir[data-picked] {
+  background: var(--accent-soft, var(--bg-hover));
+}
+/* Where the terminal is standing. Marked, not filtered — the point is to find
+   it at a glance, not to hide everywhere else. */
+.history-dir[data-here] .history-dir-name::before {
+  content: '▶';
+  color: var(--accent);
+  font-size: 9px;
+  padding-right: 4px;
+}
+.history-twisty {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--fg-faint);
+  cursor: pointer;
+  font-size: 10px;
+}
+.history-twisty:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+.history-dir-name {
+  background: none;
+  border: 0;
+  padding: 3px 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+.history-count {
+  font-variant-numeric: tabular-nums;
 }
 
-/* A directory and the commands run in it. Both rows are buttons, so they need
-   the button chrome taken off before they can be rows. */
-.history-head,
+.history-chosen {
+  flex: 1 1 45%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+}
+.history-chosen-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.history-chosen > .history-runs {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.history-runs {
+  background: var(--bg-sunken);
+}
+/* A row, not a button that looks like one. The base button chrome has to come
+   off before the grid can line the marks up — losing these rules turned every
+   command into a pill floating in the middle of the panel.
+
+   The mark column is fixed so commands line up under each other whatever the
+   effect is, the same reason the Command Log's marker column is. */
 .history-run {
   display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto auto;
   align-items: baseline;
   gap: var(--sp-2);
   width: 100%;
@@ -2273,50 +2367,13 @@ button.danger {
   border: 0;
   border-bottom: 1px solid var(--border);
   border-radius: 0;
-  padding: var(--sp-1) var(--sp-3);
+  padding: 3px var(--sp-3);
   font-size: var(--text-sm);
   color: inherit;
+  cursor: copy;
 }
-.history-head {
-  grid-template-columns: 12px minmax(0, 1fr) auto auto;
-  cursor: pointer;
-  font-weight: 600;
-}
-.history-head:hover,
 .history-run:hover {
   background: var(--bg-hover);
-}
-.history-twisty {
-  color: var(--fg-faint);
-}
-.history-path {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* A path this side had to guess at. Dimmed rather than hidden — the row is
-   still worth reading, the location is just not a fact. */
-.history-path[data-guess] {
-  color: var(--fg-muted);
-  font-weight: 400;
-}
-.history-guess {
-  color: var(--warn);
-  padding-left: 2px;
-}
-.history-count {
-  font-variant-numeric: tabular-nums;
-}
-
-.history-runs {
-  background: var(--bg-sunken);
-}
-/* The mark column is fixed so the commands line up under each other whatever
-   the effect is — the same reason the Command Log's marker column is. */
-.history-run {
-  grid-template-columns: 14px minmax(0, 1fr) auto auto;
-  cursor: copy;
-  padding-left: calc(var(--sp-3) + 12px);
 }
 .history-mark {
   color: var(--fg-faint);

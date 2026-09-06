@@ -208,3 +208,22 @@ func (a *App) TypedHistory(hostID string) []TypedCommand {
 	}
 	return a.typed.list(hostID)
 }
+
+// TerminalCwd is where a terminal session is standing, as far as this can tell.
+//
+// The history panel asks so it can open at the directory the user is actually
+// in — "what did I run here" is the second half of the question this feature
+// exists for, and answering it needs to know where "here" is.
+//
+// Empty when nothing has anchored the session yet. Certain is false once an
+// unreadable line has gone by; the panel still uses the path, it just does not
+// claim it.
+func (a *App) TerminalCwd(termID string) (string, bool) {
+	if a.typed == nil {
+		return "", false
+	}
+	a.typed.mu.Lock()
+	defer a.typed.mu.Unlock()
+	c := a.typed.cwd[termID]
+	return c.path, c.certain
+}

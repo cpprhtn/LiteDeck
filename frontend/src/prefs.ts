@@ -19,18 +19,24 @@ export interface Prefs {
   liveLogHeight: number
   /** Editor font size in px. */
   editorFontSize: number
+  /** Width of the history panel beside the terminal, in px. */
+  historyWidth: number
 }
 
 export const DEFAULTS: Prefs = {
   commandLogHeight: 200,
   liveLogHeight: 260,
   editorFontSize: 13,
+  historyWidth: 320,
 }
 
 const LIMITS: Record<keyof Prefs, [number, number]> = {
   commandLogHeight: [80, 700],
   liveLogHeight: [100, 900],
   editorFontSize: [9, 32],
+  // Wide enough for a docker command without wrapping; capped so the terminal
+  // stays the thing on this tab.
+  historyWidth: [220, 720],
 }
 
 function clamp(key: keyof Prefs, value: unknown): number {

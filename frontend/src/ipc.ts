@@ -840,6 +840,7 @@ interface Bindings {
   HostDigest(id: string): Promise<DigestView>
   TypedEntered(hostID: string, termID: string, line: string, blind: boolean): Promise<void>
   TypedHistory(hostID: string): Promise<TypedCommand[]>
+  TerminalCwd(termID: string): Promise<[string, boolean]>
   HostShellHistory(id: string, elevate: boolean): Promise<ShellHistoryView>
   SetShellHistoryAllowed(id: string, allowed: boolean): Promise<void>
   MarkHostSeen(id: string): Promise<void>
@@ -1081,6 +1082,7 @@ export const HostDigest = (id: string) => api().HostDigest(id)
 export const TypedEntered = (hostID: string, termID: string, line: string, blind: boolean) =>
   api().TypedEntered(hostID, termID, line, blind)
 export const TypedHistory = (hostID: string) => api().TypedHistory(hostID)
+export const TerminalCwd = (termID: string) => api().TerminalCwd(termID)
 export const HostShellHistory = (id: string, elevate: boolean) =>
   api().HostShellHistory(id, elevate)
 export const SetShellHistoryAllowed = (id: string, allowed: boolean) =>

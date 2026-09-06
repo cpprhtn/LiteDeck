@@ -9,12 +9,15 @@ import {
   ReadClipboard,
   ResizeTerminal,
   RevealFromTerminal,
+  TerminalCwd,
   TypedEntered,
   WriteTerminal,
   on,
   type TerminalInfo,
 } from './ipc'
 import { CommandHistory } from './CommandHistory'
+import { ResizeHandle } from './ResizeHandle'
+import { usePref } from './prefs'
 import { LineWatcher } from './lineWatcher'
 import { requestReveal } from './openFiles'
 import { getPlatform } from './platform'
@@ -272,6 +275,21 @@ export function TerminalView({
   // here to type. It is one click away and it remembers nothing on purpose —
   // the panel is for looking something up, not for living in.
   const [histOpen, setHistOpen] = useState(false)
+  const histWidth = usePref('historyWidth')
+  // Where the active terminal is standing, so the panel can open there. Asked
+  // when the panel opens and when the tab changes — not polled: it moves on a
+  // `cd`, and a `cd` is a keystroke this side already saw.
+  const [cwd, setCwd] = useState<string | undefined>()
+  useEffect(() => {
+    if (!histOpen || !active) return
+    let gone = false
+    void TerminalCwd(active)
+      .then(([p]) => !gone && setCwd(p || undefined))
+      .catch(() => {})
+    return () => {
+      gone = true
+    }
+  }, [histOpen, active])
   const opening = useRef(false)
   /** The host whose sessions this view has already taken over. */
   const adopted = useRef<string | null>(null)
@@ -447,8 +465,9 @@ export function TerminalView({
         </div>
 
         {histOpen && (
-          <aside className="term-history">
-            <CommandHistory hostID={hostID} onError={onError} />
+          <aside className="term-history" style={{ width: histWidth }}>
+            <ResizeHandle pref="historyWidth" label={t('히스토리 너비')} axis="x" />
+            <CommandHistory hostID={hostID} cwd={cwd} onError={onError} />
           </aside>
         )}
       </div>
