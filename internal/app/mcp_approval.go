@@ -74,9 +74,14 @@ func asksAbout(mode, tool string) bool {
 	case WriteStrict:
 		return true
 	default:
-		// Only the tools whose dialog shows something the client could not:
-		// a diff against what is on the server right now.
-		return tool == "fs_write" || tool == "fs_edit" || tool == "fs_delete"
+		// The tools whose dialog shows something the client could not. For a
+		// file that is the diff against what is on the server right now. For a
+		// command it is the command: `svc_control(restart, nginx.service)` is
+		// fully described by the call the client already displayed, and a shell
+		// line is not — the schema bounds the first and says nothing about the
+		// second.
+		return tool == "fs_write" || tool == "fs_edit" || tool == "fs_delete" ||
+			tool == "run_command"
 	}
 }
 
@@ -136,6 +141,12 @@ const (
 	outcomeAuto     approvalOutcome = "auto-approved"
 	outcomeDeclined approvalOutcome = "declined"
 	outcomeTimeout  approvalOutcome = "timeout"
+
+	// Restores are not approvals — nobody was asked — but they end up on the
+	// same log line, and they are successes. Left out of the set below they
+	// would be filed as failed commands.
+	outcomeRestored        approvalOutcome = "restored"
+	outcomeRestoredInPlace approvalOutcome = "restored in place"
 )
 
 type approvalBridge struct {

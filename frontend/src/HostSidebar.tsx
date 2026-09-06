@@ -29,6 +29,7 @@ export function HostSidebar({
   busy,
   version,
   onOpenMCP,
+  onCollapse,
 }: {
   hosts: HostView[]
   activeID: string | null
@@ -44,6 +45,10 @@ export function HostSidebar({
   // information too.
   version?: string
   onOpenMCP: () => void
+  /** Folds the host list away. Editing a file is the case this exists for:
+   *  the list is worth a fifth of the window while choosing a server and
+   *  nothing at all while reading code on it. */
+  onCollapse: () => void
 }) {
   const groups = new Map<string, HostView[]>()
   for (const h of hosts) {
@@ -58,6 +63,14 @@ export function HostSidebar({
       <div className="sidebar-head">
         <span className="sidebar-title">{t('호스트')}</span>
         <span className="spacer" />
+        <button
+          className="ghost icon-btn"
+          onClick={onCollapse}
+          title={t('호스트 목록 접기')}
+          aria-label={t('호스트 목록 접기')}
+        >
+          «
+        </button>
         <button className="ghost small-btn" onClick={onImport} disabled={busy} title={t('~/.ssh/config 가져오기')}>
           {t('가져오기')}
         </button>

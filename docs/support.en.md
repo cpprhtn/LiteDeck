@@ -15,7 +15,7 @@ This section separates **what has actually been run** from what merely ought to 
 | **Client** | **Ubuntu 24.04.3 (Proxmox VM)** | Release Linux desktop binary launch confirmed: the window opens, connects to a real server, and shows monitoring and a file listing. No keychain there, so the **credential-storage fallback** was exercised too |
 | **Server** | **Windows 10 Pro / PowerShell 5.1 (a real SSH server)** | Services, processes, network, monitoring. Not a container |
 | **Server** | **Ubuntu 24.04.4 (a real SSH server)** | The whole read side (metrics, services and failed detection, containers, exposed ports, journal) plus reading, writing and deleting files, including the permission-denied path |
-| **Server** | **Raspberry Pi 4 Model B / Debian 12 (bookworm), systemd 252, arm64 (a real SSH server)** | **Nearly everything.** The whole monitoring tab (CPU breakdown, per-core, memory and swap, disk I/O, per-interface network, filesystems including inodes, the system panel) and the journal events pane; starting, stopping and restarting services and containers; saving, deleting and transferring files; **completing a sudo escalation**; the terminal PTY; and live log tailing. **The first arm64 Linux server**, on a box with 314 days of uptime |
+| **Server** | **Raspberry Pi 4 Model B / Debian 12 (bookworm), systemd 252, arm64 (a real SSH server)** | **Nearly everything.** The whole monitoring tab (CPU breakdown, per-core, memory and swap, disk I/O, per-interface network, filesystems including inodes, the system panel) and the journal events pane; starting, stopping and restarting services and containers; saving and deleting files; **whole-folder transfers and resuming** (one transfer was interrupted and resumed twice); **completing a sudo escalation**; the terminal PTY; and live log tailing. **The first arm64 Linux server**, on a box with 314 days of uptime |
 | **Server** | Ubuntu 22.04.5 / systemd 249 | Full flow: services (JSON path), files, processes, timers, log tailing, privilege escalation |
 | **Server** | Ubuntu 20.04.6 / systemd 245 | Service **table-parsing fallback** (the version with no JSON output) |
 | **Server** | Alpine 3.20 + OpenSSH | Transport: SFTP, reconnect, injection defence, concurrent sessions |
@@ -26,9 +26,24 @@ This section separates **what has actually been run** from what merely ought to 
 **Two of the rows above are real Linux SSH servers.** An Ubuntu 24.04.4 server was driven through
 the MCP integration, covering the read side and reading, writing and deleting files; a Raspberry
 Pi 4 (Debian 12, arm64) went further and exercised **the paths the GUI writes through** — service
-and container control, saving, deleting and transferring files, completing a sudo escalation, the
-terminal PTY and live log tailing. **Only whole-folder transfers and resuming are still container
-fixtures** (`testdata/`).
+and container control, saving and deleting files, **whole-folder transfers and resuming** (one
+transfer was interrupted and resumed twice), completing a sudo escalation, the terminal PTY and
+live log tailing.
+
+**The command history (the sudo journal half) was checked against a real journal.** The actual
+`journalctl -t sudo` output from an Ubuntu 24.04 server was fed to the parser, which read 19 records
+— the working directory out of `PWD=`, refused attempts told apart from commands that ran, and the
+change/edit/read classification. **One of the three permission answers was not seen on real
+hardware**: the account used is in `adm`, so the "not in the group" path was only exercised against
+the container fixture.
+
+**Atomic saving was judged by hard link.** On both servers a second link was made to the same
+content, the file was saved, and the link was read back. In a writable directory the link still
+held the old content — a rename replaces the directory entry and breaks the link. In a directory
+with its write bit removed the link followed the new content, which is what writing through the
+file does. The save also kept the file's mode (0600). The two results point opposite ways, so an
+implementation that reports itself atomic while writing in place cannot pass both. **This was done
+through MCP's `fs_write`**, which goes through the same function the editor does.
 
 The Linux client has been **opened, connected and read from**. Transfers, the terminal and the GTK
 file chooser have not.
@@ -42,8 +57,8 @@ file chooser have not.
 
 | | Status |
 |---|---|
-| **Whole-folder transfers and resuming** | Transferring files was confirmed on real hardware, but pulling or pushing an entire folder and resuming an interrupted transfer are still container fixtures only |
 | **The rest of the Linux client** | Window, connecting and the read side are confirmed. Transfers, the terminal, the GTK file chooser and keychain storage are not |
+| **The editor's on-screen save path** | The save function itself was verified on two real servers, atomicity and the fallback included, but through MCP's `fs_write`. The editor tab's save button, and the **conflict path** for a file that changed on the server after it was opened, have not been exercised on a real machine |
 | **RHEL/Rocky 8** | Share the systemd 245 table-parsing path, so they should work, but untested |
 | **Podman** | Docker-compatible CLI, so the parser is shared, but never run |
 | **Windows containers** | The test machine had no Docker |

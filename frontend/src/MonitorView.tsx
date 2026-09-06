@@ -18,6 +18,10 @@ import { t } from './i18n'
 // the fine recent end and sar is the coarse older end of the *same* chart, with
 // the seam shown rather than hidden.
 
+// The command history used to be a third pane here. It moved to the terminal
+// tab, which is where it is actually used: the thing people do with a past
+// command is run it again, and that is one pane away from here and none away
+// from there.
 type Pane = 'resources' | 'events'
 
 export function MonitorView({

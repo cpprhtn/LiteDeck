@@ -1,0 +1,20 @@
+OS: Ubuntu 24.04.4 LTS
+systemd: systemd 255
+captured: 2026-09-06T09:52:00Z
+command: journalctl -t sudo -o json -n 5
+
+Taken from a real server over LiteDeck's MCP run_command, then anonymised —
+user, hostname, machine-id, boot-id and cursor were replaced. The shapes are
+untouched, and they are the point of this fixture:
+
+- Only one of the captured entries carried _COMM, _EXE, _SYSTEMD_UNIT and the
+  _AUDIT_* fields. journald fills those by reading /proc/<pid>, and sudo has
+  usually exited before it looks. A parser that expects them drops most rows.
+- PWD, USER, COMMAND and TTY are not fields. They live inside MESSAGE as one
+  " ; "-separated sentence, whose wording varies with the sudoers config.
+- A refusal ("a password is required") uses the same sentence shape as a run,
+  with the reason where TTY would be.
+
+Two rows were added by hand on top of the capture, for cases the five real ones
+did not cover: a COMMAND containing " ; " and a secret-looking flag, and a row
+from an earlier boot so the boot boundary has something to find.

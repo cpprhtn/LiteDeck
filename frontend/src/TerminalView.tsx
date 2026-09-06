@@ -9,10 +9,15 @@ import {
   ReadClipboard,
   ResizeTerminal,
   RevealFromTerminal,
+  TerminalCwd,
+  TypedEntered,
   WriteTerminal,
   on,
   type TerminalInfo,
 } from './ipc'
+import { CommandHistory } from './CommandHistory'
+import { ResizeHandle } from './ResizeHandle'
+import { usePref } from './prefs'
 import { LineWatcher } from './lineWatcher'
 import { requestReveal } from './openFiles'
 import { getPlatform } from './platform'
@@ -174,6 +179,13 @@ function TerminalPane({
     // shadowed, and there is no version of this that opens an editor on the
     // server by accident.
     const typed = new LineWatcher()
+    // Every line the user enters goes to the local history (T-22), including
+    // the ones this side could not read — those carry no text and only cost the
+    // tracked directory its confidence. Failures are swallowed: a history that
+    // cannot be written is not a reason to break the terminal.
+    typed.onEnter = ({ line, blind }) => {
+      void TypedEntered(info.hostId, info.id, line, blind).catch(() => {})
+    }
     const disposeInput = term.onData((data) => {
       const caught = typed.feed(data, term.buffer.active.type === 'normal')
       if (caught) {
@@ -259,6 +271,25 @@ export function TerminalView({
   const [tabs, setTabs] = useState<TerminalInfo[]>([])
   const [active, setActive] = useState<string | null>(null)
   const [dead, setDead] = useState<Set<string>>(new Set())
+  // Open by default would take a quarter of the terminal from somebody who came
+  // here to type. It is one click away and it remembers nothing on purpose —
+  // the panel is for looking something up, not for living in.
+  const [histOpen, setHistOpen] = useState(false)
+  const histWidth = usePref('historyWidth')
+  // Where the active terminal is standing, so the panel can open there. Asked
+  // when the panel opens and when the tab changes — not polled: it moves on a
+  // `cd`, and a `cd` is a keystroke this side already saw.
+  const [cwd, setCwd] = useState<string | undefined>()
+  useEffect(() => {
+    if (!histOpen || !active) return
+    let gone = false
+    void TerminalCwd(active)
+      .then(([p]) => !gone && setCwd(p || undefined))
+      .catch(() => {})
+    return () => {
+      gone = true
+    }
+  }, [histOpen, active])
   const opening = useRef(false)
   /** The host whose sessions this view has already taken over. */
   const adopted = useRef<string | null>(null)
@@ -401,24 +432,41 @@ export function TerminalView({
           </button>
         </div>
         <span className="spacer" />
-        <span className="muted small">
-          {t('GUI가 표현하지 못하는 일을 위한 탭입니다 — 실행한 명령은 아래 Command Log에 남습니다')}
-        </span>
+        <button
+          className="ghost small-btn"
+          data-on={histOpen || undefined}
+          onClick={() => setHistOpen((v) => !v)}
+          title={t('이 서버에서 지난번에 무엇을 했는지')}
+        >
+          {t('히스토리')}
+        </button>
       </div>
 
-      <div className="term-stack">
-        {tabs.length === 0 && <div className="placeholder">{t('터미널을 여는 중…')}</div>}
-        {tabs.map((t) => (
-          <div key={t.id} className="term-slot" data-active={t.id === active || undefined}>
-            <TerminalPane
-              info={t}
-              focused={visible && t.id === active}
-              onClosed={() => setDead((d) => new Set(d).add(t.id))}
-              onError={onError}
-              onCommand={(_cmd, arg) => void reveal(t.id, arg)}
-            />
-          </div>
-        ))}
+      {/* The history sits beside the terminal because that is where it is used:
+          what people do with a command they ran before is run it again, and a
+          list of them one tab away is a list nobody walks to. */}
+      <div className="term-split" data-history={histOpen || undefined}>
+        <div className="term-stack">
+          {tabs.length === 0 && <div className="placeholder">{t('터미널을 여는 중…')}</div>}
+          {tabs.map((t) => (
+            <div key={t.id} className="term-slot" data-active={t.id === active || undefined}>
+              <TerminalPane
+                info={t}
+                focused={visible && t.id === active}
+                onClosed={() => setDead((d) => new Set(d).add(t.id))}
+                onError={onError}
+                onCommand={(_cmd, arg) => void reveal(t.id, arg)}
+              />
+            </div>
+          ))}
+        </div>
+
+        {histOpen && (
+          <aside className="term-history" style={{ width: histWidth }}>
+            <ResizeHandle pref="historyWidth" label={t('히스토리 너비')} axis="x" />
+            <CommandHistory hostID={hostID} cwd={cwd} onError={onError} />
+          </aside>
+        )}
       </div>
     </div>
   )

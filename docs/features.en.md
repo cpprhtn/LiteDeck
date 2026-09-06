@@ -12,12 +12,14 @@
 | **Processes** | A task-manager table. Sort, search, tree view, terminate (TERM then KILL), change priority |
 | **Containers** | Docker and Podman cards. Start/stop/restart/remove, **live log tailing**, image and volume cleanup. Anything Compose started is **grouped by project** and can be started, stopped or restarted as one |
 | **Network** | Interfaces and listening ports. **Flags which ones are reachable from outside**. Reviews the sshd configuration |
-| **Sessions** | Who is logged in to this server, and cutting any of them off |
+| **Sessions** | Who is logged in to this server, and cutting any of them off. **Login history and failed attempts** — successes from wtmp, failures from the journal. Failures run into the thousands a day, so they arrive summarised by IP and account rather than listed |
 | **Scheduled jobs** | systemd timers. Next and last run |
 | **Terminal** | xterm.js PTY, multiple tabs. `code .` and `vi foo.conf` are **caught by the app** and open in the file tab. They are never sent to the server, so neither VS Code nor vi needs to exist there |
 | **Monitoring** | The bar is the glance, the monitoring tab is a dashboard. CPU is **split into user, kernel, IO wait and steal** — 90% that is all IO wait means the disk, and all steal means the hypervisor. **A core die**, memory with cache and buffers separated out, and NVIDIA cards add **utilisation, fan, temperature and VRAM** (nvidia-smi) |
 | **Infrastructure metrics** | **Inodes** (a disk with room that cannot create a file), **network error and drop** counters, **disk I/O**, **PSI** — how long things waited rather than how much was used — runnable and blocked counts, open descriptors. All of it read from `/proc` and `df`, so **there is still nothing installed on the server** |
 | **Trends** | CPU, memory and GPU over time for as long as the app was watching. **Stretches it did not see are drawn as breaks**, never joined up |
+| **Command history** | A panel beside the terminal tab: **which directory, and what ran there**, as a tree. Three sources (sudo's journal, this app's terminal, the shell's history file) shown apart rather than merged. The journal's path is recorded and therefore certain; a history file's path is recovered by replaying `cd` and **says so when it is an estimate**. Reading the shell history is **enabled per server**, and anything that looks like a password is masked in Go |
+| **While you were away** | Opening a host shows one line on **what changed since you last looked**. The monitoring tab carries **how many security updates are pending and whether a reboot is needed** — two files read, no root and no commands |
 | **Events** | What happened, and when. **OOM kills**, failed units, core dumps, scheduled restarts, reboot boundaries. Read from the systemd journal and classified by `MESSAGE_ID` rather than by wording, so the server's language does not matter |
 | **Command Log** | **Every command the GUI runs, live.** Click to copy |
 | **MCP** | Claude Code and Claude Desktop read and change your servers through this app. Per-server opt-in, changes are approved, **and can be undone** |

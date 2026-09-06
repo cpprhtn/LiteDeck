@@ -14,7 +14,7 @@ import {
   useOpenFiles,
   type OpenFile,
 } from './openFiles'
-import { getPlatform } from './platform'
+import { getPlatform, matches } from './platform'
 import { DEFAULTS, setPref, usePref } from './prefs'
 import { t } from './i18n'
 
@@ -66,8 +66,38 @@ export function EditorPane({
   // rather than from a stale closure.
   const latest = useRef(file)
   latest.current = file
+  const confirmRef = useRef(confirm)
+  confirmRef.current = confirm
+  // requestSave is defined below the early return, so the listener reaches it
+  // through a ref rather than being re-registered on every render.
+  const requestSaveRef = useRef<(f: OpenFile) => void>(() => {})
 
-  useEffect(() => setNotice(null), [file?.path])
+  // Cleared when the document changes too, not only when the file does. A
+  // stale "바뀐 내용이 없습니다" sitting under a diff dialog is the status bar
+  // contradicting the screen.
+  useEffect(() => setNotice(null), [file?.path, file?.doc])
+
+  // ⌘S from anywhere on this tab, not only from inside the editor.
+  //
+  // CodeMirror's own keymap has the focused case and is the better handler
+  // there — it knows which view is active. But focus leaves the document for
+  // the file tree, a tab, the filter box, and somebody who has just typed a
+  // line and clicked away still means "save this". The editor claims the event
+  // first and marks it handled; this only picks up what it did not.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || !matches(e, 'save')) return
+      const f = latest.current
+      if (!f) return
+      e.preventDefault()
+      // Not while a dialog is up. The save confirmation is itself waiting for
+      // an answer, and reopening it underneath is not one.
+      if (confirmRef.current) return
+      requestSaveRef.current(f)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   if (!file) return null
 
@@ -78,6 +108,7 @@ export function EditorPane({
     }
     setConfirm({ kind: 'save', file: f })
   }
+  requestSaveRef.current = requestSave
 
   const commitSave = async (f: OpenFile, force: boolean, thenClose?: boolean) => {
     setBusy(true)

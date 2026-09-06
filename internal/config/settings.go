@@ -31,6 +31,21 @@ type Settings struct {
 	// an endpoint that speaks for every connected server is not something to
 	// open because the app was installed.
 	MCP MCPSettings `json:"mcp,omitzero"`
+
+	// LastSeen is when this app was last looking at a host, in unix seconds,
+	// by host ID. It is what "since you last looked" is measured from.
+	//
+	// Local, and deliberately: it is a fact about this person's attention, not
+	// about the server. Two people watching the same box have two different
+	// answers, and writing it to the server would give them one wrong one.
+	LastSeen map[string]int64 `json:"lastSeen,omitempty"`
+
+	// ShellHistory lists hosts whose shell history file may be read, by host ID.
+	//
+	// Off until asked for, and its own switch rather than part of connecting: a
+	// shell history is the densest credential file on a server, and reading one
+	// is a different decision from opening a terminal on the same box.
+	ShellHistory map[string]bool `json:"shellHistory,omitempty"`
 }
 
 // MCPSettings is the AI integration (§4 of the MCP design note).
@@ -62,6 +77,12 @@ type MCPSettings struct {
 	// the approval mode because they answer different questions: whether the
 	// tool exists, and whether using it interrupts you. Absent means no.
 	Delete map[string]bool `json:"delete,omitempty"`
+	// Exec lists hosts where arbitrary commands may be run. Its own switch for
+	// the same reason Delete has one, and off for the same reason: most people
+	// want an agent that reads and edits. Unlike the others it cannot be waved
+	// through — a command leaves no copy to put back, so the approval mode does
+	// not apply to it.
+	Exec map[string]bool `json:"exec,omitempty"`
 }
 
 // MCPWritePolicy is how one host handles a write an AI asks for (§4.2).
@@ -117,8 +138,6 @@ func (s *SettingsStore) Get() Settings {
 	return s.settings
 }
 
-// SetLanguage records an explicit choice. An empty tag means "follow the OS"
-// and is a legitimate value — it is how somebody undoes a choice.
 // SetMCP replaces the MCP settings.
 func (s *SettingsStore) SetMCP(m MCPSettings) error {
 	s.mu.Lock()
@@ -127,6 +146,38 @@ func (s *SettingsStore) SetMCP(m MCPSettings) error {
 	return s.save()
 }
 
+// SetLastSeen records that this app was looking at a host, in unix seconds.
+//
+// Written when the digest has been shown, not when the host connects: the point
+// of the mark is "you have seen what happened up to here", and moving it on
+// connect would consume the answer before anybody read it.
+func (s *SettingsStore) SetLastSeen(hostID string, at int64) error {
+	s.mu.Lock()
+	if s.settings.LastSeen == nil {
+		s.settings.LastSeen = map[string]int64{}
+	}
+	s.settings.LastSeen[hostID] = at
+	s.mu.Unlock()
+	return s.save()
+}
+
+// SetShellHistory turns the shell history on or off for one host.
+func (s *SettingsStore) SetShellHistory(hostID string, allowed bool) error {
+	s.mu.Lock()
+	if s.settings.ShellHistory == nil {
+		s.settings.ShellHistory = map[string]bool{}
+	}
+	if allowed {
+		s.settings.ShellHistory[hostID] = true
+	} else {
+		delete(s.settings.ShellHistory, hostID)
+	}
+	s.mu.Unlock()
+	return s.save()
+}
+
+// SetLanguage records an explicit choice. An empty tag means "follow the OS"
+// and is a legitimate value — it is how somebody undoes a choice.
 func (s *SettingsStore) SetLanguage(tag string) error {
 	s.mu.Lock()
 	s.settings.Language = tag

@@ -48,7 +48,7 @@ function Sparkline({
   const w = 56
   const h = 16
   const usable = samples.filter((s) => pick(s) >= 0)
-  if (usable.length < 2) return <svg className="spark" width={w} height={h} />
+  if (usable.length < 2) return <svg className="spark" viewBox={`0 0 ${w} ${h}`} width={w} height={h} />
 
   // x is time, not index. Spacing the points evenly drew half an hour of idle
   // polling as though it were two minutes of active polling — the shape stayed
@@ -70,7 +70,16 @@ function Sparkline({
   })
 
   return (
-    <svg className="spark" width={w} height={h} data-warn={warn || undefined}>
+    // viewBox, so the points keep meaning what they say if the tile is ever
+    // given a width by CSS. Without it the drawing stays 56x16 wherever the
+    // element ends up, which is not what the comment above promised.
+    <svg
+      className="spark"
+      viewBox={`0 0 ${w} ${h}`}
+      width={w}
+      height={h}
+      data-warn={warn || undefined}
+    >
       {runs
         .filter((r) => r.length >= 2)
         .map((r, i) => (

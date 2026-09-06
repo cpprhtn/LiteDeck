@@ -109,8 +109,15 @@ safe ([`internal/mcp/http.go`](../internal/mcp/http.go)).
   blast radius**: everything in the Command Log, the mode expiring on its own, and the fact that it
   is set per host
 - **Only files can be undone.** A service restart or a killed process has no copy behind it. Those
-  are the recoverable kind, which is why they are offered; the unrecoverable ones (arbitrary command
-  execution, recursive directory deletion, removing containers or images) are not offered at all
+  are the recoverable kind, which is why they are offered; recursive directory deletion and removing
+  containers or images are not offered at all
+- **Running a command cannot be undone.** `run_command` has to be switched on per server (off by
+  default), and with it on the default mode still asks every time. "Don't ask overnight" **does**
+  cover it, though: that mode is switched on for unattended work, and stopping at the first command
+  would defeat the point — and killing a process or restarting a service is just as irreversible.
+  The reason it exists at all is auditing: the same command typed in the terminal tab leaves
+  nothing in the Command Log, and one that goes through MCP leaves all of it. The reasoning is in
+  the [MCP doc](mcp.en.md)
 - **The MCP layer never touches credentials.** The token is for this endpoint only, and SSH
   credentials stay in the OS keychain as described above
 

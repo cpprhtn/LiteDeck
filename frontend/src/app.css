@@ -189,6 +189,21 @@
   font-weight: 600;
 }
 
+/* Folded away: the list drops to a rail holding only the way back. Editing a
+   file is what this is for — the host list earns its width while choosing a
+   server and none of it while reading code on one. */
+.app[data-sidebar='off'] {
+  grid-template-columns: 36px 1fr;
+}
+.sidebar-rail {
+  grid-area: sidebar;
+  display: flex;
+  justify-content: center;
+  padding-top: var(--sp-3);
+  border-right: 1px solid var(--border);
+  background: var(--bg-sunken);
+}
+
 /* Server "this server" mode: no host sidebar (one auto-connected host), so the
    grid drops to a single column and the shell controls move into the header. */
 .app[data-self] {
@@ -431,6 +446,15 @@
   cursor: row-resize;
   z-index: 1;
 }
+.resize-handle[data-axis='x'] {
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  right: auto;
+  width: 6px;
+  height: auto;
+  cursor: col-resize;
+}
 .resize-handle:hover,
 .resize-handle:active {
   background: var(--accent);
@@ -461,9 +485,14 @@
   padding: 0 var(--sp-4) var(--sp-2);
 }
 
+/* The first column holds the marker, and the marker is not always one
+   character: an MCP line carries `MCP` where a shell line carries `$`. Sized
+   for `$` it was 12px, so `MCP` ran straight over the command next to it. The
+   column is fixed rather than min-content because every row is its own grid —
+   sizing to content would step the commands in and out by row. */
 .cmdlog-row {
   display: grid;
-  grid-template-columns: 12px 1fr auto auto;
+  grid-template-columns: 26px 1fr auto auto;
   align-items: baseline;
   gap: var(--sp-2);
   padding: 3px 0;
@@ -474,8 +503,11 @@
 .cmdlog-row:hover {
   background: var(--bg-hover);
 }
+/* Right-aligned so `$` still sits against the command it belongs to, and the
+   wider `MCP` fills the column from the other side. */
 .cmdlog-marker {
   color: var(--fg-faint);
+  text-align: right;
 }
 .cmdlog-line {
   overflow: hidden;
@@ -626,6 +658,20 @@ button.ghost {
   height: 24px;
   font-size: var(--text-sm);
   padding: 0 var(--sp-2);
+}
+
+/* Square, for a button whose whole label is one glyph. The chevrons sit a
+   little high in the line box, hence the nudge. */
+button.icon-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: var(--text-md);
+  line-height: 1;
+  color: var(--fg-muted);
+}
+button.icon-btn:hover {
+  color: var(--fg);
 }
 
 .badge {
@@ -2161,6 +2207,351 @@ button.danger {
   padding: var(--sp-2) var(--sp-3);
   border-bottom: 1px solid var(--border);
 }
+/* Terminal, with the history beside it (T-21~23) --------------------------- */
+
+.term-split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.term-split > .term-stack {
+  flex: 1;
+  min-width: 0;
+}
+/* Width is the user's, dragged and remembered. The default is about a quarter
+   of a normal window — wide enough for a docker command without wrapping. */
+.term-history {
+  position: relative;
+  flex: none;
+  min-height: 0;
+  display: flex;
+  border-left: 1px solid var(--border);
+  background: var(--bg-sunken);
+}
+.term-history > .history-pane {
+  flex: 1;
+  min-width: 0;
+}
+/* Command history (arch/07, 명령 이력) ------------------------------------- */
+
+.history-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+.history-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+.history-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  cursor: pointer;
+  white-space: nowrap;
+}
+/* The switch, where the list would be. Somebody who never turns it on should
+   still understand what they are not seeing. */
+.history-optin {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  margin: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  max-width: 62ch;
+}
+.history-optin p {
+  margin: 0;
+}
+/* The shell file is the weakest provenance of the three, and its mark says so. */
+.history-run[data-source='shell'] .history-mark {
+  opacity: 0.4;
+}
+.history-secrets {
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--warn);
+  border-bottom: 1px solid var(--border);
+}
+.history-empty {
+  padding: var(--sp-3);
+}
+
+/* The tree, and under it the commands from whichever directory is picked.
+   Two panes rather than one expanding list: in a panel this narrow, opening a
+   directory inline pushes everything under it off the bottom, and the thing
+   that gets pushed off is the answer. */
+.history-tree {
+  flex: 1 1 55%;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--sp-1) 0;
+}
+.history-dir {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-1);
+  padding-right: var(--sp-3);
+  font-size: var(--text-sm);
+}
+.history-dir:hover {
+  background: var(--bg-hover);
+}
+.history-dir[data-picked] {
+  background: var(--accent-soft, var(--bg-hover));
+}
+/* Where the terminal is standing. Marked, not filtered — the point is to find
+   it at a glance, not to hide everywhere else. */
+.history-dir[data-here] .history-dir-name::before {
+  content: '▶';
+  color: var(--accent);
+  font-size: 9px;
+  padding-right: 4px;
+}
+.history-twisty {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--fg-faint);
+  cursor: pointer;
+  font-size: 10px;
+}
+.history-twisty:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+.history-dir-name {
+  background: none;
+  border: 0;
+  padding: 3px 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+.history-count {
+  font-variant-numeric: tabular-nums;
+}
+
+.history-chosen {
+  flex: 1 1 45%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+}
+.history-chosen-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.history-chosen > .history-runs {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.history-runs {
+  background: var(--bg-sunken);
+}
+/* A row, not a button that looks like one. The base button chrome has to come
+   off before the grid can line the marks up — losing these rules turned every
+   command into a pill floating in the middle of the panel.
+
+   The mark column is fixed so commands line up under each other whatever the
+   effect is, the same reason the Command Log's marker column is. */
+.history-run {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: var(--sp-2);
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  padding: 3px var(--sp-3);
+  font-size: var(--text-sm);
+  color: inherit;
+  cursor: copy;
+}
+.history-run:hover {
+  background: var(--bg-hover);
+}
+.history-mark {
+  color: var(--fg-faint);
+  text-align: center;
+}
+.history-run[data-effect='change'] .history-mark {
+  color: var(--accent);
+}
+/* The app's own terminal log is dimmer than sudo's journal. Same information,
+   weaker provenance: one was written by sudo as it ran, the other reconstructed
+   from keystrokes. */
+.history-run[data-source='typed'] .history-mark {
+  opacity: 0.55;
+}
+.history-run[data-effect='edit'] .history-mark {
+  color: var(--warn);
+}
+/* A refused command did not happen. It stays in the list because trying and
+   failing is part of the record, but it must not read like a run. */
+.history-run[data-refused] .history-cmd {
+  color: var(--fg-muted);
+  text-decoration: line-through;
+}
+.history-cmd {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.history-when {
+  white-space: nowrap;
+}
+.history-refused {
+  color: var(--danger);
+  white-space: nowrap;
+}
+.history-copied {
+  color: var(--ok);
+  white-space: nowrap;
+}
+
+/* "Since you last looked" (T-29) ------------------------------------------ */
+
+.digest {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-sunken);
+  font-size: var(--text-sm);
+}
+/* Louder only for the two that mean something broke or restarted. A day of
+   failed passwords is normal on the open internet and must not cry wolf. */
+.digest[data-loud] .digest-body {
+  color: var(--warn);
+  font-weight: 600;
+}
+.digest-cap {
+  color: var(--fg-faint);
+  white-space: nowrap;
+}
+.digest-body {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Login history, under the live session table (T-26) ---------------------- */
+
+/* The live table takes what it needs; this takes the rest and scrolls. The
+   other way round — the table on `flex: 1` — collapses it to nothing on a short
+   window and spills the header over this section, which is what it did. */
+.view > .session-table {
+  flex: none;
+  /* Its own scroller past a few rows, so twenty sessions cannot push the
+     history off the screen either. */
+  max-height: 40%;
+}
+.login-hist {
+  border-top: 1px solid var(--border);
+  padding: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.login-hist-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.login-hist-empty {
+  padding: var(--sp-2) 0;
+}
+
+.login-auth-nums {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+}
+/* Red only when there is something to be red about. A server nobody is
+   knocking on should not wear an alarm colour for the number zero. */
+.login-auth-fail {
+  font-weight: 600;
+}
+.login-auth-fail[data-hot] {
+  color: var(--danger);
+}
+/* Two lists side by side, each as wide as it needs. Stretching them across a
+   wide pane put the counts a screen apart from the names they belong to. */
+.login-auth-tops {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 260px));
+  justify-content: start;
+  gap: var(--sp-4, 20px);
+  padding: var(--sp-2) 0;
+}
+.login-auth-cap {
+  font-size: var(--text-xs, 11px);
+  color: var(--fg-faint);
+  padding-bottom: 2px;
+}
+.login-auth-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--sp-2);
+  font-size: var(--text-sm);
+  padding: 1px 0;
+}
+
+/* Capped rather than stretched. On a wide window the five columns were spread to
+   the edges with the time alone at the far right, which reads as five unrelated
+   things rather than one row. */
+.login-row {
+  display: grid;
+  grid-template-columns: 120px 80px minmax(0, 200px) 150px 90px;
+  gap: var(--sp-3);
+  align-items: baseline;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+/* A restart is not a person logging in. It is the row people actually look for
+   in this file, so it is marked rather than blended in. */
+.login-row[data-boot] .login-who {
+  color: var(--accent);
+  font-weight: 600;
+}
+.login-from,
+.login-who {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .events-list {
   flex: 1;
   min-height: 0;

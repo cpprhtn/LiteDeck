@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePoll } from './usePoll'
+import { LoginHistory } from './LoginHistory'
 import { EndSSHSession, ListSSHSessions, type ActionResult, type SSHSession } from './ipc'
 import { t } from './i18n'
 
@@ -70,9 +71,24 @@ export function SessionView({
     }
   }
 
-  if (loading) return <div className="placeholder">{t('세션을 읽는 중…')}</div>
+  // The history below is rendered whatever the live table says. "Nobody is
+  // logged in" is exactly the moment somebody wants to know who was, and
+  // returning early here hid it.
+  if (loading) {
+    return (
+      <div className="view">
+        <div className="placeholder">{t('세션을 읽는 중…')}</div>
+        <LoginHistory hostID={hostID} />
+      </div>
+    )
+  }
   if (sessions.length === 0) {
-    return <div className="placeholder">{t('SSH 세션이 없습니다.')}</div>
+    return (
+      <div className="view">
+        <div className="placeholder">{t('SSH 세션이 없습니다.')}</div>
+        <LoginHistory hostID={hostID} />
+      </div>
+    )
   }
 
   const others = sessions.filter((s) => !s.self).length
@@ -91,7 +107,10 @@ export function SessionView({
         </button>
       </div>
 
-      <div className="table">
+      {/* Sized to its content, not to the space. The history below is the long
+          half of this tab, and a table with `flex: 1` claims the room first and
+          then spills its rows over whatever follows when there is not enough. */}
+      <div className="table session-table">
         <div className="thead" style={{ gridTemplateColumns: cols }}>
           <div>{t('사용자')}</div>
           <div>{t('단말')}</div>
@@ -151,6 +170,8 @@ export function SessionView({
           ))}
         </div>
       </div>
+
+      <LoginHistory hostID={hostID} />
 
       {confirm && (
         <div className="scrim">

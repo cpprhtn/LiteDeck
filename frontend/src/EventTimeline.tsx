@@ -155,13 +155,16 @@ export function EventTimeline({
 }
 
 /** Emptiness always arrives labelled. An unreadable journal and a quiet server
- *  look identical on screen, and they need opposite things said about them. */
-function AccessNotice({
+ *  look identical on screen, and they need opposite things said about them.
+ *
+ *  Exported because the command history reads the same journal and inherits the
+ *  same three-way answer — a second copy of this would drift from it. */
+export function AccessNotice({
   view,
   busy,
   onElevate,
 }: {
-  view: EventsView
+  view: { access: EventsView['access'] }
   busy: boolean
   onElevate: () => void
 }) {

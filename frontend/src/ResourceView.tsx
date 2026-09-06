@@ -1,5 +1,15 @@
-import { useState } from 'react'
-import type { CPUSplit, Core, DiskIO, Filesystem, GPU, NetIface, Pressure } from './ipc'
+import { useEffect, useState } from 'react'
+import {
+  HostUpdates,
+  type CPUSplit,
+  type Core,
+  type DiskIO,
+  type Filesystem,
+  type GPU,
+  type NetIface,
+  type Pressure,
+  type UpdateStatus,
+} from './ipc'
 import { useMetrics, useMetricsHistory, type Sample } from './metricsStore'
 import { TimeChart } from './TimeChart'
 import { shortGPUName } from './gpuName'
@@ -54,6 +64,25 @@ function pct(v: number): string {
 }
 
 export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFacts }) {
+  // Read once per host, like the detection facts beside it. Both files change
+  // when apt runs, which is not while somebody is reading this screen — and a
+  // poller for it would be two SFTP stats a second for a number that moves
+  // once a day.
+  const [updates, setUpdates] = useState<UpdateStatus | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    setUpdates(null)
+    void HostUpdates(hostID)
+      .then((u) => !cancelled && setUpdates(u))
+      // Silent on purpose: this is a footnote in a panel, and a server that
+      // will not answer it should not raise anything over the numbers that
+      // did answer.
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [hostID])
+
   // No poll of its own: the summary bar above is already reading these numbers
   // for this host, and asking again would be a second round trip for the same
   // answer.
@@ -315,6 +344,7 @@ export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFact
         >
           <SystemInfo
             info={facts}
+            updates={updates}
             uptime={m.uptimeSeconds}
             fdUsed={m.fdUsed}
             fdMax={m.fdMax}
@@ -424,14 +454,29 @@ function TopStat({
  *  the connection is up, so it is read once by detection rather than polled —
  *  and it is the half of the answer somebody needs before the numbers above
  *  mean anything. */
+/** How stale the cached update count is. The number without this is a claim
+ *  about now that nobody checked. */
+function checkedAgo(iso: string): string {
+  const then = new Date(iso).getTime()
+  if (!Number.isFinite(then) || then <= 0) return t('기준 시각 모름')
+  const hours = Math.floor((Date.now() - then) / 3600000)
+  if (hours < 1) return t('방금 확인')
+  if (hours < 24) return t('{n}시간 전 기준', { n: hours })
+  return t('{n}일 전 기준', { n: Math.floor(hours / 24) })
+}
+
 function SystemInfo({
   info,
+  updates,
   uptime,
   fdUsed,
   fdMax,
   switchRate,
 }: {
   info: SysFacts
+  /** null while it is being read, and absent entirely on a server that keeps
+   *  no such files. */
+  updates: UpdateStatus | null
   uptime: number
   fdUsed: number
   fdMax: number
@@ -442,6 +487,35 @@ function SystemInfo({
   rows.push([t('가동 시간'), fmtUptime(uptime)])
   rows.push([t('부팅 시각'), since(uptime)])
   if (info.timezone) rows.push([t('시간대'), info.timezone])
+  // Nothing at all where the server keeps no record of this. Debian keeps
+  // none, and a row reading "0" there would be an invention — the same rule
+  // sar follows for a machine without sysstat.
+  if (updates?.known) {
+    rows.push([
+      t('업데이트'),
+      updates.updates < 0
+        ? t('개수를 읽지 못했습니다')
+        : updates.security > 0
+          ? t('{n}건 (보안 {s}건) · {when}', {
+              n: updates.updates,
+              s: updates.security,
+              when: checkedAgo(updates.checkedAt),
+            })
+          : t('{n}건 · {when}', { n: updates.updates, when: checkedAgo(updates.checkedAt) }),
+    ])
+    // Only when it is true. "재부팅: 불필요" would be a row that says nothing
+    // on almost every server, every time.
+    if (updates.rebootRequired) {
+      const pkgs = updates.rebootPkgs?.length ?? 0
+      // Not t('재부팅') — that key already exists for the timeline's badge and
+      // means "rebooted", something that happened. This is the opposite: one
+      // that has not. Sharing the key would print "Rebooted" here in English.
+      rows.push([
+        t('재부팅 대기'),
+        pkgs > 0 ? t('패키지 {n}개가 요구', { n: pkgs }) : t('대기 중'),
+      ])
+    }
+  }
   // Not facts about the machine but counters about the whole of it, and there
   // is nowhere better: running out of descriptors takes a server down in a way
   // that looks like nothing else is wrong.

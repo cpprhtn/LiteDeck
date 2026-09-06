@@ -83,14 +83,52 @@ All of it read from `/proc` and `df`. **There is still nothing installed on the 
 
 > The screenshot is a demo container ([`testdata/demo`](testdata/demo)). The GPU in it is a stand-in; every other figure came out of that container.
 
+## Command history <sub>v1.7.0</sub>
+
+**"I worked on that server three months ago. What did I do?"**
+
+A collapsible panel beside the terminal tab. The question is always two questions —
+*which directory was I working in*, and *what did I run there* — so the top is a
+directory tree and the bottom is what ran in the directory you picked. It opens
+wherever the terminal is standing.
+
+Three sources, **kept apart and labelled** rather than merged:
+
+| | |
+|---|---|
+| **sudo's journal** | What was run with elevated rights. sudo **records the working directory** at the moment the command runs, so the path here is a fact rather than a guess |
+| **This app's terminal** | What you typed here. Kept on this machine, not the server, so nothing is appended to anybody's history file |
+| **The shell's history file** | `~/.bash_history`, `~/.zsh_history`. Most of it is here |
+
+A history file knows **what** was typed and not **where**. Replaying `cd` recovers the
+path, and a line the replay could not follow **says on screen that it is an estimate**.
+bash also writes no timestamps at all unless `HISTTIMEFORMAT` is set, so entries keep
+the order the file gave them — **an absent time is not invented**.
+
+> **Reading the shell history is enabled per server, and off by default.** It is the
+> densest credential file on most machines, and a feature that reads it every time a tab
+> opens changes what that means. Anything that looks like a password is **masked in Go**
+> before it crosses, and the panel says how many it masked. `/root/.bash_history` is read
+> **only when you elevate on purpose**.
+
+**Also new, for the time you were not looking:** a digest of what changed since you last
+looked, successful and failed logins (thousands a day, so a summary rather than a list),
+and whether security updates or a reboot are pending. → [Features in detail](docs/features.en.md)
+
 ## Claude works your servers through this app
 
 MCP clients like Claude Code and Claude Desktop **sit where the GUI sat**: the same adapter, the same
-already-authenticated SSH connection, the same Command Log. They get 12 read tools and 5 write tools,
+already-authenticated SSH connection, the same Command Log. They get 12 read tools and 6 write tools,
 and **file changes are held for approval by default** — the dialog shows a diff against what is on the
 server right now, which is information no client has. Per host you can raise that to confirming
 everything. The policy is owned by the app and cannot be relaxed from the client side. Files MCP
 changed can be rolled back, and nothing is installed on the server.
+
+**Running commands can be granted too** <sub>v1.7.0</sub> — anything the GUI cannot express
+eventually needs it. Like deleting, it is **enabled per server and off by default**. Once on it
+follows the same approval policy as every other write tool: if you mean to let it drive, the
+commands travel with everything else. Singling them out for a permanent prompt would empty the
+relaxed modes of meaning.
 
 ```bash
 claude mcp add --transport http litedeck http://127.0.0.1:<port>/mcp \
@@ -146,7 +184,7 @@ something else is better. Which cases those are is written down in
 |---|---|
 | [Security](docs/security.en.md) | Host key verification, authentication, credential storage, sudo, the MCP endpoint. **What it cannot do comes first** |
 | [What is and is not verified](docs/support.en.md) | What was checked where, and what was not. Plus when this is not the right tool, and the non-goals |
-| [MCP integration](docs/mcp.en.md) | 17 tools, the approval policy, undo, the safeguards |
+| [MCP integration](docs/mcp.en.md) | 18 tools, the approval policy, undo, the safeguards |
 | [Features in detail](docs/features.en.md) | **The full feature list**, plus the Command Log, the editor, transfers, Compose, the sshd check and ProxyJump |
 | [Install and server setup](docs/install.en.md) | Getting past the first-launch warning, enabling OpenSSH on Windows |
 | [Reaching a machine over Tailscale](docs/remote-access.en.md) | Your home machine without port forwarding. Tailscale SSH, MCP, subnet routers, and doing it without an account |

@@ -35,6 +35,23 @@ export type CaughtCommand = {
 }
 
 /**
+ * A line the user pressed Enter on (T-22).
+ *
+ * `blind` is the whole point of this type. The watcher reconstructs a line from
+ * keystrokes, and the moment the shell interprets one for itself — an arrow key
+ * recalling history, Tab completing a name, Ctrl-R searching — what ends up on
+ * the line is no longer knowable from this side. Those lines are reported with
+ * `blind` set and **no text**, because a history recall is a very ordinary way
+ * to run a command and pretending not to have seen it would be worse than
+ * saying so: a recalled `cd` that goes unrecorded silently moves every path
+ * recorded after it.
+ */
+export type EnteredLine = {
+  line: string
+  blind: boolean
+}
+
+/**
  * Reconstructs the line being typed, and claims it only when it is certain.
  *
  * It must never swallow a line the user meant to run, so anything the shell
@@ -46,6 +63,15 @@ export class LineWatcher {
   private buf = ''
   private blind = false
 
+  /**
+   * Called for every completed line, whether or not it could be read.
+   *
+   * Set by whoever wants the history; unset it costs nothing. It fires before
+   * the interception check, so a `code .` the app answers itself is still a
+   * line the user ran.
+   */
+  onEnter: ((entered: EnteredLine) => void) | null = null
+
   /** Returns the command to handle, or null to send the input on as usual. */
   feed(data: string, atPrompt: boolean): CaughtCommand | null {
     // Not typing: the terminal talking to the shell on its own account.
@@ -56,6 +82,11 @@ export class LineWatcher {
       const blind = this.blind
       this.buf = ''
       this.blind = false
+      // Reported even when it could not be read, and even when the shell was
+      // not at a prompt — an answer typed into `less` is not a command, but
+      // "something was entered here" is still true, and the blind flag is what
+      // the caller uses to decide.
+      this.onEnter?.({ line: blind ? '' : line, blind: blind || !atPrompt })
       if (blind || !atPrompt) return null
       const m = CAUGHT.exec(line)
       return m ? { command: m[1], arg: m[2] ?? '', line } : null

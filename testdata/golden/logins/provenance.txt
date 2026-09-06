@@ -1,0 +1,17 @@
+OS: Ubuntu 24.04.4 LTS
+captured: 2026-09-06T11:40:00Z
+command: last -F -w
+
+Real output, with the addresses replaced by documentation ranges (RFC 5737) and
+the account renamed. Nothing else was touched, because the shapes are the point:
+
+- `last` is column-formatted, not space-delimited. A reboot line puts TWO words
+  in the tty column — "system boot" — and the kernel version where a host would
+  be. Splitting on whitespace mis-reads every one of them.
+- A session still open says "still logged in"; a boot still running says "still
+  running". Different words for the same idea.
+- A long uptime prints its duration as (523+17:18), days and hours, not (HH:MM).
+- The last two lines are a blank and "wtmp begins ...", which is not a record.
+
+Not captured, so not claimed: a login with an empty host column (a console or
+tty login) and a `shutdown` line. This server had neither in its wtmp.

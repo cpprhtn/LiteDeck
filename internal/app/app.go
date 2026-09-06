@@ -31,6 +31,7 @@ type App struct {
 	prompts   *promptBridge
 	log       *commandLog
 	detected  *detectCache
+	typed     *typedLog
 	selves    *selfCache
 	sshPorts  *portCache
 	ifaces    *ifaceCache
@@ -77,6 +78,7 @@ func New() *App {
 	a.prompts = newPromptBridge(a)
 	a.log = newCommandLog(a)
 	a.detected = newDetectCache()
+	a.typed = newTypedLog(a.configDir)
 	a.selves = newSelfCache()
 	a.sshPorts = newPortCache()
 	a.ifaces = newIfaceCache()
@@ -233,7 +235,7 @@ func (a *App) Bootstrap() Bootstrap {
 	return b
 }
 
-// ConnectionState is the payload of a conn:state:<hostID> event.
+// ConnectionState is the payload of a conn:state event.
 type ConnectionState struct {
 	HostID string `json:"hostId"`
 	State  string `json:"state"`
@@ -245,9 +247,10 @@ func (a *App) emitConnectionState(hostID string, s sshcore.State, err error) {
 	if err != nil {
 		payload.Error = err.Error()
 	}
-	// Both a per-host channel for the tab that cares and a broadcast for the
-	// sidebar, which tracks every host at once.
-	a.emit("conn:state:"+hostID, payload)
+	// One broadcast. There used to be a per-host channel beside it for "the tab
+	// that cares", but nothing ever subscribed to it: the sidebar tracks every
+	// host anyway, so the broadcast is what the frontend was reading. Emitting
+	// it cost a serialised push to every browser in server mode, for nobody.
 	a.emit("conn:state", payload)
 }
 

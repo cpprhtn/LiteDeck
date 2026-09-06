@@ -194,6 +194,10 @@ export function McpWriteDialog({
   }
 
   const isFileWrite = prompt.after !== undefined && prompt.path
+  // A command follows the same modes as everything else here — the switch that
+  // decides whether it is offered at all is elsewhere. What changes is the line
+  // at the bottom: undo covers files, and there is nothing to undo here.
+  const isExec = prompt.tool === 'run_command'
 
   return (
     <div className="scrim">
@@ -255,7 +259,9 @@ export function McpWriteDialog({
             It has to be true, though: undo landed after this line was written
             and said for a while that it did not exist. */}
         <p className="muted small">
-          {t('안 묻기는 이 호스트에만 적용되고 시간이 지나면 스스로 돌아옵니다. 파일 변경은 MCP 패널의 바뀐 파일 탭에서 되돌릴 수 있습니다.')}
+          {isExec
+            ? t('안 묻기는 이 호스트에만 적용되고 시간이 지나면 스스로 돌아옵니다. 다만 명령 실행은 되돌릴 수 없습니다 — 이 서버에서 아예 끄는 것은 MCP 패널에서 합니다.')
+            : t('안 묻기는 이 호스트에만 적용되고 시간이 지나면 스스로 돌아옵니다. 파일 변경은 MCP 패널의 바뀐 파일 탭에서 되돌릴 수 있습니다.')}
         </p>
       </div>
     </div>

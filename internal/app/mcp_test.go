@@ -77,6 +77,10 @@ func TestToolSetIsExactlyWhatWasDesigned(t *testing.T) {
 		"proc_signal":       true,
 		"fs_write":          true,
 		"fs_delete":         true,
+		// Arbitrary execution, behind its own switch. See
+		// TestRunCommandIsOffUntilTurnedOn and
+		// TestRunCommandAsksEvenWhenNothingElseDoes.
+		"run_command": true,
 	}
 
 	got := map[string]bool{}
@@ -116,20 +120,18 @@ func TestEveryListingHasAMatchingLogTool(t *testing.T) {
 	}
 }
 
-// Two things stay out on purpose, and both are easy to add by accident.
+// What stays out, and why it is easy to add by accident.
 //
-// An arbitrary-command tool makes the per-tool allowlist decorative: switching
-// svc_control off means nothing if the same thing can be typed. Deletion is
-// worse — a restart is undone by restarting, a delete is not.
-func TestNoEscapeHatchAndNoDeletion(t *testing.T) {
+// Arbitrary execution used to be on this list. It came off because the reason
+// for it did not survive being looked at: the objection was that an exec tool
+// makes the per-tool allowlist decorative, and that only holds while it shares
+// the allowlist's switch. It has its own, off by default, and it asks every
+// time — which is more than the terminal tab does, since that records nothing
+// at all. Removal stays out: a restart is undone by restarting, a delete is
+// not, and nothing copies a container or an image first.
+func TestNoDeletionWithoutACopy(t *testing.T) {
 	a := appWithSettings(t)
 	forbidden := map[string]string{
-		"run_command": "an arbitrary-command tool needs its own toggle (§4.5)",
-		"exec":        "an arbitrary-command tool needs its own toggle (§4.5)",
-		"shell":       "an arbitrary-command tool needs its own toggle (§4.5)",
-		// Deletion is offered now, but only for a single file whose contents
-		// were copied first. Container and image removal stay out: nothing
-		// copies those, so nothing can put them back.
 		"container_remove": "removing a container cannot be undone",
 		"image_remove":     "removing an image cannot be undone",
 		"prune":            "pruning cannot be undone",
@@ -141,6 +143,128 @@ func TestNoEscapeHatchAndNoDeletion(t *testing.T) {
 			}
 		}
 	}
+}
+
+// Sharing a host for reading must not hand over a shell with it. This is the
+// switch that keeps the rest of the allowlist from being decorative, so it is
+// pinned by behaviour rather than by the name of a field.
+func TestRunCommandIsOffUntilTurnedOn(t *testing.T) {
+	a := appWithSettings(t)
+	seedSharedHost(t, a)
+	// Deliberately generous everywhere else: shared, and set to never ask.
+	a.SetMCPWritePolicy("h1", WriteBypass, 30)
+	// So a regression that lets the call through fails in a moment rather than
+	// sitting on the approval timeout for two minutes.
+	defer WriteApprovalTimeoutForTest(50 * time.Millisecond)()
+
+	tool := toolNamed(t, a, "run_command")
+	if _, err := tool.Handler(context.Background(), map[string]any{
+		"hostId": "h1", "command": "id",
+	}); err == nil {
+		t.Fatal("ran a command on a host where execution was never enabled")
+	} else if !strings.Contains(err.Error(), "switched off") {
+		t.Errorf("error does not say the switch is off: %v", err)
+	}
+}
+
+// The default mode asks about a command. `svc_control(restart, nginx.service)`
+// is fully described by its own call, so the dialog would add nothing; a shell
+// line is not, and this is the only place a person sees it.
+func TestRunCommandAsksInTheDefaultMode(t *testing.T) {
+	a := appWithSettings(t)
+	seedSharedHost(t, a)
+	a.SetMCPHostExec("h1", true)
+
+	raised := make(chan MCPWritePrompt, 1)
+	a.emit = func(event string, payload any) {
+		if event == "prompt:mcpwrite" {
+			if p, ok := payload.(MCPWritePrompt); ok {
+				raised <- p
+			}
+		}
+	}
+	restore := WriteApprovalTimeoutForTest(50 * time.Millisecond)
+	defer restore()
+
+	tool := toolNamed(t, a, "run_command")
+	if _, err := tool.Handler(context.Background(), map[string]any{
+		"hostId": "h1", "command": "rm -rf /tmp/nothing",
+	}); err == nil {
+		t.Fatal("the default mode ran a command without asking")
+	}
+
+	select {
+	case p := <-raised:
+		// The person deciding has to see the command itself, not a summary of it.
+		if !strings.Contains(p.Command, "rm -rf /tmp/nothing") {
+			t.Errorf("dialog did not carry the command: %+v", p)
+		}
+	default:
+		t.Error("no dialog was raised in the mode whose whole job is asking")
+	}
+}
+
+// The relaxed mode covers it, like every other write tool.
+//
+// Leaving it out was the first cut of this design and it was wrong: somebody
+// who turned on "don't ask overnight" has decided to let an agent work
+// unattended, and an agent that stops dead at the first command has not been
+// let anywhere. Whether the tool exists at all is already a separate switch,
+// which is where that decision belongs — the mode answers a different question
+// (§4.2, the same split fs_delete uses).
+func TestRelaxedModeCoversCommandsToo(t *testing.T) {
+	a := appWithSettings(t)
+	seedSharedHost(t, a)
+	a.SetMCPHostExec("h1", true)
+	a.SetMCPWritePolicy("h1", WriteBypass, 30)
+
+	raised := false
+	a.emit = func(event string, _ any) {
+		if event == "prompt:mcpwrite" {
+			raised = true
+		}
+	}
+	if out, err := a.approveWrite(writeRequest{
+		hostID: "h1", tool: "run_command", summary: "run df -h", command: "df -h",
+	}); err != nil || out != outcomeAuto {
+		t.Fatalf("bypass did not cover run_command: out=%q err=%v", out, err)
+	}
+	if raised {
+		t.Error("a dialog was raised in the mode that exists not to raise them")
+	}
+}
+
+// The wait is the caller's to choose, within bounds. Zero and absent both mean
+// the default rather than "no wait", which would turn a missing field into a
+// command that is killed the instant it starts.
+func TestExecTimeoutIsBounded(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args map[string]any
+		want time.Duration
+	}{
+		{"absent", map[string]any{}, 60 * time.Second},
+		{"json number", map[string]any{"timeoutSeconds": float64(120)}, 120 * time.Second},
+		{"below floor", map[string]any{"timeoutSeconds": float64(0)}, time.Second},
+		{"negative", map[string]any{"timeoutSeconds": float64(-5)}, time.Second},
+		{"above ceiling", map[string]any{"timeoutSeconds": float64(9999)}, 600 * time.Second},
+	} {
+		if got := execTimeout(tc.args); got != tc.want {
+			t.Errorf("%s: execTimeout = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// toolNamed fetches one registered tool, failing if it is not there.
+func toolNamed(t *testing.T, a *App, name string) mcp.Tool {
+	t.Helper()
+	for _, tool := range registered(t, a).Tools() {
+		if tool.Name == name {
+			return tool
+		}
+	}
+	t.Fatalf("%s is not registered", name)
+	return mcp.Tool{}
 }
 
 // Which mode asks about what. This is the whole approval model in one table.
@@ -162,13 +286,16 @@ func TestWhichModeAsksAboutWhat(t *testing.T) {
 		{WriteAsk, "fs_write", true},
 		{WriteAsk, "fs_edit", true},
 		{WriteAsk, "fs_delete", true},
+		{WriteAsk, "run_command", true},
 
 		{WriteStrict, "svc_control", true},
 		{WriteStrict, "proc_signal", true},
 		{WriteStrict, "fs_write", true},
+		{WriteStrict, "run_command", true},
 
 		{WriteBypass, "svc_control", false},
 		{WriteBypass, "fs_write", false},
+		{WriteBypass, "run_command", false},
 	} {
 		if got := asksAbout(tc.mode, tc.tool); got != tc.asks {
 			t.Errorf("%s/%s: asks = %v, want %v", tc.mode, tc.tool, got, tc.asks)

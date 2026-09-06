@@ -19,24 +19,43 @@ export interface Prefs {
   liveLogHeight: number
   /** Editor font size in px. */
   editorFontSize: number
+  /** Width of the history panel beside the terminal, in px. */
+  historyWidth: number
+  /** Whether the host list is showing. Collapsed, the shell drops to one
+   *  column and the editor gets the width back. */
+  sidebarOpen: boolean
 }
+
+/** The preferences that are a size. The rest are switches, and clamping a
+ *  switch between two numbers is not a thing. */
+export type NumericPref = { [K in keyof Prefs]: Prefs[K] extends number ? K : never }[keyof Prefs]
 
 export const DEFAULTS: Prefs = {
   commandLogHeight: 200,
   liveLogHeight: 260,
   editorFontSize: 13,
+  historyWidth: 320,
+  sidebarOpen: true,
 }
 
-const LIMITS: Record<keyof Prefs, [number, number]> = {
+const LIMITS: Record<NumericPref, [number, number]> = {
   commandLogHeight: [80, 700],
   liveLogHeight: [100, 900],
   editorFontSize: [9, 32],
+  // Wide enough for a docker command without wrapping; capped so the terminal
+  // stays the thing on this tab.
+  historyWidth: [220, 720],
 }
 
-function clamp(key: keyof Prefs, value: unknown): number {
-  const [lo, hi] = LIMITS[key]
-  const n = typeof value === 'number' && Number.isFinite(value) ? value : DEFAULTS[key]
-  return Math.round(Math.max(lo, Math.min(hi, n)))
+function clamp<K extends keyof Prefs>(key: K, value: unknown): Prefs[K] {
+  const fallback = DEFAULTS[key]
+  if (typeof fallback === 'boolean') {
+    // A stored non-boolean is a corrupted entry, not a truthiness question.
+    return (typeof value === 'boolean' ? value : fallback) as Prefs[K]
+  }
+  const [lo, hi] = LIMITS[key as NumericPref]
+  const n = typeof value === 'number' && Number.isFinite(value) ? value : (fallback as number)
+  return Math.round(Math.max(lo, Math.min(hi, n))) as Prefs[K]
 }
 
 function load(): Prefs {
@@ -48,9 +67,13 @@ function load(): Prefs {
     // one line in one place, and a key missing from the stored object — which
     // is every key, the first time a new one ships — falls back through clamp.
     const out = { ...DEFAULTS }
-    for (const key of Object.keys(DEFAULTS) as (keyof Prefs)[]) {
+    // The generic is what lets the assignment typecheck: iterating `keyof Prefs`
+    // widens the value to a union, and no union member is assignable to every
+    // slot. Pinning one key per call keeps the pair together.
+    const take = <K extends keyof Prefs>(key: K) => {
       out[key] = clamp(key, got[key])
     }
+    for (const key of Object.keys(DEFAULTS) as (keyof Prefs)[]) take(key)
     return out
   } catch {
     // Unparseable, or storage disabled entirely. Defaults are a fine answer and
@@ -81,7 +104,7 @@ export function getPref<K extends keyof Prefs>(key: K): Prefs[K] {
   return prefs[key]
 }
 
-export function setPref<K extends keyof Prefs>(key: K, value: number) {
+export function setPref<K extends keyof Prefs>(key: K, value: Prefs[K]) {
   const next = clamp(key, value)
   if (next === prefs[key]) return
   prefs = { ...prefs, [key]: next }

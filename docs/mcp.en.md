@@ -30,8 +30,8 @@ context-gathering hammers a small box's I/O. All of that load stays on the clien
 `sessions_list`. One `health_snapshot` returns CPU, memory, disk, failed units, unhealthy
 containers and exposed ports; `svc_logs` is what says *why* something died.
 
-**Five write tools**: `svc_control` (start/stop/restart), `container_control`, `proc_signal`
-(TERM/KILL), `fs_write` and `fs_delete`.
+**Six write tools**: `svc_control` (start/stop/restart), `container_control`, `proc_signal`
+(TERM/KILL), `fs_write`, `fs_delete` and `run_command`.
 
 **They can be undone.** Before MCP overwrites or deletes a file, the previous contents are kept
 **on this machine**, and the **Changed files** tab restores them one at a time. When you have told
@@ -42,15 +42,45 @@ server, and `fs_delete` refuses outright when no copy can be made (binary, or to
 **Deleting is enabled per server**, separately from sharing and from the approval mode: whether the
 tool exists and whether using it interrupts you are different questions.
 
-**Deliberately absent**: arbitrary command execution, recursive directory deletion, and removing
-containers or images. An arbitrary-command tool makes the per-tool allowlist decorative; the
-other three cannot be copied first, so nothing could put them back.
+**Running commands is enabled per server too — off by default.** `run_command` runs one line with `sh -c` and returns stdout, stderr and the exit code.
+It is a separate switch from deletion, because letting an agent clear a log file is not the same
+decision as letting it run anything.
+
+This used to be on the deliberately-absent list. Three things took it off.
+
+- **The objection is answered by giving it its own switch.** The argument was that an
+  arbitrary-command tool makes the per-tool allowlist decorative, and that only holds while it
+  shares the allowlist's switch
+- **The auditing was backwards.** A command typed in the terminal tab leaves **nothing** in the
+  Command Log. One that goes through MCP leaves the tool call, the command itself and its exit
+  code. Refusing to run commands was reducing the record, not protecting it
+- **The line was already nominal.** `fs_write` can write `~/.bashrc` or `~/.ssh/authorized_keys`,
+  which is arbitrary code on the next login
+
+**Approval follows the same modes as every other write tool.** The default asks before a command:
+`svc_control(restart, nginx.service)` is fully described by the call the client already showed, and
+a shell line is not — the dialog is the only place a person reads it. Turn on "don't ask overnight"
+and commands go through with everything else.
+
+The first cut put commands outside the modes and made them always ask. That broke the split this
+page sets out — the toggle answers *does the tool exist*, the mode answers *does it interrupt you*
+— and a mode switched on for unattended work that stops at the first command has not left the agent
+anywhere. Being irreversible is not what separates it either: `proc_signal` (KILL) and
+`svc_control` are equally irreversible and the modes already cover them.
+
+**What does not change is undo.** A command leaves no copy, so it never appears in the Changed
+files tab, and the dialog says so. There is no sudo — it runs as the login user with no tty, so
+anything wanting a password fails instead of waiting.
+
+**Still absent**: recursive directory deletion and removing containers or images. Nothing can copy
+those first, so nothing could put them back.
 
 **What holds it back**
 
 | | |
 |---|---|
-| Per-server opt-in | **Everything off by default.** Adding a host does not expose it; only what you switch on can be read, and deleting files is a separate switch again |
+| Per-server opt-in | **Everything off by default.** Adding a host does not expose it; only what you switch on can be read, and deleting files and running commands are each a separate switch again |
+| Execution is gated twice | The per-server toggle decides whether the tool **exists**; the approval mode decides whether it **interrupts you**. With the toggle off no mode will run a command, and with it on the default mode still asks every time |
 | Change approval | **Only file changes are confirmed** by default, because the dialog shows a diff against what is on the server right now, which is information no client has. A restart just runs; the client already showed you the same thing |
 | Per host | A badge in the header: **ask always / files only / don't ask overnight**. While it is not asking the badge stays red, and the window **reverts on its own** |
 | Not settable remotely | No tool flips that switch and no parameter relaxes it. **A model has no way to request its own approval** |

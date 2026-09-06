@@ -1,0 +1,23 @@
+OS: Ubuntu 24.04.4 LTS, bash 5.2
+captured: 2026-09-06T12:45:00Z
+file: ~/.bash_history  (-rw------- 41991 bytes, 2000 lines)
+
+Real lines off a real server, rearranged into a short run and with nothing
+personal in them — the project names here are infrastructure ones that came
+with the tools. What was kept is every shape that breaks a naive parser:
+
+- **No timestamps at all.** HISTTIMEFORMAT was not set, which is the Ubuntu
+  default, so the file has zero `#<epoch>` lines. The history has an order and
+  no times. A screen that says "3 months ago" over this is inventing.
+- **A multi-line command is stored as separate lines.** `sh -c '` opens a quote
+  and the next four lines finish it. Read line by line, one command becomes
+  five, four of which are not commands.
+- **Pasted output gets in.** Two lines here are log output from a previous
+  command that somebody pasted at a prompt. Nothing distinguishes them from a
+  command, and nothing should pretend to.
+- **`cd $PROJECT_DIR`** cannot be resolved from the text. Neither can `cd -`.
+- Relative moves (`cd ..`, `cd ../test-logs/`) and absolute ones are mixed.
+
+Not represented, because this server had none: a zsh history with
+EXTENDED_HISTORY (`: <epoch>:<dur>;<cmd>`), and a bash file where
+HISTTIMEFORMAT was set.

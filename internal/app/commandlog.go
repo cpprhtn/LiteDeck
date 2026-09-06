@@ -322,9 +322,12 @@ func (l *commandLog) AICall(hostID, line string) {
 // the ones that ran — more so, if the reason it asked was an instruction
 // somebody hid in a log file.
 func (l *commandLog) AIWrite(hostID, summary, outcome string) {
-	status := "ok"
-	if outcome != "approved" && outcome != "auto-approved" {
-		status = "failed"
+	// Unknown outcomes read as failures on purpose: a new one that nobody
+	// wired up here should stand out rather than blend in with the successes.
+	status := "failed"
+	switch approvalOutcome(outcome) {
+	case outcomeApproved, outcomeAuto, outcomeRestored, outcomeRestoredInPlace:
+		status = "ok"
 	}
 	l.mu.Lock()
 	l.seq++

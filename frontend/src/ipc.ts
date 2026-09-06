@@ -89,6 +89,7 @@ export interface MCPStatus {
   hosts: Record<string, boolean>
   write: Record<string, WritePolicyView>
   delete: Record<string, boolean>
+  exec: Record<string, boolean>
   /** The port actually bound, and the one asked for. They differ when something
    *  else held the preferred port. */
   port?: number
@@ -432,6 +433,159 @@ export interface EventsView {
   truncated: boolean
 }
 
+/** One command run through sudo, as the journal recorded it.
+ *
+ *  `pwd` is the reason this exists: a shell history file says what was typed
+ *  but not where, and sudo writes the directory down as it runs. */
+export interface SudoRun {
+  at: string
+  user: string
+  runAs?: string
+  pwd: string
+  /** Already masked by Go — the raw text never leaves the backend. */
+  command: string
+  tty?: string
+  /** sudo wrote this line *instead of* running something. */
+  refused?: boolean
+  reason?: string
+  /** What it did to the server. Unknown commands are 'change', so a change is
+   *  never folded away with the reads. */
+  effect: 'change' | 'edit' | 'read'
+  bootId?: string
+}
+
+/** What update-notifier has already written down on the server.
+ *
+ *  `known` false means the distribution keeps no such files — Debian did not.
+ *  Then nothing here means anything, and the UI says nothing rather than zero. */
+/** One row of wtmp. `from` holds the kernel version on a boot record — that is
+ *  what `last` puts in the column. */
+export interface Login {
+  user: string
+  tty?: string
+  from?: string
+  at: string
+  /** Absent while the session is still open. */
+  until?: string
+  open?: boolean
+  /** The "reboot / system boot" pseudo-records. Labelled, not filtered out. */
+  boot?: boolean
+}
+
+export interface AuthCount {
+  name: string
+  count: number
+}
+
+/** Failed logins, summarised. Never listed: one measured server logged 3,011
+ *  failures in a day, six times the journal read cap. */
+export interface AuthSummary {
+  failed: number
+  accepted: number
+  sources?: AuthCount[]
+  users?: AuthCount[]
+  /** How many there were before the cut, so "8 of 36" can be said. */
+  distinctSources: number
+  distinctUsers: number
+}
+
+export interface LoginsView {
+  logins: Login[]
+  auth: AuthSummary
+  /** About the failures alone. wtmp needs no journal, so the successes arrive
+   *  whatever this says. */
+  access: 'ok' | 'needs-sudo' | 'denied' | 'no-journal'
+  window: string
+}
+
+/** What happened while nobody was watching (T-29). */
+/** One line entered in this app's terminal (T-22).
+ *
+ *  `pwdCertain` false means an unreadable line — a history recall, a Tab
+ *  completion — went by since the last `cd` this side could follow, so the path
+ *  is where the shell was, not necessarily where it is. */
+export interface TypedCommand {
+  hostId: string
+  at: string
+  command: string
+  pwd?: string
+  pwdCertain: boolean
+  effect: 'change' | 'edit' | 'read'
+}
+
+/** One line out of the shell's own history file (T-23).
+ *
+ *  `at` is absent where the file carries no times, which is the bash default —
+ *  the history then has an order and nothing else. The path is always an
+ *  the file is ordered by when sessions ended, so a `cd` replayed across the
+ *  seam between two overlapping sessions can land somewhere that never
+ *  existed — a caveat about the source, said once, not a reason to call every
+ *  line a guess. */
+export interface ShellCommand {
+  command: string
+  /** Absent where the file carries no times. Go sends the field only when it
+   *  has one — a zero time.Time would arrive as a date in the year 1, which is
+   *  exactly what this used to render as "24662 months ago". */
+  at?: string
+  pwd?: string
+  /** The replay never lost track between the last anchor and this line. False
+   *  only after a `cd` it could not follow — on the measured file, none. */
+  pwdCertain: boolean
+  effect: 'change' | 'edit' | 'read'
+}
+
+export interface ShellHistoryView {
+  /** False until the user turns this on for the host. Refused in Go, not
+   *  hidden in the UI — /rpc reaches the binding directly. */
+  allowed: boolean
+  commands: ShellCommand[]
+  file?: string
+  root?: boolean
+  /** False where the file has no timestamps at all. */
+  timed: boolean
+  secrets: number
+}
+
+export interface DigestView {
+  boots: number
+  unitFailures: number
+  authFailures: number
+  sudoCommands: number
+  /** The mark this was counted from, unix seconds. 0 on a first visit. */
+  since: number
+  /** No mark yet, so every count would be the whole journal presented as news. */
+  first: boolean
+  quiet: boolean
+  window: string
+  /** False where there is no journal, or none this user can read. Then the
+   *  counts are absent rather than zero. */
+  readable: boolean
+}
+
+export interface UpdateStatus {
+  known: boolean
+  /** -1 where the file was there but its wording did not parse. Never 0 for
+   *  "unknown" — that would read as "nothing to do". */
+  updates: number
+  security: number
+  /** When the cached count was computed. Empty when even the age is unknown,
+   *  which is not the same as fresh. */
+  checkedAt: string
+  raw?: string
+  rebootRequired: boolean
+  rebootPkgs?: string[]
+}
+
+export interface CommandHistoryView {
+  runs: SudoRun[]
+  access: 'ok' | 'needs-sudo' | 'denied' | 'no-journal'
+  range: '1h' | '24h' | '7d'
+  truncated: boolean
+  /** How many commands looked like they carried a credential. A count, not a
+   *  list — worth saying, not worth printing. */
+  secrets: number
+}
+
 /** One logical CPU. Thirty-two cores at "40%" is either every core half busy or
  *  one pinned and the rest idle, and those are different problems. */
 export interface Core {
@@ -659,6 +813,7 @@ interface Bindings {
   MCPChanges(hostID: string): Promise<MCPChange[]>
   RestoreMCPChange(id: string): Promise<ActionResult>
   SetMCPHostDelete(hostID: string, allowed: boolean): Promise<MCPStatus>
+  SetMCPHostExec(hostID: string, allowed: boolean): Promise<MCPStatus>
   SetLanguage(tag: string): Promise<ActionResult>
   SaveHost(h: Host): Promise<void>
   DeleteHost(id: string): Promise<void>
@@ -685,6 +840,20 @@ interface Bindings {
 
   HostMetrics(id: string): Promise<MetricsView>
   HostEvents(id: string, range: string, elevate: boolean): Promise<EventsView>
+  HostUpdates(id: string): Promise<UpdateStatus>
+  HostDigest(id: string): Promise<DigestView>
+  TypedEntered(hostID: string, termID: string, line: string, blind: boolean): Promise<void>
+  TypedHistory(hostID: string): Promise<TypedCommand[]>
+  TerminalCwd(termID: string): Promise<[string, boolean]>
+  HostShellHistory(id: string, elevate: boolean): Promise<ShellHistoryView>
+  SetShellHistoryAllowed(id: string, allowed: boolean): Promise<void>
+  MarkHostSeen(id: string): Promise<void>
+  HostLogins(id: string, elevate: boolean): Promise<LoginsView>
+  HostCommandHistory(
+    id: string,
+    range: string,
+    elevate: boolean,
+  ): Promise<CommandHistoryView>
   HostNetwork(id: string): Promise<NetworkView>
   RefreshHostNetwork(id: string): Promise<NetworkView>
   SSHDConfig(id: string): Promise<SSHDReport>
@@ -883,6 +1052,8 @@ export const MCPChanges = (hostID: string) => api().MCPChanges(hostID)
 export const RestoreMCPChange = (id: string) => api().RestoreMCPChange(id)
 export const SetMCPHostDelete = (hostID: string, allowed: boolean) =>
   api().SetMCPHostDelete(hostID, allowed)
+export const SetMCPHostExec = (hostID: string, allowed: boolean) =>
+  api().SetMCPHostExec(hostID, allowed)
 export const SetLanguage = (tag: string) => api().SetLanguage(tag)
 export const SaveHost = (h: Host) => api().SaveHost(h)
 export const DeleteHost = (id: string) => api().DeleteHost(id)
@@ -908,6 +1079,21 @@ export const ProcessExists = (id: string, pid: number) =>
 export const HostMetrics = (id: string) => api().HostMetrics(id)
 export const HostEvents = (id: string, range: string, elevate: boolean) =>
   api().HostEvents(id, range, elevate)
+export const HostCommandHistory = (id: string, range: string, elevate: boolean) =>
+  api().HostCommandHistory(id, range, elevate)
+export const HostUpdates = (id: string) => api().HostUpdates(id)
+export const HostDigest = (id: string) => api().HostDigest(id)
+export const TypedEntered = (hostID: string, termID: string, line: string, blind: boolean) =>
+  api().TypedEntered(hostID, termID, line, blind)
+export const TypedHistory = (hostID: string) => api().TypedHistory(hostID)
+export const TerminalCwd = (termID: string) => api().TerminalCwd(termID)
+export const HostShellHistory = (id: string, elevate: boolean) =>
+  api().HostShellHistory(id, elevate)
+export const SetShellHistoryAllowed = (id: string, allowed: boolean) =>
+  api().SetShellHistoryAllowed(id, allowed)
+export const MarkHostSeen = (id: string) => api().MarkHostSeen(id)
+export const HostLogins = (id: string, elevate: boolean) =>
+  api().HostLogins(id, elevate)
 export const HostNetwork = (id: string) => api().HostNetwork(id)
 /** Same reading, but the interface list is re-read rather than served from the
  *  30s cache. For the refresh button only — pressing it means "something

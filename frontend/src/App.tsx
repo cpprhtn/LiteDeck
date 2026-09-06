@@ -1,12 +1,14 @@
 import { Suspense, lazy, useCallback, useEffect, useState, type ReactNode } from 'react'
 import Bench from './Bench'
 import { CommandLogPanel } from './CommandLogPanel'
+import { DigestStrip } from './DigestStrip'
 import { ErrorBoundary } from './ErrorBoundary'
 import { HostKeyDialog, McpWriteDialog, SecretDialog } from './Dialogs'
 import { ContainerView } from './ContainerView'
 import { FileExplorer } from './FileExplorer'
 import { HostEditor, emptyHost } from './HostEditor'
 import { HostSidebar } from './HostSidebar'
+import { setPref, usePref } from './prefs'
 import { ShellControls } from './ShellControls'
 import { MetricsBar } from './MetricsBar'
 import { NetworkView } from './NetworkView'
@@ -185,6 +187,12 @@ export default function App() {
     const offKey = on<HostKeyPrompt>('prompt:hostkey', setHostKeyPrompt)
     const offSecret = on<SecretPrompt>('prompt:secret', setSecretPrompt)
     const offWrite = on<MCPWritePrompt>('prompt:mcpwrite', setMcpWrite)
+    // Go emits this from five places — a rollback copy it could not write, a
+    // token it could not make, a credential it could not save — and until this
+    // line existed nothing was listening, so all five were dropped by the
+    // runtime. None of them stop the app, which is why they go to the banner
+    // the user can dismiss rather than anywhere louder.
+    const offWarn = on<string>('log:warning', setError)
     const offState = on<ConnectionState>('conn:state', (s) => {
       setHosts((prev) =>
         prev.map((h) => (h.id === s.hostId ? { ...h, state: s.state } : h)),
@@ -197,6 +205,7 @@ export default function App() {
     })
     return () => {
       offKey()
+      offWarn()
       offSecret()
       offWrite()
       offState()
@@ -261,6 +270,11 @@ export default function App() {
     }
   }
 
+  // Above the bench short-circuits: everything below them is unreachable on a
+  // bench render, and a hook that only sometimes runs is a hook React counts
+  // wrong on the next pass.
+  const sidebarOpen = usePref('sidebarOpen')
+
   if (benchMode === null) return <div className="boot">{t('시작 중…')}</div>
   if (benchMode) return <Bench />
 
@@ -298,8 +312,29 @@ export default function App() {
   const selfMode = boot?.selfMode
 
   return (
-    <div className="app" data-self={selfMode || undefined}>
-      {!selfMode && (
+    <div
+      className="app"
+      data-self={selfMode || undefined}
+      data-sidebar={!selfMode && !sidebarOpen ? 'off' : undefined}
+    >
+      {/* Collapsed to a rail rather than removed. The button has to stay where
+          the list was — that is where somebody who folded it away will look for
+          it — and a control that vanishes with the thing it controls is a
+          setting people cannot find their way out of. */}
+      {!selfMode && !sidebarOpen && (
+        <aside className="sidebar-rail">
+          <button
+            className="ghost icon-btn"
+            onClick={() => setPref('sidebarOpen', true)}
+            title={t('호스트 목록 펼치기')}
+            aria-label={t('호스트 목록 펼치기')}
+          >
+            »
+          </button>
+        </aside>
+      )}
+
+      {!selfMode && sidebarOpen && (
       <HostSidebar
         hosts={hosts}
         activeID={activeID}
@@ -312,6 +347,7 @@ export default function App() {
         busy={busy}
         version={boot?.version}
         onOpenMCP={() => setMcpOpen(true)}
+        onCollapse={() => setPref('sidebarOpen', false)}
       />
       )}
 
@@ -387,6 +423,16 @@ export default function App() {
             {!unsupported && (
               <ErrorBoundary key={`metrics:${active.id}`} label={t('상태 표시줄')}>
                 <MetricsBar hostID={active.id} />
+              </ErrorBoundary>
+            )}
+
+            {/* Above the tabs because it is about the host rather than about
+                any one view of it, and because it is the one thing here worth
+                seeing before choosing where to look. It renders nothing most of
+                the time. */}
+            {!unsupported && (
+              <ErrorBoundary key={`digest:${active.id}`} label={t('변경 요약')}>
+                <DigestStrip hostID={active.id} />
               </ErrorBoundary>
             )}
 

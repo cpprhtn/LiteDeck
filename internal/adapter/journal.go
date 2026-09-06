@@ -113,14 +113,19 @@ func JournalArgs(since string, maxPriority, limit int) []string {
 	if maxPriority < 0 || maxPriority > 7 {
 		maxPriority = 4 // warning
 	}
-	return []string{
+	args := []string{
 		"-o", "json",
 		"--no-pager",
 		"-q",
-		"--since", since,
 		"-p", strconv.Itoa(maxPriority),
 		"-n", strconv.Itoa(limit),
 	}
+	// Omitted rather than passed empty: `--since ""` is not "no window", it is
+	// an argument journalctl rejects.
+	if since != "" {
+		args = append(args, "--since", since)
+	}
+	return args
 }
 
 // EventRange is how far back the timeline looks. A closed set, so that nothing
@@ -131,6 +136,14 @@ const (
 	EventRangeHour EventRange = "1h"
 	EventRangeDay  EventRange = "24h"
 	EventRangeWeek EventRange = "7d"
+	// EventRangeMax is as far back as the record goes, bounded by line count
+	// rather than by time.
+	//
+	// Bounded the way `history` itself is. A shell history file holds
+	// HISTFILESIZE lines and no dates, so "everything" has always meant a
+	// number of lines and never a span of time; matching that here keeps the
+	// widest setting answerable on a server whose journal covers a year.
+	EventRangeMax EventRange = "max"
 )
 
 // Since maps a range onto journalctl's own syntax, defaulting to a day.
@@ -140,6 +153,10 @@ func (r EventRange) Since() string {
 		return "-1h"
 	case EventRangeWeek:
 		return "-7d"
+	case EventRangeMax:
+		// No window. The line cap is what bounds the read — see the arg
+		// builders, which drop the flag rather than pass it empty.
+		return ""
 	default:
 		return "-24h"
 	}
