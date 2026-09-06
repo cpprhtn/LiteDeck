@@ -59,7 +59,6 @@ export const en: Record<string, string> = {
   'Claude Code·Claude Desktop 같은 MCP 클라이언트가 이 앱을 통해 서버를 다룹니다. 같은 어댑터·SSH 연결·Command Log 를 씁니다.': 'An MCP client such as Claude Code or Claude Desktop works your servers through this app, using the same adapters, the same SSH connection and the same Command Log.',
   'GPU {n}개 — 눌러서 카드별로 보기': '{n} {n#card|cards} — click for a per-card breakdown',
   'GUI가 실행하는 모든 명령이 여기에 실시간으로 표시됩니다. 클릭하면 복사됩니다.': 'Every command the GUI runs appears here as it happens. Click one to copy it.',
-  'GUI가 표현하지 못하는 일을 위한 탭입니다 — 실행한 명령은 아래 Command Log에 남습니다': 'For the things a GUI cannot express. What you run shows up in the Command Log below',
   'Go 바인딩을 찾을 수 없습니다 — `wails dev`로 실행해야 합니다 (순수 Vite 서버로는 동작하지 않습니다).': 'Go bindings not found — run with `wails dev` (a plain Vite server will not work).',
   'LiteDeck 을 업데이트한 뒤에는 MCP 클라이언트도 다시 시작하세요. 클라이언트는 접속할 때 받은 도구 목록을 계속 쓰기 때문에, 새로 생긴 도구가 없는 것처럼 보입니다.': 'Restart your MCP client after updating LiteDeck. Clients keep using the tool list they fetched when they connected, so a newly added tool looks like it is missing.',
   'LiteDeck은 systemd 기반 Linux만 다룹니다. 파일과 터미널은 그대로 쓸 수 있습니다': 'LiteDeck drives systemd-based Linux. Files and the terminal still work here',

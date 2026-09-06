@@ -2204,13 +2204,6 @@ button.danger {
   flex: 1;
   min-width: 0;
 }
-/* The hint is the first thing to give up its space when the panel opens. */
-.term-hint {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* Command history (arch/07, 명령 이력) ------------------------------------- */
 
 .history-pane {

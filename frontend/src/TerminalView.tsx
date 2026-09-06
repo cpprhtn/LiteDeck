@@ -432,9 +432,6 @@ export function TerminalView({
           </button>
         </div>
         <span className="spacer" />
-        <span className="muted small term-hint">
-          {t('GUI가 표현하지 못하는 일을 위한 탭입니다 — 실행한 명령은 아래 Command Log에 남습니다')}
-        </span>
         <button
           className="ghost small-btn"
           data-on={histOpen || undefined}
