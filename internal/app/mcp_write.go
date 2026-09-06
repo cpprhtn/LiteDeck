@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -318,7 +319,9 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 				"type": "integer",
 				"description": "How long to wait, 1-600. Default 60. A command holds one of " +
 					"the three exec channels on the shared connection until it finishes, so " +
-					"ask for a long wait only when the work is genuinely long.",
+					"ask for a long wait only when the work is genuinely long. Running out " +
+					"stops the waiting, not the command: it carries on on the server, so a " +
+					"retry runs it a second time alongside the first.",
 			},
 		}, "hostId", "command"),
 		Handler: func(_ context.Context, args map[string]any) (any, error) {
@@ -354,7 +357,8 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 			if err != nil {
 				return nil, err
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), execTimeout(args))
+			wait := execTimeout(args)
+			ctx, cancel := context.WithTimeout(context.Background(), wait)
 			defer cancel()
 
 			// sh -c rather than the raw line: Exec quotes argv element by
@@ -364,6 +368,17 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 			// line, which is what actually ran.
 			res, err := conn.Exec(ctx, "sh", "-c", command)
 			if err != nil {
+				// Giving up on the answer does not cancel the work. Checked
+				// against a real server: a command told to wait one second and
+				// sleep three still left its file behind afterwards. Saying
+				// "context deadline exceeded" hides the one fact that changes
+				// what to do next.
+				if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+					return nil, fmt.Errorf("the command did not finish within %s, so LiteDeck "+
+						"stopped waiting for it. It is still running on the server — nothing "+
+						"was cancelled. Find out what it did before running it again, and "+
+						"raise timeoutSeconds rather than repeating the call", wait)
+				}
 				return nil, err
 			}
 
