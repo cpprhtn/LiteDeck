@@ -465,6 +465,7 @@ export interface Login {
   tty?: string
   from?: string
   at: string
+  /** Absent while the session is still open. */
   until?: string
   open?: boolean
   /** The "reboot / system boot" pseudo-records. Labelled, not filtered out. */
@@ -522,6 +523,9 @@ export interface TypedCommand {
  *  line a guess. */
 export interface ShellCommand {
   command: string
+  /** Absent where the file carries no times. Go sends the field only when it
+   *  has one — a zero time.Time would arrive as a date in the year 1, which is
+   *  exactly what this used to render as "24662 months ago". */
   at?: string
   pwd?: string
   /** The replay never lost track between the last anchor and this line. False

@@ -83,6 +83,9 @@ function fromShell(c: ShellCommand): Row {
 function ago(iso: string): string {
   const then = new Date(iso).getTime()
   if (!Number.isFinite(then)) return ''
+  // A date before this app could have seen anything is not a date, it is a
+  // zero value that reached the screen. Rendering it gave "24662 months ago".
+  if (then < Date.parse('2000-01-01')) return ''
   const mins = Math.floor((Date.now() - then) / 60000)
   if (mins < 1) return t('방금')
   if (mins < 60) return t('{n}분 전', { n: mins })

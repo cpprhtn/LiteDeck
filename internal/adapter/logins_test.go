@@ -61,7 +61,7 @@ func TestBootRecordsKeepTheirShape(t *testing.T) {
 	if boots[1].Open {
 		t.Error("a finished boot was read as still running")
 	}
-	if boots[1].Until.IsZero() {
+	if boots[1].Until == nil {
 		t.Error("a finished boot has no end time — the (523+17:18) form was not handled")
 	}
 }
@@ -73,7 +73,7 @@ func TestOpenSessionHasNoEndTime(t *testing.T) {
 	for _, l := range logins {
 		if l.Open {
 			open++
-			if !l.Until.IsZero() {
+			if l.Until != nil {
 				t.Errorf("an open session was given an end: %+v", l)
 			}
 		}
@@ -89,7 +89,7 @@ func TestSessionTimesAreRead(t *testing.T) {
 		if l.User != "deploy" || l.TTY != "pts/0" || l.Open {
 			continue
 		}
-		if l.Until.IsZero() {
+		if l.Until == nil {
 			t.Errorf("closed session has no end: %+v", l)
 			continue
 		}

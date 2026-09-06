@@ -3,6 +3,7 @@ package app
 import (
 	"testing"
 
+	"github.com/cpprhtn/LiteDeck/internal/adapter"
 	"github.com/cpprhtn/LiteDeck/internal/config"
 )
 
@@ -64,5 +65,22 @@ func TestRootHistoryIsNotReadUnlessAsked(t *testing.T) {
 	}
 	if plain.Root {
 		t.Error("root's history was read without anybody asking for it")
+	}
+}
+
+// Every row of an untimed history has a nil time, and the old check reached
+// through the pointer to ask whether it was zero. That is a panic, on the
+// common case, in the binding the whole feature goes through — and no fixture
+// caught it because the container has no history file to read.
+func TestUntimedHistoryDoesNotPanic(t *testing.T) {
+	if anyTimed(adapter.ParseBashHistory("docker ps\nls -la\n")) {
+		t.Error("a file with no timestamps was reported as timed")
+	}
+	if !anyTimed(adapter.ParseBashHistory("#1788000000\ndocker ps\n")) {
+		t.Error("a file with a timestamp was reported as untimed")
+	}
+	// Mixed: bash writes a stamp only for the commands that had one.
+	if !anyTimed(adapter.ParseBashHistory("ls\n#1788000000\ndocker ps\n")) {
+		t.Error("a stamp after an unstamped line was missed")
 	}
 }

@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,7 +53,7 @@ func TestMultiLineCommandIsOneCommand(t *testing.T) {
 // as a date — "1970" over a command run last week is worse than no date.
 func TestBashHistoryWithoutTimestampsHasNoTimes(t *testing.T) {
 	for _, c := range goldenHistory(t) {
-		if !c.At.IsZero() {
+		if c.At != nil {
 			t.Errorf("%q got a time out of a file that has none: %s", c.Command, c.At)
 		}
 	}
@@ -63,10 +64,10 @@ func TestBashTimestampsAreReadWhenPresent(t *testing.T) {
 	if len(cmds) != 2 {
 		t.Fatalf("parsed %d commands, want 2", len(cmds))
 	}
-	if cmds[0].At.IsZero() || cmds[0].Command != "systemctl restart app" {
+	if cmds[0].At == nil || cmds[0].Command != "systemctl restart app" {
 		t.Errorf("%+v", cmds[0])
 	}
-	if !cmds[1].At.After(cmds[0].At) {
+	if cmds[1].At == nil || !cmds[1].At.After(*cmds[0].At) {
 		t.Error("the second command is not later than the first")
 	}
 	// A comment is not a timestamp.
@@ -128,13 +129,13 @@ func TestZshExtendedHistory(t *testing.T) {
 	if len(cmds) != 2 {
 		t.Fatalf("parsed %d, want 2", len(cmds))
 	}
-	if cmds[0].Command != "systemctl restart app" || cmds[0].At.IsZero() {
+	if cmds[0].Command != "systemctl restart app" || cmds[0].At == nil {
 		t.Errorf("%+v", cmds[0])
 	}
 	// Without EXTENDED_HISTORY the file is plain lines, and both shapes appear
 	// in the wild depending on whether oh-my-zsh set it.
 	plain := ParseZshHistory("ls\ndocker ps\n")
-	if len(plain) != 2 || plain[0].Command != "ls" || !plain[0].At.IsZero() {
+	if len(plain) != 2 || plain[0].Command != "ls" || plain[0].At != nil {
 		t.Errorf("plain zsh history: %+v", plain)
 	}
 }
@@ -310,5 +311,33 @@ func TestQuotedLiteralIsFollowable(t *testing.T) {
 		if c.Command == "pwd" && c.PWDCertain {
 			t.Error("`cd \"$D\"` was treated as followable")
 		}
+	}
+}
+
+// A time that is not known must be absent on the wire, not zero.
+//
+// `omitempty` does nothing for a struct, so a zero time.Time marshals to
+// "0001-01-01T00:00:00Z" — a real date as far as any reader is concerned, and
+// the screen rendered it as "24662 months ago". The harness never caught it
+// because a hand-written fixture leaves the field out; only Go puts a year 1 in
+// there.
+func TestAbsentTimeIsAbsentOnTheWire(t *testing.T) {
+	b, err := json.Marshal(ParseBashHistory("docker ps\n")[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "0001-01-01") {
+		t.Errorf("an unknown time went out as a date: %s", b)
+	}
+	if strings.Contains(string(b), `"at"`) {
+		t.Errorf("the field is present for a command with no time: %s", b)
+	}
+
+	timed, err := json.Marshal(ParseBashHistory("#1788000000\ndocker ps\n")[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(timed), `"at"`) {
+		t.Errorf("a command with a time lost it: %s", timed)
 	}
 }

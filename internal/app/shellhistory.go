@@ -102,12 +102,7 @@ func (a *App) HostShellHistory(hostID string, elevate bool) (ShellHistoryView, e
 		}
 	}
 
-	for _, c := range cmds {
-		if !c.At.IsZero() {
-			view.Timed = true
-			break
-		}
-	}
+	view.Timed = anyTimed(cmds)
 	cmds = adapter.ReplayCd(cmds, home)
 	if len(cmds) > shellHistoryMax {
 		cmds = cmds[len(cmds)-shellHistoryMax:]
@@ -170,4 +165,19 @@ func (a *App) SetShellHistoryAllowed(hostID string, allowed bool) error {
 		return nil
 	}
 	return a.settings.SetShellHistory(hostID, allowed)
+}
+
+// anyTimed reports whether the file carried timestamps at all.
+//
+// The nil check is the point. ShellCommand.At is a pointer because an unknown
+// time has to be absent on the wire, and calling a time.Time method through a
+// nil pointer panics — which is what `!c.At.IsZero()` did here, on every
+// history that has no timestamps, which is most of them.
+func anyTimed(cmds []adapter.ShellCommand) bool {
+	for _, c := range cmds {
+		if c.At != nil {
+			return true
+		}
+	}
+	return false
 }

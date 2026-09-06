@@ -65,9 +65,13 @@ type Login struct {
 	// boot record — that is what `last` puts in the column.
 	From string    `json:"from,omitempty"`
 	At   time.Time `json:"at"`
-	// Until is zero while the session is still open.
-	Until time.Time `json:"until,omitempty"`
-	Open  bool      `json:"open,omitempty"`
+	// Until is nil while the session is still open.
+	//
+	// A pointer for the reason ShellCommand.At is one: `omitempty` does not
+	// apply to a struct, so a zero time.Time reaches the screen as a date in
+	// the year 1.
+	Until *time.Time `json:"until,omitempty"`
+	Open  bool       `json:"open,omitempty"`
 	// Boot marks the "reboot / system boot" pseudo-records. They are the most
 	// useful rows in the file and the least like the others, so they are
 	// labelled rather than filtered out.
@@ -165,7 +169,7 @@ func loginFrom(who, when []string) (Login, bool) {
 	}
 	if i := strings.Index(rest, "- "); i >= 0 {
 		if end, ok := lastTime(strings.Fields(rest[i+2:])); ok {
-			l.Until = end
+			l.Until = &end
 		}
 	}
 	return l, true

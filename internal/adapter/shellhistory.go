@@ -46,9 +46,15 @@ import (
 // ShellCommand is one line of history, with where it probably ran.
 type ShellCommand struct {
 	Command string `json:"command"`
-	// At is zero where the file carries no times, which is the common case for
-	// bash. A zero here means "unknown", never "the epoch".
-	At time.Time `json:"at,omitempty"`
+	// At is nil where the file carries no times, which is the common case for
+	// bash.
+	//
+	// A pointer rather than a zero time.Time, and that is not style. `omitempty`
+	// does nothing for a struct, so a zero time.Time goes out as
+	// "0001-01-01T00:00:00Z" — a date, which the screen dutifully rendered as
+	// "24662 months ago". Absent has to be absent on the wire, not merely
+	// meaningless.
+	At *time.Time `json:"at,omitempty"`
 	// PWD is the directory `cd` replay arrived at.
 	PWD string `json:"pwd,omitempty"`
 	// PWDCertain reports that the replay never lost track between the last
@@ -80,12 +86,12 @@ const maxContinuation = 20
 func ParseBashHistory(text string) []ShellCommand {
 	out := []ShellCommand{}
 	lines := strings.Split(text, "\n")
-	var pending time.Time
+	var pending *time.Time
 
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
 		if t, ok := bashStamp(line); ok {
-			pending = t
+			pending = &t
 			continue
 		}
 		if strings.TrimSpace(line) == "" {
@@ -102,7 +108,7 @@ func ParseBashHistory(text string) []ShellCommand {
 			At:      pending,
 			Effect:  ClassifyCommand(joined),
 		})
-		pending = time.Time{}
+		pending = nil
 	}
 	return out
 }
@@ -121,13 +127,14 @@ func ParseZshHistory(text string) []ShellCommand {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		var at time.Time
+		var at *time.Time
 		cmd := line
 		if rest, ok := strings.CutPrefix(line, ": "); ok {
 			if stamp, body, found := strings.Cut(rest, ";"); found {
 				if secs, _, ok := strings.Cut(stamp, ":"); ok {
 					if n, err := strconv.ParseInt(secs, 10, 64); err == nil && n > 0 {
-						at = time.Unix(n, 0).UTC()
+						t := time.Unix(n, 0).UTC()
+						at = &t
 						cmd = body
 					}
 				}
