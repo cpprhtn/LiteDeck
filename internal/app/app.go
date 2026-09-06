@@ -31,6 +31,7 @@ type App struct {
 	prompts   *promptBridge
 	log       *commandLog
 	detected  *detectCache
+	typed     *typedLog
 	selves    *selfCache
 	sshPorts  *portCache
 	ifaces    *ifaceCache
@@ -77,6 +78,7 @@ func New() *App {
 	a.prompts = newPromptBridge(a)
 	a.log = newCommandLog(a)
 	a.detected = newDetectCache()
+	a.typed = newTypedLog(a.configDir)
 	a.selves = newSelfCache()
 	a.sshPorts = newPortCache()
 	a.ifaces = newIfaceCache()

@@ -1,15 +1,28 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { HostCommandHistory, type CommandHistoryView, type SudoRun } from './ipc'
+import {
+  HostCommandHistory,
+  TypedHistory,
+  type CommandHistoryView,
+  type SudoRun,
+  type TypedCommand,
+} from './ipc'
 import { AccessNotice } from './EventTimeline'
 import { k, t } from './i18n'
 
-// Command history — the privileged half (arch/07, 명령 이력 C-2).
+// Command history (arch/07, 명령 이력).
 //
 // "I was on this box three months ago and I cannot remember what I did." The
 // thing people actually do is scroll their shell history looking for the lines
 // that changed something, and this is that, with the part the file cannot give
 // them: where each command ran. sudo writes the directory down as it runs, so
 // the grouping below is a record rather than a reconstruction.
+//
+// Two sources, shown together and marked apart. sudo's journal (C-2) knows the
+// directory as a fact. This app's own terminal (B) knows it only as far as it
+// could read the lines: a history recall or a Tab completion is a line nobody
+// on this side saw, and it may have been a `cd`. Those rows say so — dimmed,
+// with a question mark — rather than being dropped or, worse, shown as
+// confidently as the ones that are certain.
 //
 // Not a log viewer and not a terminal. Nothing here executes — clicking a row
 // copies it, and the person decides whether to run it. The history contains
@@ -26,6 +39,39 @@ const EFFECT_MARK: Record<SudoRun['effect'], string> = {
   change: '●',
   edit: '✎',
   read: '·',
+}
+
+/** One row, whichever source it came from.
+ *
+ *  The two are kept apart on screen rather than merged into an average. sudo's
+ *  journal knows the directory as a fact; the terminal log knows it only as far
+ *  as it could read the lines. Showing both as the same kind of thing would
+ *  make the weaker one look like the stronger one. */
+interface Row {
+  at: string
+  pwd: string
+  /** False where the path is where the shell *was*, not necessarily where it
+   *  is — see TypedCommand. sudo's rows are always true. */
+  certain: boolean
+  command: string
+  effect: SudoRun['effect']
+  source: 'sudo' | 'typed'
+  refused?: boolean
+  reason?: string
+}
+
+function fromSudo(r: SudoRun): Row {
+  return {
+    at: r.at, pwd: r.pwd || '?', certain: true, command: r.command,
+    effect: r.effect, source: 'sudo', refused: r.refused, reason: r.reason,
+  }
+}
+
+function fromTyped(c: TypedCommand): Row {
+  return {
+    at: c.at, pwd: c.pwd || '?', certain: c.pwdCertain, command: c.command,
+    effect: c.effect, source: 'typed',
+  }
 }
 
 /** Rough and local. The exact minute is in the title attribute; the list is
@@ -45,17 +91,20 @@ function ago(iso: string): string {
 
 interface Group {
   pwd: string
-  runs: SudoRun[]
+  runs: Row[]
   /** The newest run in the group, which is what the list is ordered by. */
   latest: string
+  /** True when every row in it knows where it was. One uncertain row is enough
+   *  to mark the whole group, because the group *is* the claim about location. */
+  certain: boolean
 }
 
 /** Grouped by directory, most recently used first.
  *
  *  Not alphabetical: the question starts with "I was here a while ago", so the
  *  place worked in last is the place to show first. */
-function groupByPath(runs: SudoRun[]): Group[] {
-  const byPath = new Map<string, SudoRun[]>()
+function groupByPath(runs: Row[]): Group[] {
+  const byPath = new Map<string, Row[]>()
   for (const r of runs) {
     const key = r.pwd || '?'
     const list = byPath.get(key)
@@ -64,7 +113,12 @@ function groupByPath(runs: SudoRun[]): Group[] {
   }
   const groups: Group[] = []
   for (const [pwd, list] of byPath) {
-    groups.push({ pwd, runs: list, latest: list[0]?.at ?? '' })
+    groups.push({
+      pwd,
+      runs: list,
+      latest: list[0]?.at ?? '',
+      certain: list.every((r) => r.certain),
+    })
   }
   groups.sort((a, b) => (a.latest < b.latest ? 1 : a.latest > b.latest ? -1 : 0))
   return groups
@@ -78,6 +132,7 @@ export function CommandHistory({
   onError: (msg: string) => void
 }) {
   const [view, setView] = useState<CommandHistoryView | null>(null)
+  const [typed, setTyped] = useState<TypedCommand[]>([])
   const [range, setRange] = useState<'1h' | '24h' | '7d'>('24h')
   const [busy, setBusy] = useState(false)
   // Reads are folded away by default. Roughly eight lines in ten are somebody
@@ -91,7 +146,15 @@ export function CommandHistory({
     async (elevate: boolean) => {
       setBusy(true)
       try {
-        setView(await HostCommandHistory(hostID, range, elevate))
+        // Read together. The local one cannot fail in a way worth reporting —
+        // it is a file this app wrote — so a rejection there must not hide the
+        // journal's answer.
+        const [remote, local] = await Promise.all([
+          HostCommandHistory(hostID, range, elevate),
+          TypedHistory(hostID).catch(() => [] as TypedCommand[]),
+        ])
+        setView(remote)
+        setTyped(local)
       } catch (e) {
         onError(String(e))
       } finally {
@@ -108,11 +171,12 @@ export function CommandHistory({
   }, [load])
 
   const groups = useMemo(() => {
-    const runs = view?.runs ?? []
-    return groupByPath(changesOnly ? runs.filter((r) => r.effect !== 'read') : runs)
-  }, [view, changesOnly])
+    const rows = [...(view?.runs ?? []).map(fromSudo), ...typed.map(fromTyped)]
+    rows.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
+    return groupByPath(changesOnly ? rows.filter((r) => r.effect !== 'read') : rows)
+  }, [view, typed, changesOnly])
 
-  const copy = (r: SudoRun) => {
+  const copy = (r: Row) => {
     void navigator.clipboard?.writeText(r.command).catch(() => {})
     setCopied(r.at + r.command)
     setTimeout(() => setCopied(null), 1200)
@@ -157,11 +221,11 @@ export function CommandHistory({
         </p>
       )}
 
-      {view?.access === 'ok' && groups.length === 0 && !busy && (
+      {groups.length === 0 && !busy && (
         <p className="muted small history-empty">
           {changesOnly
-            ? t('이 기간에 sudo 로 바꾼 것이 없습니다. 조회까지 보려면 「바꾼 것만」 을 끄세요.')
-            : t('이 기간에 sudo 로 실행된 명령이 없습니다.')}
+            ? t('이 기간에 바꾼 것이 없습니다. 조회까지 보려면 「바꾼 것만」 을 끄세요.')
+            : t('이 기간에 기록된 명령이 없습니다.')}
         </p>
       )}
 
@@ -172,8 +236,16 @@ export function CommandHistory({
             <div key={g.pwd} className="history-group">
               <button className="history-head" onClick={() => toggle(g.pwd)}>
                 <span className="history-twisty">{expanded ? '▾' : '▸'}</span>
-                <span className="mono history-path" title={g.pwd}>
+                {/* An estimate is shown as one. The mark is the same idea as
+                    breaking a chart line across a gap: the shape stays useful
+                    and the claim stays true. */}
+                <span
+                  className="mono history-path"
+                  data-guess={!g.certain || undefined}
+                  title={g.certain ? g.pwd : t('추정 경로 — 읽지 못한 줄이 지나갔습니다')}
+                >
                   {g.pwd}
+                  {!g.certain && <span className="history-guess">?</span>}
                 </span>
                 <span className="muted small history-count">
                   {t('{n}회', { n: g.runs.length })}
@@ -189,11 +261,15 @@ export function CommandHistory({
                       className="history-run"
                       data-effect={r.effect}
                       data-refused={r.refused || undefined}
+                      data-source={r.source}
                       onClick={() => copy(r)}
-                      title={`${new Date(r.at).toLocaleString()} · ${r.user}${
-                        r.runAs ? ` → ${r.runAs}` : ''
+                      title={`${new Date(r.at).toLocaleString()} · ${
+                        r.source === 'sudo' ? t('sudo 저널') : t('이 앱의 터미널')
                       }`}
                     >
+                      {/* The mark says what it did; which source knew about it
+                          is in the title and in the dot's shade. Two symbols in
+                          one column would be a legend to learn. */}
                       <span className="history-mark">{EFFECT_MARK[r.effect]}</span>
                       <span className="mono history-cmd">{r.command}</span>
                       {/* A refusal is part of what happened. On a host that always

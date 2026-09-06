@@ -9,6 +9,7 @@ import {
   ReadClipboard,
   ResizeTerminal,
   RevealFromTerminal,
+  TypedEntered,
   WriteTerminal,
   on,
   type TerminalInfo,
@@ -174,6 +175,13 @@ function TerminalPane({
     // shadowed, and there is no version of this that opens an editor on the
     // server by accident.
     const typed = new LineWatcher()
+    // Every line the user enters goes to the local history (T-22), including
+    // the ones this side could not read — those carry no text and only cost the
+    // tracked directory its confidence. Failures are swallowed: a history that
+    // cannot be written is not a reason to break the terminal.
+    typed.onEnter = ({ line, blind }) => {
+      void TypedEntered(info.hostId, info.id, line, blind).catch(() => {})
+    }
     const disposeInput = term.onData((data) => {
       const caught = typed.feed(data, term.buffer.active.type === 'normal')
       if (caught) {

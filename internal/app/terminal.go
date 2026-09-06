@@ -202,6 +202,13 @@ func (a *App) OpenTerminal(hostID string, opts TerminalOptions) (TerminalInfo, e
 	a.terminals.all[id] = &openTerminal{info: info, sess: sess}
 	a.terminals.mu.Unlock()
 
+	// The typed history tracks where each session is standing, and this is the
+	// only moment it can be known for certain. A container shell is left
+	// unanchored on purpose: opts.Dir is a path on the host, and inside the
+	// container it means something else or nothing at all.
+	if a.typed != nil && opts.Dir != "" && opts.ContainerID == "" {
+		a.typed.setCwd(info.ID, opts.Dir)
+	}
 	return info, nil
 }
 
@@ -230,6 +237,10 @@ func (a *App) ResizeTerminal(id string, cols, rows int) error {
 
 // CloseTerminal ends a session.
 func (a *App) CloseTerminal(id string) error {
+	if a.typed != nil {
+		// A shell that is gone is not standing anywhere.
+		a.typed.forgetTerm(id)
+	}
 	sess, ok := a.terminals.get(id)
 	if !ok {
 		return nil // already gone; closing twice is not an error worth raising

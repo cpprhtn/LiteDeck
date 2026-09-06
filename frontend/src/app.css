@@ -2239,6 +2239,16 @@ button.danger {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A path this side had to guess at. Dimmed rather than hidden — the row is
+   still worth reading, the location is just not a fact. */
+.history-path[data-guess] {
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+.history-guess {
+  color: var(--warn);
+  padding-left: 2px;
+}
 .history-count {
   font-variant-numeric: tabular-nums;
 }
@@ -2259,6 +2269,12 @@ button.danger {
 }
 .history-run[data-effect='change'] .history-mark {
   color: var(--accent);
+}
+/* The app's own terminal log is dimmer than sudo's journal. Same information,
+   weaker provenance: one was written by sudo as it ran, the other reconstructed
+   from keystrokes. */
+.history-run[data-source='typed'] .history-mark {
+  opacity: 0.55;
 }
 .history-run[data-effect='edit'] .history-mark {
   color: var(--warn);

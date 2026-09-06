@@ -156,7 +156,7 @@ func TestCommandsAreSortedByWhatTheyChanged(t *testing.T) {
 		{"/opt/acme/bin/deploy", SudoChange},
 		{"", SudoChange},
 	} {
-		if got := classifyCommand(tc.cmd); got != tc.want {
+		if got := ClassifyCommand(tc.cmd); got != tc.want {
 			t.Errorf("%q: effect = %q, want %q", tc.cmd, got, tc.want)
 		}
 	}

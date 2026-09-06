@@ -186,7 +186,7 @@ func parseSudoMessage(msg string) (SudoRun, bool) {
 			run.RunAs = value
 		}
 	}
-	run.Effect = classifyCommand(run.Command)
+	run.Effect = ClassifyCommand(run.Command)
 	return run, true
 }
 
@@ -221,12 +221,16 @@ var readSubcommands = map[string]map[string]bool{
 	"firewalld": {"state": true},
 }
 
-// classifyCommand decides what a command did to the server.
+// ClassifyCommand decides what a command did to the server.
+//
+// Exported because both history sources sort along this axis — sudo's journal
+// and the app's own terminal log — and two copies of this table would drift
+// into disagreeing about what `systemctl status` is.
 //
 // The default is change, and deliberately: an unrecognised command shown among
 // the changes is noise, and an unrecognised command folded away with the reads
 // is a change nobody sees. The first costs a line, the second costs the answer.
-func classifyCommand(cmd string) SudoEffect {
+func ClassifyCommand(cmd string) SudoEffect {
 	fields := strings.Fields(cmd)
 	if len(fields) == 0 {
 		return SudoChange

@@ -498,6 +498,20 @@ export interface LoginsView {
 }
 
 /** What happened while nobody was watching (T-29). */
+/** One line entered in this app's terminal (T-22).
+ *
+ *  `pwdCertain` false means an unreadable line — a history recall, a Tab
+ *  completion — went by since the last `cd` this side could follow, so the path
+ *  is where the shell was, not necessarily where it is. */
+export interface TypedCommand {
+  hostId: string
+  at: string
+  command: string
+  pwd?: string
+  pwdCertain: boolean
+  effect: 'change' | 'edit' | 'read'
+}
+
 export interface DigestView {
   boots: number
   unitFailures: number
@@ -794,6 +808,8 @@ interface Bindings {
   HostEvents(id: string, range: string, elevate: boolean): Promise<EventsView>
   HostUpdates(id: string): Promise<UpdateStatus>
   HostDigest(id: string): Promise<DigestView>
+  TypedEntered(hostID: string, termID: string, line: string, blind: boolean): Promise<void>
+  TypedHistory(hostID: string): Promise<TypedCommand[]>
   MarkHostSeen(id: string): Promise<void>
   HostLogins(id: string, elevate: boolean): Promise<LoginsView>
   HostCommandHistory(
@@ -1030,6 +1046,9 @@ export const HostCommandHistory = (id: string, range: string, elevate: boolean) 
   api().HostCommandHistory(id, range, elevate)
 export const HostUpdates = (id: string) => api().HostUpdates(id)
 export const HostDigest = (id: string) => api().HostDigest(id)
+export const TypedEntered = (hostID: string, termID: string, line: string, blind: boolean) =>
+  api().TypedEntered(hostID, termID, line, blind)
+export const TypedHistory = (hostID: string) => api().TypedHistory(hostID)
 export const MarkHostSeen = (id: string) => api().MarkHostSeen(id)
 export const HostLogins = (id: string, elevate: boolean) =>
   api().HostLogins(id, elevate)
