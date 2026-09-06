@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useState, type ReactNode } from 'react'
 import Bench from './Bench'
 import { CommandLogPanel } from './CommandLogPanel'
+import { DigestStrip } from './DigestStrip'
 import { ErrorBoundary } from './ErrorBoundary'
 import { HostKeyDialog, McpWriteDialog, SecretDialog } from './Dialogs'
 import { ContainerView } from './ContainerView'
@@ -394,6 +395,16 @@ export default function App() {
             {!unsupported && (
               <ErrorBoundary key={`metrics:${active.id}`} label={t('상태 표시줄')}>
                 <MetricsBar hostID={active.id} />
+              </ErrorBoundary>
+            )}
+
+            {/* Above the tabs because it is about the host rather than about
+                any one view of it, and because it is the one thing here worth
+                seeing before choosing where to look. It renders nothing most of
+                the time. */}
+            {!unsupported && (
+              <ErrorBoundary key={`digest:${active.id}`} label={t('변경 요약')}>
+                <DigestStrip hostID={active.id} />
               </ErrorBoundary>
             )}
 

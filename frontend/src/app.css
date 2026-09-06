@@ -2286,6 +2286,33 @@ button.danger {
   white-space: nowrap;
 }
 
+/* "Since you last looked" (T-29) ------------------------------------------ */
+
+.digest {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-sunken);
+  font-size: var(--text-sm);
+}
+/* Louder only for the two that mean something broke or restarted. A day of
+   failed passwords is normal on the open internet and must not cry wolf. */
+.digest[data-loud] .digest-body {
+  color: var(--warn);
+  font-weight: 600;
+}
+.digest-cap {
+  color: var(--fg-faint);
+  white-space: nowrap;
+}
+.digest-body {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Login history, under the live session table (T-26) ---------------------- */
 
 .login-hist {

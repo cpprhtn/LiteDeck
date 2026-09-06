@@ -497,6 +497,23 @@ export interface LoginsView {
   window: string
 }
 
+/** What happened while nobody was watching (T-29). */
+export interface DigestView {
+  boots: number
+  unitFailures: number
+  authFailures: number
+  sudoCommands: number
+  /** The mark this was counted from, unix seconds. 0 on a first visit. */
+  since: number
+  /** No mark yet, so every count would be the whole journal presented as news. */
+  first: boolean
+  quiet: boolean
+  window: string
+  /** False where there is no journal, or none this user can read. Then the
+   *  counts are absent rather than zero. */
+  readable: boolean
+}
+
 export interface UpdateStatus {
   known: boolean
   /** -1 where the file was there but its wording did not parse. Never 0 for
@@ -776,6 +793,8 @@ interface Bindings {
   HostMetrics(id: string): Promise<MetricsView>
   HostEvents(id: string, range: string, elevate: boolean): Promise<EventsView>
   HostUpdates(id: string): Promise<UpdateStatus>
+  HostDigest(id: string): Promise<DigestView>
+  MarkHostSeen(id: string): Promise<void>
   HostLogins(id: string, elevate: boolean): Promise<LoginsView>
   HostCommandHistory(
     id: string,
@@ -1010,6 +1029,8 @@ export const HostEvents = (id: string, range: string, elevate: boolean) =>
 export const HostCommandHistory = (id: string, range: string, elevate: boolean) =>
   api().HostCommandHistory(id, range, elevate)
 export const HostUpdates = (id: string) => api().HostUpdates(id)
+export const HostDigest = (id: string) => api().HostDigest(id)
+export const MarkHostSeen = (id: string) => api().MarkHostSeen(id)
 export const HostLogins = (id: string, elevate: boolean) =>
   api().HostLogins(id, elevate)
 export const HostNetwork = (id: string) => api().HostNetwork(id)

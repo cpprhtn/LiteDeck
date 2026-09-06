@@ -31,6 +31,14 @@ type Settings struct {
 	// an endpoint that speaks for every connected server is not something to
 	// open because the app was installed.
 	MCP MCPSettings `json:"mcp,omitzero"`
+
+	// LastSeen is when this app was last looking at a host, in unix seconds,
+	// by host ID. It is what "since you last looked" is measured from.
+	//
+	// Local, and deliberately: it is a fact about this person's attention, not
+	// about the server. Two people watching the same box have two different
+	// answers, and writing it to the server would give them one wrong one.
+	LastSeen map[string]int64 `json:"lastSeen,omitempty"`
 }
 
 // MCPSettings is the AI integration (§4 of the MCP design note).
@@ -123,8 +131,6 @@ func (s *SettingsStore) Get() Settings {
 	return s.settings
 }
 
-// SetLanguage records an explicit choice. An empty tag means "follow the OS"
-// and is a legitimate value — it is how somebody undoes a choice.
 // SetMCP replaces the MCP settings.
 func (s *SettingsStore) SetMCP(m MCPSettings) error {
 	s.mu.Lock()
@@ -133,6 +139,23 @@ func (s *SettingsStore) SetMCP(m MCPSettings) error {
 	return s.save()
 }
 
+// SetLastSeen records that this app was looking at a host, in unix seconds.
+//
+// Written when the digest has been shown, not when the host connects: the point
+// of the mark is "you have seen what happened up to here", and moving it on
+// connect would consume the answer before anybody read it.
+func (s *SettingsStore) SetLastSeen(hostID string, at int64) error {
+	s.mu.Lock()
+	if s.settings.LastSeen == nil {
+		s.settings.LastSeen = map[string]int64{}
+	}
+	s.settings.LastSeen[hostID] = at
+	s.mu.Unlock()
+	return s.save()
+}
+
+// SetLanguage records an explicit choice. An empty tag means "follow the OS"
+// and is a legitimate value — it is how somebody undoes a choice.
 func (s *SettingsStore) SetLanguage(tag string) error {
 	s.mu.Lock()
 	s.settings.Language = tag
