@@ -1,0 +1,17 @@
+OS: Ubuntu 24.04.4 LTS
+captured: 2026-09-06T11:30:00Z
+files: /var/lib/update-notifier/updates-available
+       /var/run/reboot-required.pkgs
+
+Copied verbatim off a real server. Nothing was anonymised because there is
+nothing personal in either file — they name kernels, not people.
+
+Both are why this fixture exists rather than an invented one:
+
+- The ESM lines. "5 additional security updates can be applied with ESM Apps"
+  sits two lines below the real count, and it is not a number the machine can
+  act on — those need a subscription it does not have. A parser that looks for
+  a digit near the word "security" reports it as work to do.
+- The repetition. `linux-base` appears five times because the file is appended
+  to on every upgrade that wants a restart. The five kernels beside it are the
+  actual finding: this box skipped five of them.

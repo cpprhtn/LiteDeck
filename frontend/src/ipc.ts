@@ -454,6 +454,24 @@ export interface SudoRun {
   bootId?: string
 }
 
+/** What update-notifier has already written down on the server.
+ *
+ *  `known` false means the distribution keeps no such files — Debian did not.
+ *  Then nothing here means anything, and the UI says nothing rather than zero. */
+export interface UpdateStatus {
+  known: boolean
+  /** -1 where the file was there but its wording did not parse. Never 0 for
+   *  "unknown" — that would read as "nothing to do". */
+  updates: number
+  security: number
+  /** When the cached count was computed. Empty when even the age is unknown,
+   *  which is not the same as fresh. */
+  checkedAt: string
+  raw?: string
+  rebootRequired: boolean
+  rebootPkgs?: string[]
+}
+
 export interface CommandHistoryView {
   runs: SudoRun[]
   access: 'ok' | 'needs-sudo' | 'denied' | 'no-journal'
@@ -718,6 +736,7 @@ interface Bindings {
 
   HostMetrics(id: string): Promise<MetricsView>
   HostEvents(id: string, range: string, elevate: boolean): Promise<EventsView>
+  HostUpdates(id: string): Promise<UpdateStatus>
   HostCommandHistory(
     id: string,
     range: string,
@@ -950,6 +969,7 @@ export const HostEvents = (id: string, range: string, elevate: boolean) =>
   api().HostEvents(id, range, elevate)
 export const HostCommandHistory = (id: string, range: string, elevate: boolean) =>
   api().HostCommandHistory(id, range, elevate)
+export const HostUpdates = (id: string) => api().HostUpdates(id)
 export const HostNetwork = (id: string) => api().HostNetwork(id)
 /** Same reading, but the interface list is re-read rather than served from the
  *  30s cache. For the refresh button only — pressing it means "something
