@@ -29,6 +29,7 @@ export type Action =
   | 'parentDir'
   | 'newFolder'
   | 'copyPath'
+  | 'save'
 
 interface Binding {
   /** KeyboardEvent.key */
@@ -49,6 +50,7 @@ const MAC: Record<Action, Binding> = {
   parentDir: { key: 'ArrowUp', mod: true, label: '⌘↑' },
   newFolder: { key: 'n', mod: true, shift: true, label: '⇧⌘N' },
   copyPath: { key: 'c', mod: true, alt: true, label: '⌥⌘C' },
+  save: { key: 's', mod: true, label: '⌘S' },
 }
 
 const PC: Record<Action, Binding> = {
@@ -60,6 +62,7 @@ const PC: Record<Action, Binding> = {
   parentDir: { key: 'ArrowUp', alt: true, label: 'Alt+↑' },
   newFolder: { key: 'n', mod: true, shift: true, label: 'Ctrl+Shift+N' },
   copyPath: { key: 'c', mod: true, shift: true, label: 'Ctrl+Shift+C' },
+  save: { key: 's', mod: true, label: 'Ctrl+S' },
 }
 
 let platform: Platform = {
