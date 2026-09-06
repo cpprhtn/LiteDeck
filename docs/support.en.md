@@ -30,6 +30,14 @@ and container control, saving and deleting files, **whole-folder transfers and r
 transfer was interrupted and resumed twice), completing a sudo escalation, the terminal PTY and
 live log tailing.
 
+**Atomic saving was judged by hard link.** On both servers a second link was made to the same
+content, the file was saved, and the link was read back. In a writable directory the link still
+held the old content — a rename replaces the directory entry and breaks the link. In a directory
+with its write bit removed the link followed the new content, which is what writing through the
+file does. The save also kept the file's mode (0600). The two results point opposite ways, so an
+implementation that reports itself atomic while writing in place cannot pass both. **This was done
+through MCP's `fs_write`**, which goes through the same function the editor does.
+
 The Linux client has been **opened, connected and read from**. Transfers, the terminal and the GTK
 file chooser have not.
 
@@ -43,6 +51,7 @@ file chooser have not.
 | | Status |
 |---|---|
 | **The rest of the Linux client** | Window, connecting and the read side are confirmed. Transfers, the terminal, the GTK file chooser and keychain storage are not |
+| **The editor's on-screen save path** | The save function itself was verified on two real servers, atomicity and the fallback included, but through MCP's `fs_write`. The editor tab's save button, and the **conflict path** for a file that changed on the server after it was opened, have not been exercised on a real machine |
 | **RHEL/Rocky 8** | Share the systemd 245 table-parsing path, so they should work, but untested |
 | **Podman** | Docker-compatible CLI, so the parser is shared, but never run |
 | **Windows containers** | The test machine had no Docker |
