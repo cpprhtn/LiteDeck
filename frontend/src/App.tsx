@@ -185,6 +185,12 @@ export default function App() {
     const offKey = on<HostKeyPrompt>('prompt:hostkey', setHostKeyPrompt)
     const offSecret = on<SecretPrompt>('prompt:secret', setSecretPrompt)
     const offWrite = on<MCPWritePrompt>('prompt:mcpwrite', setMcpWrite)
+    // Go emits this from five places — a rollback copy it could not write, a
+    // token it could not make, a credential it could not save — and until this
+    // line existed nothing was listening, so all five were dropped by the
+    // runtime. None of them stop the app, which is why they go to the banner
+    // the user can dismiss rather than anywhere louder.
+    const offWarn = on<string>('log:warning', setError)
     const offState = on<ConnectionState>('conn:state', (s) => {
       setHosts((prev) =>
         prev.map((h) => (h.id === s.hostId ? { ...h, state: s.state } : h)),
@@ -197,6 +203,7 @@ export default function App() {
     })
     return () => {
       offKey()
+      offWarn()
       offSecret()
       offWrite()
       offState()

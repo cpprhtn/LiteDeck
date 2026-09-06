@@ -35,8 +35,8 @@ func (s State) String() string {
 	}
 }
 
-// StateFunc is called on every transition. It feeds the conn:state:<hostID>
-// event in §3.2e, so it must not block — the caller is holding the keepalive
+// StateFunc is called on every transition. It feeds the conn:state event in
+// §3.2e, so it must not block — the caller is holding the keepalive
 // loop while it runs.
 type StateFunc func(hostID string, s State, err error)
 
