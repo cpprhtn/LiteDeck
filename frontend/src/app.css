@@ -2286,6 +2286,79 @@ button.danger {
   white-space: nowrap;
 }
 
+/* Login history, under the live session table (T-26) ---------------------- */
+
+.login-hist {
+  border-top: 1px solid var(--border);
+  padding: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-height: 0;
+  overflow-y: auto;
+}
+.login-hist-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.login-hist-empty {
+  padding: var(--sp-2) 0;
+}
+
+.login-auth-nums {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+}
+/* Red only when there is something to be red about. A server nobody is
+   knocking on should not wear an alarm colour for the number zero. */
+.login-auth-fail {
+  font-weight: 600;
+}
+.login-auth-fail[data-hot] {
+  color: var(--danger);
+}
+.login-auth-tops {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+}
+.login-auth-cap {
+  font-size: var(--text-xs, 11px);
+  color: var(--fg-faint);
+  padding-bottom: 2px;
+}
+.login-auth-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--sp-2);
+  font-size: var(--text-sm);
+  padding: 1px 0;
+}
+
+.login-row {
+  display: grid;
+  grid-template-columns: 1fr 90px 1.4fr 130px 110px;
+  gap: var(--sp-2);
+  align-items: baseline;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+/* A restart is not a person logging in. It is the row people actually look for
+   in this file, so it is marked rather than blended in. */
+.login-row[data-boot] .login-who {
+  color: var(--accent);
+  font-weight: 600;
+}
+.login-from,
+.login-who {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .events-list {
   flex: 1;
   min-height: 0;

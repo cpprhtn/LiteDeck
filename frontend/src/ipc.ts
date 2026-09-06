@@ -458,6 +458,45 @@ export interface SudoRun {
  *
  *  `known` false means the distribution keeps no such files — Debian did not.
  *  Then nothing here means anything, and the UI says nothing rather than zero. */
+/** One row of wtmp. `from` holds the kernel version on a boot record — that is
+ *  what `last` puts in the column. */
+export interface Login {
+  user: string
+  tty?: string
+  from?: string
+  at: string
+  until?: string
+  open?: boolean
+  /** The "reboot / system boot" pseudo-records. Labelled, not filtered out. */
+  boot?: boolean
+}
+
+export interface AuthCount {
+  name: string
+  count: number
+}
+
+/** Failed logins, summarised. Never listed: one measured server logged 3,011
+ *  failures in a day, six times the journal read cap. */
+export interface AuthSummary {
+  failed: number
+  accepted: number
+  sources?: AuthCount[]
+  users?: AuthCount[]
+  /** How many there were before the cut, so "8 of 36" can be said. */
+  distinctSources: number
+  distinctUsers: number
+}
+
+export interface LoginsView {
+  logins: Login[]
+  auth: AuthSummary
+  /** About the failures alone. wtmp needs no journal, so the successes arrive
+   *  whatever this says. */
+  access: 'ok' | 'needs-sudo' | 'denied' | 'no-journal'
+  window: string
+}
+
 export interface UpdateStatus {
   known: boolean
   /** -1 where the file was there but its wording did not parse. Never 0 for
@@ -737,6 +776,7 @@ interface Bindings {
   HostMetrics(id: string): Promise<MetricsView>
   HostEvents(id: string, range: string, elevate: boolean): Promise<EventsView>
   HostUpdates(id: string): Promise<UpdateStatus>
+  HostLogins(id: string, elevate: boolean): Promise<LoginsView>
   HostCommandHistory(
     id: string,
     range: string,
@@ -970,6 +1010,8 @@ export const HostEvents = (id: string, range: string, elevate: boolean) =>
 export const HostCommandHistory = (id: string, range: string, elevate: boolean) =>
   api().HostCommandHistory(id, range, elevate)
 export const HostUpdates = (id: string) => api().HostUpdates(id)
+export const HostLogins = (id: string, elevate: boolean) =>
+  api().HostLogins(id, elevate)
 export const HostNetwork = (id: string) => api().HostNetwork(id)
 /** Same reading, but the interface list is re-read rather than served from the
  *  30s cache. For the refresh button only — pressing it means "something
