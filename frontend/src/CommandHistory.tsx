@@ -80,11 +80,12 @@ function fromTyped(c: TypedCommand): Row {
   }
 }
 
-/** The shell file's path is always an estimate — see ShellCommand. Never
- *  `certain`, whatever the replay produced. */
+/** The replay says per line whether it kept track. It followed every `cd` in
+ *  the measured file, so most rows here are as good as the other sources' — and
+ *  the ones after a `cd $VAR` say otherwise. */
 function fromShell(c: ShellCommand): Row {
   return {
-    at: c.at ?? '', pwd: c.pwd || '?', certain: false, command: c.command,
+    at: c.at ?? '', pwd: c.pwd || '?', certain: c.pwdCertain, command: c.command,
     effect: c.effect, source: 'shell', timed: !!c.at,
   }
 }

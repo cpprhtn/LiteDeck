@@ -516,13 +516,17 @@ export interface TypedCommand {
  *
  *  `at` is absent where the file carries no times, which is the bash default —
  *  the history then has an order and nothing else. The path is always an
- *  estimate: bash appends a session when it exits, so the file is ordered by
- *  when sessions ended and replaying `cd` across the seam can produce a
- *  directory that never existed. */
+ *  the file is ordered by when sessions ended, so a `cd` replayed across the
+ *  seam between two overlapping sessions can land somewhere that never
+ *  existed — a caveat about the source, said once, not a reason to call every
+ *  line a guess. */
 export interface ShellCommand {
   command: string
   at?: string
   pwd?: string
+  /** The replay never lost track between the last anchor and this line. False
+   *  only after a `cd` it could not follow — on the measured file, none. */
+  pwdCertain: boolean
   effect: 'change' | 'edit' | 'read'
 }
 

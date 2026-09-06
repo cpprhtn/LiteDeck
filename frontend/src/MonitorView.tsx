@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { CommandHistory } from './CommandHistory'
 import { EventTimeline } from './EventTimeline'
 import { ResourceView, type SysFacts } from './ResourceView'
 import { t } from './i18n'
@@ -19,12 +18,11 @@ import { t } from './i18n'
 // the fine recent end and sar is the coarse older end of the *same* chart, with
 // the seam shown rather than hidden.
 
-// History sits here rather than in a tab of its own for the reason the other
-// two share one: it reads the same journal, through the same permission answer,
-// and it is the same kind of looking — what happened on this box, and when.
-// Resources say "is it all right", events "since when", history "what did we do
-// to it". A ninth entry in the tab strip would have split that question up.
-type Pane = 'resources' | 'events' | 'history'
+// The command history used to be a third pane here. It moved to the terminal
+// tab, which is where it is actually used: the thing people do with a past
+// command is run it again, and that is one pane away from here and none away
+// from there.
+type Pane = 'resources' | 'events'
 
 export function MonitorView({
   hostID,
@@ -41,10 +39,7 @@ export function MonitorView({
   onError: (msg: string) => void
 }) {
   const [pane, setPane] = useState<Pane>('resources')
-  // Both journal panes need the journal. Falling back rather than hiding the
-  // choice after the fact: the buttons are not rendered either.
-  const needsJournal = pane === 'events' || pane === 'history'
-  const active = needsJournal && !hasEvents ? 'resources' : pane
+  const active = pane === 'events' && !hasEvents ? 'resources' : pane
 
   return (
     <div className="view monitor-pane">
@@ -63,17 +58,14 @@ export function MonitorView({
               {t('이벤트')}
             </button>
           )}
-          {hasEvents && (
-            <button data-on={active === 'history' || undefined} onClick={() => setPane('history')}>
-              {t('이력')}
-            </button>
-          )}
         </div>
       </div>
 
-      {active === 'resources' && <ResourceView hostID={hostID} facts={facts} />}
-      {active === 'events' && <EventTimeline hostID={hostID} onError={onError} />}
-      {active === 'history' && <CommandHistory hostID={hostID} onError={onError} />}
+      {active === 'resources' ? (
+        <ResourceView hostID={hostID} facts={facts} />
+      ) : (
+        <EventTimeline hostID={hostID} onError={onError} />
+      )}
     </div>
   )
 }

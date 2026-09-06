@@ -173,3 +173,142 @@ func TestPastedOutputIsKeptRatherThanGuessedAt(t *testing.T) {
 		t.Error("a pasted line was silently dropped")
 	}
 }
+
+// The measured file's 321 `cd`s were all forms the replay can follow: 274
+// relative, 26 absolute, 21 bare. Marking those as guesses threw away what the
+// replay knew, so the certainty is per line and only a real failure spoils it.
+func TestReplayIsCertainWhileItCanFollow(t *testing.T) {
+	cmds := goldenHistory(t)
+
+	// The fixture has exactly one form the replay cannot follow — `cd
+	// $PROJECT_DIR`, added on purpose. Everything before it is certain.
+	spoiled := false
+	certainBefore := 0
+	for _, c := range cmds {
+		if strings.Contains(c.Command, "$PROJECT_DIR") {
+			spoiled = true
+		}
+		if !spoiled && !c.PWDCertain {
+			t.Errorf("%q was marked uncertain before anything defeated the replay", c.Command)
+		}
+		if !spoiled {
+			certainBefore++
+		}
+		// An absolute `cd` puts it back on solid ground, and everything after
+		// that is certain again — which is the point of tracking it per line
+		// rather than condemning the whole file.
+		if strings.HasPrefix(c.Command, "cd /") {
+			spoiled = false
+		}
+	}
+	if certainBefore == len(cmds) {
+		t.Fatal("the fixture no longer contains the unfollowable cd this test is about")
+	}
+	if certainBefore < 15 {
+		t.Errorf("only %d rows were certain; the replay follows more than that", certainBefore)
+	}
+}
+
+func TestUnresolvableCdSpoilsTheRunUntilAnAbsoluteOne(t *testing.T) {
+	cmds := ReplayCd(ParseBashHistory(
+		"cd /srv/app\nls\ncd $DEPLOY\ndocker ps\ncd /etc/nginx\nnginx -t\n"), "/home/deploy")
+
+	want := map[string]struct {
+		pwd     string
+		certain bool
+	}{
+		"ls":        {"/srv/app", true},
+		"docker ps": {"/srv/app", false}, // the shell moved; this cannot say where
+		"nginx -t":  {"/etc/nginx", true},
+	}
+	for _, c := range cmds {
+		w, ok := want[c.Command]
+		if !ok {
+			continue
+		}
+		if c.PWD != w.pwd || c.PWDCertain != w.certain {
+			t.Errorf("%q: pwd=%q certain=%v, want %q and %v",
+				c.Command, c.PWD, c.PWDCertain, w.pwd, w.certain)
+		}
+	}
+}
+
+func TestBareCdGoesHome(t *testing.T) {
+	cmds := ReplayCd(ParseBashHistory("cd /var/log\nls\ncd\npwd\n"), "/home/deploy")
+	for _, c := range cmds {
+		if c.Command == "pwd" && c.PWD != "/home/deploy" {
+			t.Errorf("bare cd left the path at %q, want home", c.PWD)
+		}
+	}
+}
+
+func TestCdDashGoesBack(t *testing.T) {
+	cmds := ReplayCd(ParseBashHistory("cd /srv/app\ncd /etc/nginx\ncd -\npwd\n"), "/home/deploy")
+	for _, c := range cmds {
+		if c.Command == "pwd" {
+			if c.PWD != "/srv/app" {
+				t.Errorf("`cd -` landed in %q, want /srv/app", c.PWD)
+			}
+			if !c.PWDCertain {
+				t.Error("`cd -` is followable and should not spoil the run")
+			}
+		}
+	}
+}
+
+func TestPushdPopd(t *testing.T) {
+	cmds := ReplayCd(ParseBashHistory(
+		"cd /srv/app\npushd /etc/nginx\nnginx -t\npopd\nmake\n"), "/home/deploy")
+	for _, c := range cmds {
+		switch c.Command {
+		case "nginx -t":
+			if c.PWD != "/etc/nginx" {
+				t.Errorf("pushd landed in %q", c.PWD)
+			}
+		case "make":
+			if c.PWD != "/srv/app" {
+				t.Errorf("popd returned to %q, want /srv/app", c.PWD)
+			}
+		}
+	}
+}
+
+// A `cd` in a subshell or after a pipe does not move this shell.
+func TestOnlyTheLeadingCdMoves(t *testing.T) {
+	cmds := ReplayCd(ParseBashHistory(
+		"cd /srv/app\n(cd /tmp && ls)\npwd\ncd build && make\nwhoami\n"), "/home/deploy")
+	for _, c := range cmds {
+		switch c.Command {
+		case "pwd":
+			if c.PWD != "/srv/app" {
+				t.Errorf("a subshell cd moved the outer shell to %q", c.PWD)
+			}
+		case "whoami":
+			// `cd build && make` does move it.
+			if c.PWD != "/srv/app/build" {
+				t.Errorf("`cd x && …` did not move the path: %q", c.PWD)
+			}
+		}
+	}
+}
+
+func TestQuotedLiteralIsFollowable(t *testing.T) {
+	cmds := ReplayCd(ParseBashHistory("cd /srv\ncd \"my dir\"\npwd\n"), "")
+	for _, c := range cmds {
+		if c.Command == "pwd" {
+			if c.PWD != "/srv/my dir" {
+				t.Errorf("quoted literal landed in %q", c.PWD)
+			}
+			if !c.PWDCertain {
+				t.Error("a quoted literal is still a literal")
+			}
+		}
+	}
+	// Expansion inside the quotes is not.
+	spoiled := ReplayCd(ParseBashHistory("cd /srv\ncd \"$D\"\npwd\n"), "")
+	for _, c := range spoiled {
+		if c.Command == "pwd" && c.PWDCertain {
+			t.Error("`cd \"$D\"` was treated as followable")
+		}
+	}
+}

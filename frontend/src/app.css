@@ -2169,6 +2169,40 @@ button.danger {
   padding: var(--sp-2) var(--sp-3);
   border-bottom: 1px solid var(--border);
 }
+/* Terminal, with the history beside it (T-21~23) --------------------------- */
+
+.term-split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.term-split > .term-stack {
+  flex: 1;
+  min-width: 0;
+}
+/* Three to one. Wide enough to read a command without wrapping, narrow enough
+   that the terminal is still the thing on this tab. */
+.term-history {
+  flex: 0 0 25%;
+  min-width: 260px;
+  max-width: 460px;
+  min-height: 0;
+  display: flex;
+  border-left: 1px solid var(--border);
+  background: var(--bg-sunken);
+}
+.term-history > .history-pane {
+  flex: 1;
+  min-width: 0;
+}
+/* The hint is the first thing to give up its space when the panel opens. */
+.term-hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Command history (arch/07, 명령 이력) ------------------------------------- */
 
 .history-pane {
