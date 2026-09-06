@@ -136,6 +136,12 @@ const (
 	outcomeAuto     approvalOutcome = "auto-approved"
 	outcomeDeclined approvalOutcome = "declined"
 	outcomeTimeout  approvalOutcome = "timeout"
+
+	// Restores are not approvals — nobody was asked — but they end up on the
+	// same log line, and they are successes. Left out of the set below they
+	// would be filed as failed commands.
+	outcomeRestored        approvalOutcome = "restored"
+	outcomeRestoredInPlace approvalOutcome = "restored in place"
 )
 
 type approvalBridge struct {

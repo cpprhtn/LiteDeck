@@ -9,6 +9,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/cpprhtn/LiteDeck/internal/config"
+	"github.com/cpprhtn/LiteDeck/internal/mcp"
+	"github.com/cpprhtn/LiteDeck/internal/rollback"
 )
 
 // The file explorer against a real SFTP server (§4.2, §7.4).
@@ -458,6 +462,115 @@ func TestSaveFallsBackWhenTheDirectoryWillNotTakeATempFile(t *testing.T) {
 	}
 	if got, _ := a.ReadTextFile("fixture", file); got.Content != "Port 2222\n" {
 		t.Errorf("content = %q", got.Content)
+	}
+}
+
+// The GUI warns when a save could not be atomic. The MCP surface has to say the
+// same thing: an agent told nothing reports a clean write, and the person
+// reading the transcript never learns the file was rewritten over itself.
+func TestMCPWriteSaysWhenItCouldNotBeAtomic(t *testing.T) {
+	a := connectedApp(t)
+	a.settings = config.OpenSettings(a.configDir)
+	a.rollback = rollback.Open(a.configDir)
+	a.SetMCPHost("fixture", true)
+	a.SetMCPWritePolicy("fixture", WriteBypass, 30)
+
+	dir := scratchDir(t, a, "litedeck-mcp-inplace")
+	file := path.Join(dir, "sshd_config")
+	if res := a.WriteTextFile("fixture", file, "Port 22\n"); !res.OK {
+		t.Fatalf("seed: %+v", res)
+	}
+	byName := map[string]mcp.Tool{}
+	for _, tool := range registered(t, a).Tools() {
+		byName[tool.Name] = tool
+	}
+	write := func(content string) map[string]any {
+		t.Helper()
+		out, err := byName["fs_write"].Handler(context.Background(), map[string]any{
+			"hostId": "fixture", "path": file, "content": content,
+		})
+		if err != nil {
+			t.Fatalf("fs_write: %v", err)
+		}
+		m, ok := out.(map[string]any)
+		if !ok {
+			t.Fatalf("result is %T, not a map", out)
+		}
+		if m["ok"] != true {
+			t.Fatalf("write failed: %+v", m)
+		}
+		if got, _ := a.ReadTextFile("fixture", file); got.Content != content {
+			t.Errorf("content = %q, want %q", got.Content, content)
+		}
+		return m
+	}
+
+	// The ordinary case first. Without it, a flag hard-coded to true would pass
+	// the half of this test that matters and say nothing true about the write.
+	if m := write("Port 8022\n"); m["inPlace"] != nil {
+		t.Errorf("atomic save reported inPlace: %+v", m)
+	}
+
+	// The same shape as /etc: the operator owns the file but not the folder, so
+	// no temp file can be staged and the save has to fall back.
+	if res := a.Chmod("fixture", dir, 0o555); !res.OK {
+		t.Fatalf("Chmod dir: %+v", res)
+	}
+	t.Cleanup(func() { a.Chmod("fixture", dir, 0o755) })
+
+	if m := write("Port 2222\n"); m["inPlace"] != true {
+		t.Errorf("fs_write reported a clean write: %+v — the fallback is not crash-safe and has to be said", m)
+	}
+}
+
+// Undoing an AI's change goes through the same save, so it can fall back the
+// same way. The person undoing it is the one who most needs to hear that, and
+// the Command Log is the only place they would see it.
+func TestRestoreSaysWhenItCouldNotBeAtomic(t *testing.T) {
+	a := connectedApp(t)
+	a.rollback = rollback.Open(a.configDir)
+
+	dir := scratchDir(t, a, "litedeck-restore-inplace")
+	file := path.Join(dir, "sshd_config")
+	if res := a.WriteTextFile("fixture", file, "Port 22\n"); !res.OK {
+		t.Fatalf("seed: %+v", res)
+	}
+	a.recordAIChange("fixture", file, rollback.ActionWrite, []byte("Port 22\n"), false)
+	if res := a.WriteTextFile("fixture", file, "Port 2222\n"); !res.OK {
+		t.Fatalf("change: %+v", res)
+	}
+	if res := a.Chmod("fixture", dir, 0o555); !res.OK {
+		t.Fatalf("Chmod dir: %+v", res)
+	}
+	t.Cleanup(func() { a.Chmod("fixture", dir, 0o755) })
+
+	changes := a.MCPChanges("fixture")
+	if len(changes) != 1 {
+		t.Fatalf("changes = %d, want 1", len(changes))
+	}
+	if res := a.RestoreMCPChange(changes[0].ID); !res.OK {
+		t.Fatalf("restore: %+v", res)
+	}
+	if got, _ := a.ReadTextFile("fixture", file); got.Content != "Port 22\n" {
+		t.Errorf("content = %q", got.Content)
+	}
+
+	var entry CommandEntry
+	for _, e := range a.CommandLog() {
+		if e.Origin == "ai" {
+			entry = e
+		}
+	}
+	if entry.Line == "" {
+		t.Fatal("the restore is not in the Command Log at all")
+	}
+	// A restore that worked is not a failed command. The panel renders "failed"
+	// as `exit 0` and files it under problems.
+	if entry.Status != "ok" {
+		t.Errorf("status = %q, want ok — a successful restore is shown as a failure", entry.Status)
+	}
+	if !strings.Contains(entry.Line, "in place") {
+		t.Errorf("log line = %q — it does not say the restore was not crash-safe", entry.Line)
 	}
 }
 

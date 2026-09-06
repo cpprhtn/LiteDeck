@@ -45,8 +45,9 @@ func (a *App) MCPChanges(hostID string) []MCPChange {
 // RestoreMCPChange puts a file back the way it was.
 //
 // The restore goes through the same atomic write the editor uses, so undoing a
-// change cannot itself leave a half-written file. Undoing a *creation* deletes
-// the file instead: there were no previous contents to put back.
+// change does not itself leave a half-written file — except where that write
+// falls back, which the Command Log then says. Undoing a *creation* deletes the
+// file instead: there were no previous contents to put back.
 func (a *App) RestoreMCPChange(id string) ActionResult {
 	if a.rollback == nil {
 		return failResult(fmt.Errorf("app: no history"))
@@ -59,6 +60,7 @@ func (a *App) RestoreMCPChange(id string) ActionResult {
 		return failResult(i18n.Errorf("%s 는 사본을 남기기에 너무 커서 되돌릴 수 없습니다", entry.Path))
 	}
 
+	inPlace := false
 	if entry.Created {
 		// It did not exist before, so putting it back means removing it.
 		res := a.DeletePaths(entry.HostID, []string{entry.Path}, false, entry.Path)
@@ -70,10 +72,11 @@ func (a *App) RestoreMCPChange(id string) ActionResult {
 		if err != nil {
 			return failResult(err)
 		}
-		res := a.WriteTextFile(entry.HostID, entry.Path, string(body))
+		res := a.SaveTextFile(entry.HostID, SaveRequest{Path: entry.Path, Content: string(body)})
 		if !res.OK {
-			return res
+			return res.ActionResult
 		}
+		inPlace = res.InPlace
 	}
 
 	// Dropped once it is dealt with, so the list shows outstanding work rather
@@ -81,7 +84,11 @@ func (a *App) RestoreMCPChange(id string) ActionResult {
 	if err := a.rollback.Forget(id); err != nil {
 		a.emit("log:warning", err.Error())
 	}
-	a.log.AIWrite(entry.HostID, i18n.T("%s 되돌림", entry.Path), "restored")
+	outcome := outcomeRestored
+	if inPlace {
+		outcome = outcomeRestoredInPlace
+	}
+	a.log.AIWrite(entry.HostID, i18n.T("%s 되돌림", entry.Path), string(outcome))
 	return okResult()
 }
 

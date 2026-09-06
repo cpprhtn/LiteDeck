@@ -154,7 +154,9 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 		Name: "fs_write",
 		Description: "Replace a text file's contents. The user sees a diff against what is on " +
 			"the server right now before approving. Read the file first: this replaces the " +
-			"whole file, it does not patch it.",
+			"whole file, it does not patch it. An answer carrying inPlace: true means the " +
+			"write could not be made atomic and the file was overwritten in place — it " +
+			"succeeded, but it was not crash-safe, and the user should be told.",
 		InputSchema: obj(map[string]any{
 			"hostId":  hostArg,
 			"path":    map[string]any{"type": "string", "description": "Absolute path."},
@@ -203,7 +205,21 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 			// Recorded before the write, so an interrupted change still leaves
 			// something to go back to.
 			a.recordAIChange(hostID, path, rollback.ActionWrite, []byte(before), !existed)
-			return withOutcome(a.WriteTextFile(hostID, path, content), out), nil
+			// SaveTextFile, not WriteTextFile: the latter narrows the result to
+			// an ActionResult and drops InPlace with it. The GUI puts that on
+			// screen; over MCP it is the one thing about this write nobody can
+			// find out afterwards, so a clean-looking answer would be a lie.
+			res := a.SaveTextFile(hostID, SaveRequest{Path: path, Content: content})
+			m := withOutcome(res.ActionResult, out)
+			if res.InPlace {
+				m["inPlace"] = true
+				if _, taken := m["note"]; !taken {
+					m["note"] = "This directory would not take a temp file, so the file was " +
+						"written over itself rather than replaced atomically. A connection " +
+						"that drops mid-write can truncate it. Tell the user."
+				}
+			}
+			return m, nil
 		},
 	})
 
