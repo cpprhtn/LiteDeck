@@ -1,0 +1,28 @@
+cd monitoring/
+ls
+vi docker-compose.yml 
+docker compose up -d
+docker ps
+docker logs loki --tail 50
+docker run --rm -v loki-data:/data alpine sh -c '
+  mkdir -p /data/rules /data/chunks &&
+  chown -R 10001:10001 /data &&
+  ls -ld /data /data/rules /data/chunks
+'
+docker compose down
+docker compose up -d
+docker logs -f loki | grep "server listening"
+labels = ["service"]2025-08-24T08:40:11.791211Z  INFO vector::app: Log level is enabled. level="info"
+2025-08-24T08:40:11.791861Z ERROR vector::cli: Configuration error. error=invalid type: sequence, expected a map
+cd vector/
+vi vector.toml 
+docker restart vector
+cd ..
+cd ../test-logs/
+docker build -t test-python-logs .
+docker run --rm --name test-python-logs python:3.12-slim bash -c "while true; do echo Hello World; sleep 2; done"
+cd $PROJECT_DIR
+docker ps
+sudo ufw allow 25565/tcp
+cd /etc/nginx
+sudo vi nginx.conf 

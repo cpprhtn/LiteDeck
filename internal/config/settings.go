@@ -39,6 +39,13 @@ type Settings struct {
 	// about the server. Two people watching the same box have two different
 	// answers, and writing it to the server would give them one wrong one.
 	LastSeen map[string]int64 `json:"lastSeen,omitempty"`
+
+	// ShellHistory lists hosts whose shell history file may be read, by host ID.
+	//
+	// Off until asked for, and its own switch rather than part of connecting: a
+	// shell history is the densest credential file on a server, and reading one
+	// is a different decision from opening a terminal on the same box.
+	ShellHistory map[string]bool `json:"shellHistory,omitempty"`
 }
 
 // MCPSettings is the AI integration (§4 of the MCP design note).
@@ -150,6 +157,21 @@ func (s *SettingsStore) SetLastSeen(hostID string, at int64) error {
 		s.settings.LastSeen = map[string]int64{}
 	}
 	s.settings.LastSeen[hostID] = at
+	s.mu.Unlock()
+	return s.save()
+}
+
+// SetShellHistory turns the shell history on or off for one host.
+func (s *SettingsStore) SetShellHistory(hostID string, allowed bool) error {
+	s.mu.Lock()
+	if s.settings.ShellHistory == nil {
+		s.settings.ShellHistory = map[string]bool{}
+	}
+	if allowed {
+		s.settings.ShellHistory[hostID] = true
+	} else {
+		delete(s.settings.ShellHistory, hostID)
+	}
 	s.mu.Unlock()
 	return s.save()
 }

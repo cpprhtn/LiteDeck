@@ -132,9 +132,9 @@ func (l *typedLog) enter(hostID, termID, line string, blind bool) *TypedCommand 
 		return nil
 	}
 
-	if dir, ok := parseCd(line); ok {
+	if dir, ok := adapter.ParseCd(line); ok {
 		// A readable `cd` is the only thing that makes the path certain again.
-		here.path = resolveCd(here.path, dir)
+		here.path = adapter.ResolveCd(here.path, dir)
 		here.certain = true
 		l.cwd[termID] = here
 	}
@@ -181,46 +181,6 @@ func (l *typedLog) list(hostID string) []TypedCommand {
 		out[i], out[j] = out[j], out[i]
 	}
 	return out
-}
-
-// parseCd reads a `cd` off a command line.
-//
-// Only the plain forms. `cd $DEPLOY_DIR`, `cd -`, `pushd`, `(cd x && …)` and
-// `make -C` are all real and none of them can be resolved from the text alone,
-// so they are treated as "not a cd this can follow" — which leaves the path
-// where it was rather than moving it somewhere invented.
-func parseCd(line string) (string, bool) {
-	f := strings.Fields(strings.TrimSpace(line))
-	if len(f) == 0 || f[0] != "cd" {
-		return "", false
-	}
-	if len(f) == 1 {
-		return "~", true // bare `cd` is home
-	}
-	if len(f) > 2 {
-		return "", false // arguments this cannot reason about
-	}
-	arg := f[1]
-	if strings.ContainsAny(arg, "$`*?\"'") || arg == "-" {
-		return "", false
-	}
-	return arg, true
-}
-
-// resolveCd joins a relative target onto the current path.
-func resolveCd(base, target string) string {
-	switch {
-	case target == "~" || strings.HasPrefix(target, "~/"):
-		// Home is not known from here, and guessing /home/<user> is wrong for
-		// root and on macOS. The tilde is kept as written.
-		return target
-	case strings.HasPrefix(target, "/"):
-		return filepath.Clean(target)
-	case base == "":
-		return ""
-	default:
-		return filepath.Clean(filepath.Join(base, target))
-	}
 }
 
 // TypedEntered records a line the app's terminal saw the user enter.

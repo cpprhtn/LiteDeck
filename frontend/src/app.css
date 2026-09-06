@@ -2191,6 +2191,27 @@ button.danger {
   cursor: pointer;
   white-space: nowrap;
 }
+/* The switch, where the list would be. Somebody who never turns it on should
+   still understand what they are not seeing. */
+.history-optin {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  margin: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  max-width: 62ch;
+}
+.history-optin p {
+  margin: 0;
+}
+/* The shell file is the weakest provenance of the three, and its mark says so. */
+.history-run[data-source='shell'] .history-mark {
+  opacity: 0.4;
+}
 .history-secrets {
   padding: var(--sp-2) var(--sp-3);
   color: var(--warn);

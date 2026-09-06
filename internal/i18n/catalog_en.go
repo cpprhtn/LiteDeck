@@ -57,6 +57,7 @@ var english = map[string]string{
 	"명령 이력":            "the command history",
 	"접속 이력":            "the login history",
 	"변경 요약":            "the change summary",
+	"셸 이력":             "the shell history",
 	"서비스 목록":           "the service list",
 	"프로세스 목록":          "the process list",
 	"알 수 없는 쓰기 모드: %s": "Unknown write mode: %s",

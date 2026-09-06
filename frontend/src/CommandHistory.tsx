@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   HostCommandHistory,
+  HostShellHistory,
+  SetShellHistoryAllowed,
   TypedHistory,
   type CommandHistoryView,
+  type ShellCommand,
+  type ShellHistoryView,
   type SudoRun,
   type TypedCommand,
 } from './ipc'
@@ -55,7 +59,9 @@ interface Row {
   certain: boolean
   command: string
   effect: SudoRun['effect']
-  source: 'sudo' | 'typed'
+  source: 'sudo' | 'typed' | 'shell'
+  /** Absent where the source has no times at all — the bash history default. */
+  timed: boolean
   refused?: boolean
   reason?: string
 }
@@ -63,14 +69,23 @@ interface Row {
 function fromSudo(r: SudoRun): Row {
   return {
     at: r.at, pwd: r.pwd || '?', certain: true, command: r.command,
-    effect: r.effect, source: 'sudo', refused: r.refused, reason: r.reason,
+    effect: r.effect, source: 'sudo', refused: r.refused, reason: r.reason, timed: true,
   }
 }
 
 function fromTyped(c: TypedCommand): Row {
   return {
     at: c.at, pwd: c.pwd || '?', certain: c.pwdCertain, command: c.command,
-    effect: c.effect, source: 'typed',
+    effect: c.effect, source: 'typed', timed: true,
+  }
+}
+
+/** The shell file's path is always an estimate — see ShellCommand. Never
+ *  `certain`, whatever the replay produced. */
+function fromShell(c: ShellCommand): Row {
+  return {
+    at: c.at ?? '', pwd: c.pwd || '?', certain: false, command: c.command,
+    effect: c.effect, source: 'shell', timed: !!c.at,
   }
 }
 
@@ -133,6 +148,7 @@ export function CommandHistory({
 }) {
   const [view, setView] = useState<CommandHistoryView | null>(null)
   const [typed, setTyped] = useState<TypedCommand[]>([])
+  const [shell, setShell] = useState<ShellHistoryView | null>(null)
   const [range, setRange] = useState<'1h' | '24h' | '7d'>('24h')
   const [busy, setBusy] = useState(false)
   // Reads are folded away by default. Roughly eight lines in ten are somebody
@@ -149,12 +165,14 @@ export function CommandHistory({
         // Read together. The local one cannot fail in a way worth reporting —
         // it is a file this app wrote — so a rejection there must not hide the
         // journal's answer.
-        const [remote, local] = await Promise.all([
+        const [remote, local, file] = await Promise.all([
           HostCommandHistory(hostID, range, elevate),
           TypedHistory(hostID).catch(() => [] as TypedCommand[]),
+          HostShellHistory(hostID, elevate).catch(() => null),
         ])
         setView(remote)
         setTyped(local)
+        setShell(file)
       } catch (e) {
         onError(String(e))
       } finally {
@@ -171,10 +189,21 @@ export function CommandHistory({
   }, [load])
 
   const groups = useMemo(() => {
-    const rows = [...(view?.runs ?? []).map(fromSudo), ...typed.map(fromTyped)]
-    rows.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
+    const rows = [
+      ...(view?.runs ?? []).map(fromSudo),
+      ...typed.map(fromTyped),
+      ...(shell?.commands ?? []).map(fromShell),
+    ]
+    // Timed rows sort by time. Untimed ones cannot, so they keep the order the
+    // file gave them and fall in behind — inventing a position for them would
+    // be inventing a time.
+    rows.sort((a, b) => {
+      if (a.timed !== b.timed) return a.timed ? -1 : 1
+      if (!a.timed) return 0
+      return a.at < b.at ? 1 : a.at > b.at ? -1 : 0
+    })
     return groupByPath(changesOnly ? rows.filter((r) => r.effect !== 'read') : rows)
-  }, [view, typed, changesOnly])
+  }, [view, typed, shell, changesOnly])
 
   const copy = (r: Row) => {
     void navigator.clipboard?.writeText(r.command).catch(() => {})
@@ -213,11 +242,38 @@ export function CommandHistory({
 
       {view && <AccessNotice view={view} busy={busy} onElevate={() => void load(true)} />}
 
+      {/* Off until asked for. An empty list here would read as "nobody has ever
+          worked on this server", which is the opposite of the truth — the file
+          is sitting there unread. */}
+      {shell && !shell.allowed && (
+        <div className="history-optin">
+          <p className="small">
+            {t('이 서버의 셸 이력 파일은 아직 읽지 않습니다. 켜면 지난 명령을 경로별로 볼 수 있습니다.')}
+          </p>
+          <p className="muted small">
+            {t('셸 이력은 서버에서 자격증명이 가장 많이 들어 있는 파일입니다. 비밀번호처럼 보이는 것은 가려서 보여주지만, 켜기 전에 알고 계셔야 합니다.')}
+          </p>
+          <button
+            className="primary"
+            disabled={busy}
+            onClick={() => {
+              void SetShellHistoryAllowed(hostID, true)
+                .then(() => load(false))
+                .catch(() => {})
+            }}
+          >
+            {t('이 서버에서 켜기')}
+          </button>
+        </div>
+      )}
+
       {/* Said out loud, not printed. Somebody whose history has passwords in it
           wants to know that; nobody wants them on screen to find out. */}
-      {view && view.secrets > 0 && (
+      {(view?.secrets ?? 0) + (shell?.secrets ?? 0) > 0 && (
         <p className="history-secrets small">
-          {t('비밀번호나 토큰으로 보이는 명령 {n}건을 가렸습니다.', { n: view.secrets })}
+          {t('비밀번호나 토큰으로 보이는 명령 {n}건을 가렸습니다.', {
+            n: (view?.secrets ?? 0) + (shell?.secrets ?? 0),
+          })}
         </p>
       )}
 

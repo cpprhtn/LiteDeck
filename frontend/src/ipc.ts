@@ -512,6 +512,32 @@ export interface TypedCommand {
   effect: 'change' | 'edit' | 'read'
 }
 
+/** One line out of the shell's own history file (T-23).
+ *
+ *  `at` is absent where the file carries no times, which is the bash default —
+ *  the history then has an order and nothing else. The path is always an
+ *  estimate: bash appends a session when it exits, so the file is ordered by
+ *  when sessions ended and replaying `cd` across the seam can produce a
+ *  directory that never existed. */
+export interface ShellCommand {
+  command: string
+  at?: string
+  pwd?: string
+  effect: 'change' | 'edit' | 'read'
+}
+
+export interface ShellHistoryView {
+  /** False until the user turns this on for the host. Refused in Go, not
+   *  hidden in the UI — /rpc reaches the binding directly. */
+  allowed: boolean
+  commands: ShellCommand[]
+  file?: string
+  root?: boolean
+  /** False where the file has no timestamps at all. */
+  timed: boolean
+  secrets: number
+}
+
 export interface DigestView {
   boots: number
   unitFailures: number
@@ -810,6 +836,8 @@ interface Bindings {
   HostDigest(id: string): Promise<DigestView>
   TypedEntered(hostID: string, termID: string, line: string, blind: boolean): Promise<void>
   TypedHistory(hostID: string): Promise<TypedCommand[]>
+  HostShellHistory(id: string, elevate: boolean): Promise<ShellHistoryView>
+  SetShellHistoryAllowed(id: string, allowed: boolean): Promise<void>
   MarkHostSeen(id: string): Promise<void>
   HostLogins(id: string, elevate: boolean): Promise<LoginsView>
   HostCommandHistory(
@@ -1049,6 +1077,10 @@ export const HostDigest = (id: string) => api().HostDigest(id)
 export const TypedEntered = (hostID: string, termID: string, line: string, blind: boolean) =>
   api().TypedEntered(hostID, termID, line, blind)
 export const TypedHistory = (hostID: string) => api().TypedHistory(hostID)
+export const HostShellHistory = (id: string, elevate: boolean) =>
+  api().HostShellHistory(id, elevate)
+export const SetShellHistoryAllowed = (id: string, allowed: boolean) =>
+  api().SetShellHistoryAllowed(id, allowed)
 export const MarkHostSeen = (id: string) => api().MarkHostSeen(id)
 export const HostLogins = (id: string, elevate: boolean) =>
   api().HostLogins(id, elevate)
