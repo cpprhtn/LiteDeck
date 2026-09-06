@@ -8,6 +8,7 @@ import {
   SetMCPEnabled,
   SetMCPHost,
   SetMCPHostDelete,
+  SetMCPHostExec,
   SetMCPWritePolicy,
   type HostView,
   type MCPChange,
@@ -321,6 +322,23 @@ export function McpPanel({
                           }
                         />
                         <span className="small">{t('파일 삭제 허용')}</span>
+                      </label>
+
+                      {/* Its own switch again, and not folded into the one
+                          above: letting an agent clear a log file is not the
+                          same decision as letting it run anything. This one is
+                          never covered by the modes on the left — it asks every
+                          time, because nothing it does can be put back. */}
+                      <label className="mcp-toggle">
+                        <input
+                          type="checkbox"
+                          disabled={busy}
+                          checked={!!state?.exec?.[h.id]}
+                          onChange={(e) =>
+                            void apply(() => SetMCPHostExec(h.id, e.target.checked))
+                          }
+                        />
+                        <span className="small">{t('명령 실행 허용 (매번 물어봄)')}</span>
                       </label>
                     </div>
                   )}

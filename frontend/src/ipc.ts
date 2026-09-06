@@ -89,6 +89,7 @@ export interface MCPStatus {
   hosts: Record<string, boolean>
   write: Record<string, WritePolicyView>
   delete: Record<string, boolean>
+  exec: Record<string, boolean>
   /** The port actually bound, and the one asked for. They differ when something
    *  else held the preferred port. */
   port?: number
@@ -659,6 +660,7 @@ interface Bindings {
   MCPChanges(hostID: string): Promise<MCPChange[]>
   RestoreMCPChange(id: string): Promise<ActionResult>
   SetMCPHostDelete(hostID: string, allowed: boolean): Promise<MCPStatus>
+  SetMCPHostExec(hostID: string, allowed: boolean): Promise<MCPStatus>
   SetLanguage(tag: string): Promise<ActionResult>
   SaveHost(h: Host): Promise<void>
   DeleteHost(id: string): Promise<void>
@@ -883,6 +885,8 @@ export const MCPChanges = (hostID: string) => api().MCPChanges(hostID)
 export const RestoreMCPChange = (id: string) => api().RestoreMCPChange(id)
 export const SetMCPHostDelete = (hostID: string, allowed: boolean) =>
   api().SetMCPHostDelete(hostID, allowed)
+export const SetMCPHostExec = (hostID: string, allowed: boolean) =>
+  api().SetMCPHostExec(hostID, allowed)
 export const SetLanguage = (tag: string) => api().SetLanguage(tag)
 export const SaveHost = (h: Host) => api().SaveHost(h)
 export const DeleteHost = (id: string) => api().DeleteHost(id)

@@ -62,6 +62,12 @@ type MCPSettings struct {
 	// the approval mode because they answer different questions: whether the
 	// tool exists, and whether using it interrupts you. Absent means no.
 	Delete map[string]bool `json:"delete,omitempty"`
+	// Exec lists hosts where arbitrary commands may be run. Its own switch for
+	// the same reason Delete has one, and off for the same reason: most people
+	// want an agent that reads and edits. Unlike the others it cannot be waved
+	// through — a command leaves no copy to put back, so the approval mode does
+	// not apply to it.
+	Exec map[string]bool `json:"exec,omitempty"`
 }
 
 // MCPWritePolicy is how one host handles a write an AI asks for (§4.2).

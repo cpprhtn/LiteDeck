@@ -56,6 +56,8 @@ type MCPStatus struct {
 	Write map[string]WritePolicyView `json:"write"`
 	// Delete lists hosts where file deletion is offered at all.
 	Delete map[string]bool `json:"delete"`
+	// Exec lists hosts where arbitrary commands may be run.
+	Exec map[string]bool `json:"exec"`
 	// Port is the port actually bound, and WantedPort the one asked for. They
 	// differ when something else held the preferred port, and the screen has to
 	// say so — a client configured against the old address just stops
@@ -257,6 +259,10 @@ func (a *App) MCPState() MCPStatus {
 	for k, v := range s.Delete {
 		out.Delete[k] = v
 	}
+	out.Exec = map[string]bool{}
+	for k, v := range s.Exec {
+		out.Exec[k] = v
+	}
 	out.Write = map[string]WritePolicyView{}
 	for id := range s.Hosts {
 		// Reported through policyFor so an expired window reads as "ask" here
@@ -383,6 +389,33 @@ func (a *App) SetMCPHostDelete(hostID string, allowed bool) MCPStatus {
 		s.Delete[hostID] = true
 	} else {
 		delete(s.Delete, hostID)
+	}
+	if err := a.settings.SetMCP(s); err != nil {
+		out := a.MCPState()
+		out.Error = err.Error()
+		return out
+	}
+	return a.MCPState()
+}
+
+// SetMCPHostExec decides whether arbitrary commands may be run on one host.
+//
+// Kept apart from SetMCPHostDelete rather than folded into one "dangerous
+// things" switch: a person who wants an agent to be able to clear a log file is
+// not thereby saying it may run anything, and a switch that means two things is
+// one nobody can reason about at the moment they flip it.
+func (a *App) SetMCPHostExec(hostID string, allowed bool) MCPStatus {
+	if a.settings == nil {
+		return a.MCPState()
+	}
+	s := a.settings.Get().MCP
+	if s.Exec == nil {
+		s.Exec = map[string]bool{}
+	}
+	if allowed {
+		s.Exec[hostID] = true
+	} else {
+		delete(s.Exec, hostID)
 	}
 	if err := a.settings.SetMCP(s); err != nil {
 		out := a.MCPState()

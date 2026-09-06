@@ -507,6 +507,8 @@ export const en: Record<string, string> = {
   '파일': 'Files',
   '파일 변경만 물어보기': 'Ask about file changes only',
   '파일 삭제 허용': 'Allow deleting files',
+  '명령 실행 허용 (매번 물어봄)': 'Allow running commands (always asks)',
+  '명령 실행은 되돌릴 수 없습니다. 그래서 안 묻기가 적용되지 않고 매번 물어봅니다. 이 서버에서 아예 끄는 것은 MCP 패널에서 합니다.': 'Running a command cannot be undone, so the not-asking modes do not apply and it asks every time. Switching it off for this server is done in the MCP panel.',
   '파일이 서버에서 바뀌었습니다': 'The file changed on the server',
   '팬 {f}%': 'Fan {f}%',
   '팬 —': 'Fan —',

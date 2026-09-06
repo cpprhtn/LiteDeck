@@ -3,7 +3,9 @@ package app
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/cpprhtn/LiteDeck/internal/mcp"
 	"github.com/cpprhtn/LiteDeck/internal/rollback"
@@ -295,6 +297,129 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 			return withOutcome(a.DeletePaths(hostID, []string{cleaned}, false, ""), out), nil
 		},
 	})
+
+	s.Register(mcp.Tool{
+		Name: "run_command",
+		Description: "Run a shell command on the server and return its output. Off unless the " +
+			"user turned it on for that server, and it asks them every single time — there is " +
+			"no mode that stops it asking, because nothing here can be undone. There is no " +
+			"sudo: the command runs as the login user with no terminal attached, so anything " +
+			"that wants a password fails rather than waiting. Prefer the narrower tools when " +
+			"one of them answers the question: they are cheaper, they read as intent in the " +
+			"user's Command Log, and they cannot go wrong in a way nobody expected.",
+		InputSchema: obj(map[string]any{
+			"hostId": hostArg,
+			"command": map[string]any{
+				"type": "string",
+				"description": "One shell command line, run with `sh -c`. Pipes, redirection " +
+					"and quoting all work. The user sees this exact text before approving.",
+			},
+			"timeoutSeconds": map[string]any{
+				"type": "integer",
+				"description": "How long to wait, 1-600. Default 60. A command holds one of " +
+					"the three exec channels on the shared connection until it finishes, so " +
+					"ask for a long wait only when the work is genuinely long.",
+			},
+		}, "hostId", "command"),
+		Handler: func(_ context.Context, args map[string]any) (any, error) {
+			hostID, err := a.mcpHost(args)
+			if err != nil {
+				return nil, err
+			}
+			// Whether a shell exists on this host is its own question, kept
+			// apart from the approval mode and from file deletion. Without this
+			// switch the per-tool allowlist would be decorative, which is the
+			// objection that kept this tool out until it had one.
+			if !a.mcpExecAllowed(hostID) {
+				return nil, fmt.Errorf("running commands is switched off for this server. " +
+					"The user turns it on per server in LiteDeck's MCP settings; it cannot be " +
+					"enabled from here")
+			}
+			command := strings.TrimSpace(str(args, "command"))
+			if command == "" {
+				return nil, fmt.Errorf("command is required")
+			}
+
+			out, err := a.approveWrite(writeRequest{
+				hostID:  hostID,
+				tool:    "run_command",
+				summary: "run " + clipArg(command),
+				command: command,
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			conn, err := a.mgr.Conn(hostID)
+			if err != nil {
+				return nil, err
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), execTimeout(args))
+			defer cancel()
+
+			// sh -c rather than the raw line: Exec quotes argv element by
+			// element (§3.2b), so handing it the command as one argument keeps
+			// that invariant intact and still gives the user's shell the pipes
+			// and redirection they wrote. The Command Log shows the assembled
+			// line, which is what actually ran.
+			res, err := conn.Exec(ctx, "sh", "-c", command)
+			if err != nil {
+				return nil, err
+			}
+
+			stdout, outClipped := clipOutput(res.Stdout)
+			stderr, errClipped := clipOutput(res.Stderr)
+			m := map[string]any{
+				"ok":       res.OK(),
+				"approval": string(out),
+				"exitCode": res.ExitCode,
+				"stdout":   stdout,
+				"stderr":   stderr,
+			}
+			if outClipped || errClipped {
+				m["truncated"] = true
+				m["note"] = "Output was cut at " + strconv.Itoa(maxCommandOutput) +
+					" bytes per stream. Narrow the command rather than asking again."
+			}
+			return m, nil
+		},
+	})
+}
+
+// maxCommandOutput bounds one stream of a command's output.
+//
+// The cap is here rather than in the shell because a model that asks for a
+// whole log gets a useful head of it either way, and an unbounded answer would
+// cost the user tokens they did not choose to spend.
+const maxCommandOutput = 64 << 10
+
+func clipOutput(b []byte) (string, bool) {
+	if len(b) <= maxCommandOutput {
+		return string(b), false
+	}
+	return string(b[:maxCommandOutput]), true
+}
+
+// execTimeout reads the caller's wait, bounded.
+//
+// The ceiling is not a safety feature — the command runs on the server whatever
+// happens here — but a command still holds one of three exec channels (A-1),
+// and one that waits forever takes a third of the connection with it.
+func execTimeout(args map[string]any) time.Duration {
+	secs := 60
+	switch v := args["timeoutSeconds"].(type) {
+	case float64:
+		secs = int(v)
+	case int:
+		secs = v
+	}
+	if secs < 1 {
+		secs = 1
+	}
+	if secs > 600 {
+		secs = 600
+	}
+	return time.Duration(secs) * time.Second
 }
 
 func oneOf(v string, allowed ...string) bool {

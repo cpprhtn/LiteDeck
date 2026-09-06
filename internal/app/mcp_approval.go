@@ -68,6 +68,14 @@ const (
 
 // asksAbout reports whether a mode wants a dialog for this tool.
 func asksAbout(mode, tool string) bool {
+	// An arbitrary command is outside the modes. Every other write tool leaves
+	// a copy behind, which is what makes "stop asking for a while" a bounded
+	// decision; this one leaves nothing, so there is nothing for a relaxed mode
+	// to fall back on. It is also the only tool whose blast radius the user
+	// cannot infer from the tool name.
+	if tool == "run_command" {
+		return true
+	}
 	switch mode {
 	case WriteBypass:
 		return false

@@ -951,6 +951,14 @@ func (a *App) mcpDeleteAllowed(hostID string) bool {
 	return a.settings.Get().MCP.Delete[hostID]
 }
 
+// mcpExecAllowed reports whether arbitrary commands may run on this host.
+func (a *App) mcpExecAllowed(hostID string) bool {
+	if a.settings == nil {
+		return false
+	}
+	return a.settings.Get().MCP.Exec[hostID]
+}
+
 // mcpAllowed reports whether the user has shared this host with AI clients.
 func (a *App) mcpAllowed(hostID string) bool {
 	if a.settings == nil {

@@ -194,6 +194,9 @@ export function McpWriteDialog({
   }
 
   const isFileWrite = prompt.after !== undefined && prompt.path
+  // Running a command is the one thing no relaxed mode covers, so the buttons
+  // that set one would be offering something that will not happen.
+  const isExec = prompt.tool === 'run_command'
 
   return (
     <div className="scrim">
@@ -238,15 +241,19 @@ export function McpWriteDialog({
               the failure this dialog exists to prevent. */}
           <button onClick={() => answer(false)}>{t('거부')}</button>
           <span className="spacer" />
-          <button className="ghost" onClick={() => allowFor(60)}>
-            {t('허용하고 1시간 안 묻기')}
-          </button>
-          {/* The overnight option exists because that is when people actually
-              leave an agent running. An hour expiring at 3am blocks everything
-              until morning, which reads as the feature being broken. */}
-          <button className="ghost" onClick={() => allowFor(8 * 60)}>
-            {t('허용하고 밤새 안 묻기')}
-          </button>
+          {!isExec && (
+            <>
+              <button className="ghost" onClick={() => allowFor(60)}>
+                {t('허용하고 1시간 안 묻기')}
+              </button>
+              {/* The overnight option exists because that is when people actually
+                  leave an agent running. An hour expiring at 3am blocks everything
+                  until morning, which reads as the feature being broken. */}
+              <button className="ghost" onClick={() => allowFor(8 * 60)}>
+                {t('허용하고 밤새 안 묻기')}
+              </button>
+            </>
+          )}
           <button ref={ok} className="danger" onClick={() => answer(true)}>
             {t('이번만 허용')}
           </button>
@@ -255,7 +262,9 @@ export function McpWriteDialog({
             It has to be true, though: undo landed after this line was written
             and said for a while that it did not exist. */}
         <p className="muted small">
-          {t('안 묻기는 이 호스트에만 적용되고 시간이 지나면 스스로 돌아옵니다. 파일 변경은 MCP 패널의 바뀐 파일 탭에서 되돌릴 수 있습니다.')}
+          {isExec
+            ? t('명령 실행은 되돌릴 수 없습니다. 그래서 안 묻기가 적용되지 않고 매번 물어봅니다. 이 서버에서 아예 끄는 것은 MCP 패널에서 합니다.')
+            : t('안 묻기는 이 호스트에만 적용되고 시간이 지나면 스스로 돌아옵니다. 파일 변경은 MCP 패널의 바뀐 파일 탭에서 되돌릴 수 있습니다.')}
         </p>
       </div>
     </div>
