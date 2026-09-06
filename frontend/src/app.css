@@ -2169,6 +2169,123 @@ button.danger {
   padding: var(--sp-2) var(--sp-3);
   border-bottom: 1px solid var(--border);
 }
+/* Command history (arch/07, 명령 이력) ------------------------------------- */
+
+.history-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+.history-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+.history-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.history-secrets {
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--warn);
+  border-bottom: 1px solid var(--border);
+}
+.history-empty {
+  padding: var(--sp-3);
+}
+.history-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* A directory and the commands run in it. Both rows are buttons, so they need
+   the button chrome taken off before they can be rows. */
+.history-head,
+.history-run {
+  display: grid;
+  align-items: baseline;
+  gap: var(--sp-2);
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--text-sm);
+  color: inherit;
+}
+.history-head {
+  grid-template-columns: 12px minmax(0, 1fr) auto auto;
+  cursor: pointer;
+  font-weight: 600;
+}
+.history-head:hover,
+.history-run:hover {
+  background: var(--bg-hover);
+}
+.history-twisty {
+  color: var(--fg-faint);
+}
+.history-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.history-count {
+  font-variant-numeric: tabular-nums;
+}
+
+.history-runs {
+  background: var(--bg-sunken);
+}
+/* The mark column is fixed so the commands line up under each other whatever
+   the effect is — the same reason the Command Log's marker column is. */
+.history-run {
+  grid-template-columns: 14px minmax(0, 1fr) auto auto;
+  cursor: copy;
+  padding-left: calc(var(--sp-3) + 12px);
+}
+.history-mark {
+  color: var(--fg-faint);
+  text-align: center;
+}
+.history-run[data-effect='change'] .history-mark {
+  color: var(--accent);
+}
+.history-run[data-effect='edit'] .history-mark {
+  color: var(--warn);
+}
+/* A refused command did not happen. It stays in the list because trying and
+   failing is part of the record, but it must not read like a run. */
+.history-run[data-refused] .history-cmd {
+  color: var(--fg-muted);
+  text-decoration: line-through;
+}
+.history-cmd {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.history-when {
+  white-space: nowrap;
+}
+.history-refused {
+  color: var(--danger);
+  white-space: nowrap;
+}
+.history-copied {
+  color: var(--ok);
+  white-space: nowrap;
+}
+
 .events-list {
   flex: 1;
   min-height: 0;

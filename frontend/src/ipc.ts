@@ -433,6 +433,37 @@ export interface EventsView {
   truncated: boolean
 }
 
+/** One command run through sudo, as the journal recorded it.
+ *
+ *  `pwd` is the reason this exists: a shell history file says what was typed
+ *  but not where, and sudo writes the directory down as it runs. */
+export interface SudoRun {
+  at: string
+  user: string
+  runAs?: string
+  pwd: string
+  /** Already masked by Go — the raw text never leaves the backend. */
+  command: string
+  tty?: string
+  /** sudo wrote this line *instead of* running something. */
+  refused?: boolean
+  reason?: string
+  /** What it did to the server. Unknown commands are 'change', so a change is
+   *  never folded away with the reads. */
+  effect: 'change' | 'edit' | 'read'
+  bootId?: string
+}
+
+export interface CommandHistoryView {
+  runs: SudoRun[]
+  access: 'ok' | 'needs-sudo' | 'denied' | 'no-journal'
+  range: '1h' | '24h' | '7d'
+  truncated: boolean
+  /** How many commands looked like they carried a credential. A count, not a
+   *  list — worth saying, not worth printing. */
+  secrets: number
+}
+
 /** One logical CPU. Thirty-two cores at "40%" is either every core half busy or
  *  one pinned and the rest idle, and those are different problems. */
 export interface Core {
@@ -687,6 +718,11 @@ interface Bindings {
 
   HostMetrics(id: string): Promise<MetricsView>
   HostEvents(id: string, range: string, elevate: boolean): Promise<EventsView>
+  HostCommandHistory(
+    id: string,
+    range: string,
+    elevate: boolean,
+  ): Promise<CommandHistoryView>
   HostNetwork(id: string): Promise<NetworkView>
   RefreshHostNetwork(id: string): Promise<NetworkView>
   SSHDConfig(id: string): Promise<SSHDReport>
@@ -912,6 +948,8 @@ export const ProcessExists = (id: string, pid: number) =>
 export const HostMetrics = (id: string) => api().HostMetrics(id)
 export const HostEvents = (id: string, range: string, elevate: boolean) =>
   api().HostEvents(id, range, elevate)
+export const HostCommandHistory = (id: string, range: string, elevate: boolean) =>
+  api().HostCommandHistory(id, range, elevate)
 export const HostNetwork = (id: string) => api().HostNetwork(id)
 /** Same reading, but the interface list is re-read rather than served from the
  *  30s cache. For the refresh button only — pressing it means "something
