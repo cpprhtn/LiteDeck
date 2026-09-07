@@ -35,6 +35,7 @@ type App struct {
 	selves    *selfCache
 	sshPorts  *portCache
 	ifaces    *ifaceCache
+	digests   *digestCache
 	gens      *genCache
 	transfers *transferQueue
 	terminals *terminalRegistry
@@ -82,6 +83,7 @@ func New() *App {
 	a.selves = newSelfCache()
 	a.sshPorts = newPortCache()
 	a.ifaces = newIfaceCache()
+	a.digests = newDigestCache()
 	a.gens = newGenCache()
 	a.transfers = newTransferQueue(a)
 	a.terminals = newTerminalRegistry(a)
