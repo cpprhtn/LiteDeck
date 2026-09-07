@@ -114,12 +114,26 @@ func TestUnresolvableCdDoesNotMoveThePath(t *testing.T) {
 	}
 }
 
-// Nothing absolute has been seen yet, so there is nothing to say.
-// With no home to start from and nothing absolute yet, there is nothing to say.
-func TestReplayClaimsNoPathBeforeItHasOne(t *testing.T) {
-	for _, c := range ReplayCd(ParseBashHistory("ls\ndocker ps\ncd sub\nls\n"), "") {
+// With no home and no absolute move yet there is no path — but the relative
+// tail is still worth carrying. `…/src` narrows it down; the leading slash is
+// what says the whole path is known, and a fragment never gets one or claims
+// to be certain.
+func TestUnanchoredReplayKeepsTheTailAndNotTheClaim(t *testing.T) {
+	got := ReplayCd(ParseBashHistory("ls\ndocker ps\ncd sub\nls\n"), "")
+	for _, c := range got[:2] {
 		if c.PWD != "" {
-			t.Errorf("%q was given the path %q with nothing to base it on", c.Command, c.PWD)
+			t.Errorf("%q 는 아직 아무 근거도 없는데 경로 %q 를 받았다", c.Command, c.PWD)
+		}
+	}
+	for _, c := range got[2:] {
+		if c.PWD != "sub" {
+			t.Errorf("%q → %q, 기대 %q", c.Command, c.PWD, "sub")
+		}
+		if strings.HasPrefix(c.PWD, "/") {
+			t.Errorf("조각인데 절대경로처럼 보인다: %q", c.PWD)
+		}
+		if c.PWDCertain {
+			t.Errorf("%q 의 경로가 조각인데 확신한다고 되어 있다", c.Command)
 		}
 	}
 }
@@ -339,5 +353,152 @@ func TestAbsentTimeIsAbsentOnTheWire(t *testing.T) {
 	}
 	if !strings.Contains(string(timed), `"at"`) {
 		t.Errorf("a command with a time lost it: %s", timed)
+	}
+}
+
+// Cases the replay is expected to get right, gathered by walking a real
+// history line by line. Table-driven because the failures are individual
+// rather than structural: one operand form is wrong, not the walk.
+func TestReplayOperandForms(t *testing.T) {
+	const home = "/home/deploy"
+	for _, tc := range []struct {
+		name    string
+		lines   []string
+		wantEnd string
+		certain bool
+	}{
+		{"상대", []string{"cd a", "cd b"}, "/home/deploy/a/b", true},
+		{"절대", []string{"cd a", "cd /etc/nginx"}, "/etc/nginx", true},
+		{"뒤로", []string{"cd a/b/c", "cd ../.."}, "/home/deploy/a", true},
+		{"슬래시로 끝남", []string{"cd monitoring/"}, "/home/deploy/monitoring", true},
+		{"점 하나", []string{"cd a", "cd ."}, "/home/deploy/a", true},
+		{"틸드", []string{"cd /etc", "cd ~"}, home, true},
+		{"틸드 하위", []string{"cd /etc", "cd ~/app"}, "/home/deploy/app", true},
+		{"루트", []string{"cd /"}, "/", true},
+		{"루트에서 상대", []string{"cd /", "cd etc"}, "/etc", true},
+		{"홈 위로 둘", []string{"cd ../.."}, "/", true},
+		{"다른 사용자 홈", []string{"cd ~root"}, "", false},
+		{"맨 pushd", []string{"cd a", "pushd"}, "/home/deploy/a", false},
+		{"cd 두 인자", []string{"cd a b"}, home, false},
+		{"cd --", []string{"cd -- a"}, "/home/deploy/a", true},
+		{"환경변수", []string{"cd $D"}, home, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cmds := make([]ShellCommand, len(tc.lines))
+			for i, l := range tc.lines {
+				cmds[i] = ShellCommand{Command: l}
+			}
+			got := ReplayCd(cmds, home)
+			last := got[len(got)-1]
+			if tc.wantEnd != "" && last.PWD != tc.wantEnd {
+				t.Errorf("경로 %q, 기대 %q", last.PWD, tc.wantEnd)
+			}
+			if last.PWDCertain != tc.certain {
+				t.Errorf("확신 %v, 기대 %v (경로 %q)", last.PWDCertain, tc.certain, last.PWD)
+			}
+		})
+	}
+}
+
+// The app's terminal and the history file must spell the same directory the
+// same way, or the tree grows two branches for one place. They share a walker
+// now; this is what would catch them being split again.
+func TestTrackerAndReplayAgreeOnSpelling(t *testing.T) {
+	const home = "/home/deploy"
+	for _, line := range []string{"cd ~", "cd ~/app", "cd app", "cd /etc", "cd", "cd ../.."} {
+		replayed := ReplayCd([]ShellCommand{{Command: line}}, home)[0].PWD
+		tr := NewCdTracker(home, home)
+		tr.Step(line)
+		tracked, _ := tr.Here()
+		if tracked != replayed {
+			t.Errorf("%q → 터미널 %q, 이력 %q — 같은 곳이 두 갈래가 된다", line, tracked, replayed)
+		}
+	}
+}
+
+// The terminal used a second, smaller cd parser. Anything the walker follows
+// and it did not left the tracked path stale *and still marked certain*, which
+// is the one state that misleads rather than merely disappoints.
+func TestTrackerFollowsWhatTheReplayFollows(t *testing.T) {
+	const home = "/home/deploy"
+	for _, tc := range []struct {
+		line    string
+		wantEnd string
+		certain bool
+	}{
+		{"cd app", "/home/deploy/app", true},
+		{"cd -", "/tmp", true}, // 직전이 /tmp 였다
+		{"cd $DEPLOY_DIR", "", false},
+		{"cd a b", "", false},
+		{"pushd", "", false},
+		{"cd 'my dir'", "/home/deploy/my dir", true},
+		{"cd app && make", "/home/deploy/app", true},
+		{"(cd app && make)", "/home/deploy", true},
+	} {
+		tr := NewCdTracker(home, home)
+		tr.Step("cd /tmp")
+		tr.Step("cd " + home)
+		tr.Step(tc.line)
+		got, certain := tr.Here()
+		if tc.wantEnd != "" && got != tc.wantEnd {
+			t.Errorf("%q → %q, 기대 %q", tc.line, got, tc.wantEnd)
+		}
+		if certain != tc.certain {
+			t.Errorf("%q → 확신 %v, 기대 %v (경로 %q)", tc.line, certain, tc.certain, got)
+		}
+	}
+}
+
+// An unreadable line may have been a cd, so it costs the path its confidence
+// without moving it.
+func TestTrackerBlindLineKeepsThePathAndDropsCertainty(t *testing.T) {
+	tr := NewCdTracker("/home/deploy", "/home/deploy")
+	tr.Step("cd app")
+	tr.Blind()
+	got, certain := tr.Here()
+	if got != "/home/deploy/app" {
+		t.Errorf("경로가 움직였다: %q", got)
+	}
+	if certain {
+		t.Error("못 읽은 줄이 지나갔는데 확신이 남아 있다")
+	}
+}
+
+// A history file is several sessions concatenated, not one shell.
+//
+// bash appends a session's lines when that shell *exits*, so the file is
+// ordered by when sessions ended and every session began at home. Walked as one
+// continuous shell, the second session's `cd project` lands inside the first
+// session's last directory — and a file with four sessions that each start
+// `cd project` produces project/project/project/project, a path that does not
+// exist on any server.
+func TestSessionRestartDoesNotNestIntoItself(t *testing.T) {
+	const home = "/home/deploy"
+	exists := func(p string) bool {
+		switch p {
+		case home, home + "/project", home + "/project/src":
+			return true
+		}
+		return false
+	}
+	lines := []string{
+		"cd project", "make", // session 1
+		"cd project", "make", // session 2, from home again
+		"cd project", "cd src", "make", // session 3
+	}
+	cmds := make([]ShellCommand, len(lines))
+	for i, l := range lines {
+		cmds[i] = ShellCommand{Command: l}
+	}
+	got := ReplayCdChecked(cmds, home, exists)
+	want := []string{
+		home + "/project", home + "/project",
+		home + "/project", home + "/project",
+		home + "/project", home + "/project/src", home + "/project/src",
+	}
+	for i := range want {
+		if got[i].PWD != want[i] {
+			t.Errorf("%d번째 %q → %q, 기대 %q", i, lines[i], got[i].PWD, want[i])
+		}
 	}
 }

@@ -11,7 +11,6 @@ import {
   type TypedCommand,
 } from './ipc'
 import { AccessNotice } from './EventTimeline'
-import { buildTree, pathTo, type HistoryRow, type TreeNode } from './historyTree'
 import { k, t } from './i18n'
 
 // Command history (arch/07, 명령 이력).
@@ -34,26 +33,121 @@ import { k, t } from './i18n'
 // `rm -rf`, and a list that runs things on click is a list nobody can safely
 // scroll.
 
-// The window applies to sudo's journal, which is the only one of the three
-// sources that has a date on every row and can therefore be asked for one.
+
+// One control, not two.
 //
-// `최대` drops the window rather than widening it. It is still bounded — by the
-// journal's 500-line cap, the same way the shell history is bounded by
-// HISTFILESIZE — because "everything" in a history has always meant a number of
-// lines and never a span of time. Reaching the very first entry a server ever
-// wrote is not the question anybody asks.
-const RANGES: { id: HistoryRange; label: string }[] = [
-  { id: '24h', label: k('24시간') },
-  { id: '7d', label: k('7일') },
-  { id: 'max', label: k('최대') },
+// There used to be a time window (24시간 · 7일 · 최대) beside these, and the two
+// were asking the same question twice — 최근 작업 and 24시간 are both "recently".
+// Worse, the window barely worked: bash writes no timestamps unless
+// HISTTIMEFORMAT is set, so most rows could not be judged by it and the panel
+// carried a line apologising for that. A control that needs an apology is the
+// wrong control. Recency is a count here, which is the one thing an untimed
+// file can still be ordered by, and each card says when it was last touched.
+const TABS: { id: HistoryTab; label: string }[] = [
+  { id: 'recent', label: k('최근 작업') },
+  { id: 'all', label: k('전체') },
+  { id: 'raw', label: k('원본') },
 ]
 
-type HistoryRange = '24h' | '7d' | 'max'
+type HistoryTab = 'recent' | 'all' | 'raw'
+
+/** How many folders the recent tab shows before offering the rest. */
+const RECENT_FOLDERS = 8
+
+/** How many commands a folder card shows folded. Four is what fits without the
+ *  card becoming a list of its own. */
+const PREVIEW_COMMANDS = 4
+
+/** A directory, its commands, and how much of its name was worked out. */
+interface Folder {
+  /** The resolved path, or the relative fragment when nothing anchored it. */
+  path: string
+  /** False for a fragment — `src` rather than `/srv/app/src`. */
+  anchored: boolean
+  /** True when nothing in this folder came from a replay that had lost track. */
+  certain: boolean
+  /** Newest first. */
+  rows: HistoryRow[]
+  /** Newest timestamp here, or '' when the file carried none. */
+  latest: string
+  /** Position of the newest row in the merged list. Lower is more recent, and
+   *  it is what orders folders when there are no times to order by. */
+  rank: number
+}
+
+/** Groups the merged rows by the directory they ran in.
+ *
+ *  Flat, not a tree. A tree has to invent the levels between two directories,
+ *  and on a history where the paths are themselves worked out that meant the
+ *  inference — `demo/LetsJandi/LetsJandi/LetsJandi` — became the loudest thing
+ *  on screen. The question is "which folder, and what did I run there", and a
+ *  folder is the answer to it whether or not its parent is also in the list. */
+function groupByFolder(rows: HistoryRow[], changesOnly: boolean): Folder[] {
+  const by = new Map<string, Folder>()
+  rows.forEach((r, index) => {
+    if (changesOnly && r.effect === 'read') return
+    const path = r.pwd || '?'
+    let f = by.get(path)
+    if (!f) {
+      f = {
+        path,
+        anchored: path.startsWith('/'),
+        certain: true,
+        rows: [],
+        latest: '',
+        rank: index,
+      }
+      by.set(path, f)
+    }
+    f.rows.push(r)
+    if (!r.certain) f.certain = false
+    if (r.timed && r.at > f.latest) f.latest = r.at
+  })
+  const out = [...by.values()]
+  for (const f of out) {
+    f.rows.sort((a, b) => {
+      if (a.timed !== b.timed) return a.timed ? -1 : 1
+      if (!a.timed) return 0
+      return a.at < b.at ? 1 : a.at > b.at ? -1 : 0
+    })
+  }
+  // Most recently worked in first. Dated folders sort by their newest command;
+  // undated ones keep the order the file gave them, which is the only recency
+  // an untimed history actually carries.
+  return out.sort((a, b) => {
+    if (!!a.latest !== !!b.latest) return a.latest ? -1 : 1
+    if (a.latest && b.latest) return a.latest < b.latest ? 1 : a.latest > b.latest ? -1 : 0
+    return a.rank - b.rank
+  })
+}
+
+/** Whether a line only moved the shell.
+ *
+ *  `cd monitoring/vector` is not something anybody looks back for — the tree
+ *  above already says they went there, and listing the walking with the work
+ *  buries the work. Only a line that is *nothing but* a move is dropped:
+ *  `cd build && make` did something and stays. */
+function isNavigation(command: string): boolean {
+  return /^(cd|pushd|popd)(\s+[^&|;]*)?$/.test(command.trim())
+}
 
 const EFFECT_MARK: Record<SudoRun['effect'], string> = {
   change: '●',
   edit: '✎',
   read: '·',
+}
+
+/** One row of history, whichever source it came from. */
+export interface HistoryRow {
+  at: string
+  pwd: string
+  certain: boolean
+  command: string
+  effect: 'change' | 'edit' | 'read'
+  source: 'sudo' | 'typed' | 'shell'
+  timed: boolean
+  refused?: boolean
+  reason?: string
 }
 
 /** One row, whichever source it came from.
@@ -110,28 +204,23 @@ export function CommandHistory({
   hostID,
   cwd,
   onError,
+  onGoTo,
 }: {
   hostID: string
-  /** Where the terminal beside this panel is standing, when it is known. The
-   *  panel opens there: "what did I run here" is the half of the question that
-   *  needs to know where "here" is. */
+  /** Where the terminal beside this panel is standing, when it is known. */
   cwd?: string
   onError: (msg: string) => void
+  /** Send the terminal to a folder. Absent when there is no terminal to send. */
+  onGoTo?: (path: string) => void
 }) {
   const [view, setView] = useState<CommandHistoryView | null>(null)
   const [typed, setTyped] = useState<TypedCommand[]>([])
   const [shell, setShell] = useState<ShellHistoryView | null>(null)
-  const [range, setRange] = useState<HistoryRange>('24h')
+  const [tab, setTab] = useState<HistoryTab>('recent')
+  const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
-  // Reads are folded away by default. Roughly eight lines in ten are somebody
-  // looking rather than doing, and the question is what changed — that one
-  // filter is most of what this pane is for.
   const [changesOnly, setChangesOnly] = useState(true)
-  const [open, setOpen] = useState<Set<string>>(new Set())
-  // Which directory's commands are shown below the tree. The tree answers
-  // "which directory"; this answers "what did I run there", and keeping them
-  // apart is what makes the second question askable at all.
-  const [picked, setPicked] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [copied, setCopied] = useState<string | null>(null)
 
   const load = useCallback(
@@ -142,7 +231,9 @@ export function CommandHistory({
         // it is a file this app wrote — so a rejection there must not hide the
         // journal's answer.
         const [remote, local, file] = await Promise.all([
-          HostCommandHistory(hostID, range, elevate),
+          // No window: the journal's own 500-line cap is the bound, the same
+          // way the shell history's is HISTFILESIZE.
+          HostCommandHistory(hostID, 'max', elevate),
           TypedHistory(hostID).catch(() => [] as TypedCommand[]),
           HostShellHistory(hostID, elevate).catch(() => null),
         ])
@@ -155,80 +246,96 @@ export function CommandHistory({
         setBusy(false)
       }
     },
-    [hostID, range, onError],
+    [hostID, onError],
   )
 
-  // One read per open or range change. The past does not change, so there is
-  // nothing here for a poller to find.
+  // One read per open. The past does not change, so there is nothing here for a
+  // poller to find.
   useEffect(() => {
     void load(false)
   }, [load])
 
-  const tree = useMemo(() => {
-    const rows = [
+  /** Everything, in the order the sources gave it. The raw tab shows this and
+   *  nothing else: every other view here is a reading of the history, and the
+   *  point of that one is to be the history somebody checks the reading
+   *  against. */
+  const allRows = useMemo(
+    () => [
       ...(view?.runs ?? []).map(fromSudo),
       ...typed.map(fromTyped),
       ...(shell?.commands ?? []).map(fromShell),
-    ]
-    // Timed rows sort by time. Untimed ones cannot, so they keep the order the
-    // file gave them and fall in behind — inventing a position for them would
-    // be inventing a time.
-    rows.sort((a, b) => {
-      if (a.timed !== b.timed) return a.timed ? -1 : 1
-      if (!a.timed) return 0
-      return a.at < b.at ? 1 : a.at > b.at ? -1 : 0
-    })
-    return buildTree(changesOnly ? rows.filter((r) => r.effect !== 'read') : rows)
-  }, [view, typed, shell, changesOnly])
+    ],
+    [view, typed, shell],
+  )
 
-  // Opens where the terminal is standing, once, when the tree first arrives.
-  // Not on every change: re-opening under somebody who has been clicking around
-  // is the panel taking the wheel back.
-  const opened = useRef(false)
-  useEffect(() => {
-    if (opened.current || tree.length === 0) return
-    opened.current = true
-    const target = cwd && findNode(tree, cwd) ? cwd : tree[0].path
-    setOpen(new Set(pathTo(tree, target)))
-    setPicked(target)
-  }, [tree, cwd])
+  const rows = useMemo(() => allRows.filter((r) => !isNavigation(r.command)), [allRows])
 
-  const chosen = useMemo(() => (picked ? findNode(tree, picked) : null), [tree, picked])
+  const folders = useMemo(() => groupByFolder(rows, changesOnly), [rows, changesOnly])
 
-  const copy = (r: Row) => {
-    void navigator.clipboard?.writeText(r.command).catch(() => {})
-    setCopied(r.at + r.command)
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    const matched = q
+      ? folders
+          .map((f) => ({
+            ...f,
+            rows: f.rows.filter((r) => r.command.toLowerCase().includes(q)),
+            hit: f.path.toLowerCase().includes(q),
+          }))
+          .filter((f) => f.hit || f.rows.length > 0)
+      : folders
+    return tab === 'recent' ? matched.slice(0, RECENT_FOLDERS) : matched
+  }, [folders, query, tab])
+
+  const sure = folders.filter((f) => f.certain).length
+
+  const copy = (text: string, key: string) => {
+    void navigator.clipboard?.writeText(text).catch(() => {})
+    setCopied(key)
     setTimeout(() => setCopied(null), 1200)
   }
-
-  const toggle = (pwd: string) =>
-    setOpen((prev) => {
-      const next = new Set(prev)
-      if (!next.delete(pwd)) next.add(pwd)
-      return next
-    })
 
   return (
     <div className="history-pane">
       <div className="history-bar">
         <div className="segmented">
-          {RANGES.map((r) => (
-            <button key={r.id} data-on={range === r.id || undefined} onClick={() => setRange(r.id)}>
-              {t(r.label)}
+          {TABS.map((x) => (
+            <button key={x.id} data-on={tab === x.id || undefined} onClick={() => setTab(x.id)}>
+              {t(x.label)}
             </button>
           ))}
         </div>
-        <label className="history-toggle">
-          <input
-            type="checkbox"
-            checked={changesOnly}
-            onChange={(e) => setChangesOnly(e.target.checked)}
-          />
-          <span className="small">{t('바꾼 것만')}</span>
-        </label>
         <span className="spacer" />
-        {busy && <span className="muted small">{t('읽는 중…')}</span>}
+        {busy ? (
+          <span className="muted small">{t('읽는 중…')}</span>
+        ) : (
+          folders.length > 0 && (
+            <span className="muted small history-tally">
+              {t('정확 {n}', { n: sure })} · {t('추정 {n}', { n: folders.length - sure })}
+            </span>
+          )
+        )}
       </div>
+
+      {tab !== 'raw' && (
+        <>
+          <div className="history-search">
+            <input
+              className="search"
+              value={query}
+              placeholder={t('폴더 또는 명령 검색…')}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <label className="history-toggle">
+              <input
+                type="checkbox"
+                checked={changesOnly}
+                onChange={(e) => setChangesOnly(e.target.checked)}
+              />
+              <span className="small">{t('바꾼 것만')}</span>
+            </label>
+          </div>
+        </>
+      )}
 
       {view && <AccessNotice view={view} busy={busy} onElevate={() => void load(true)} />}
 
@@ -267,157 +374,176 @@ export function CommandHistory({
         </p>
       )}
 
-      {tree.length === 0 && !busy && (
-        <p className="muted small history-empty">
-          {changesOnly
-            ? t('이 기간에 바꾼 것이 없습니다. 조회까지 보려면 「바꾼 것만」 을 끄세요.')
-            : t('이 기간에 기록된 명령이 없습니다.')}
-        </p>
-      )}
-
-      {/* Top half answers "which directory". A tree rather than full paths: the
-          twenty rows of a real history share most of their text, and reading
-          the same prefix twenty times to find the two characters that differ is
-          what a tree exists to stop. */}
-      <div className="history-tree">
-        {tree.map((n) => (
-          <TreeRow
-            key={n.path}
-            node={n}
-            open={open}
-            picked={picked}
-            here={cwd}
-            onToggle={toggle}
-            onPick={setPicked}
-          />
-        ))}
-      </div>
-
-      {/* Bottom half answers "what did I run there". Separate from the tree so
-          picking a directory does not push everything below it down the
-          screen, which is what an inline expander does in a panel this narrow. */}
-      {chosen && (
-        <div className="history-chosen">
-          <div className="history-chosen-head">
-            <span className="mono ellipsis" title={chosen.path}>
-              {chosen.path}
-            </span>
-            <span className="muted small">{t('{n}회', { n: chosen.rows.length })}</span>
-          </div>
-          <div className="history-runs">
-            {chosen.rows.length === 0 && (
-              <p className="muted small history-empty">
-                {t('이 폴더에서 직접 실행한 것은 없습니다 — 아래 폴더를 열어 보세요.')}
-              </p>
-            )}
-            {chosen.rows.map((r, i) => (
-              <button
-                key={`${r.at}-${i}`}
-                className="history-run"
-                data-effect={r.effect}
-                data-refused={r.refused || undefined}
-                data-source={r.source}
-                onClick={() => copy(r)}
-                title={`${r.timed ? new Date(r.at).toLocaleString() + ' · ' : ''}${
-                  r.source === 'sudo'
-                    ? t('sudo 저널')
-                    : r.source === 'typed'
-                      ? t('이 앱의 터미널')
-                      : t('셸 이력 파일')
-                }`}
-              >
-                <span className="history-mark">{EFFECT_MARK[r.effect]}</span>
-                <span className="mono history-cmd">{r.command}</span>
-                {r.refused && (
-                  <span className="history-refused small" title={r.reason}>
-                    {t('실행 안 됨')}
-                  </span>
-                )}
-                {r.timed && <span className="muted small history-when">{ago(r.at)}</span>}
-                {copied === r.at + r.command && (
-                  <span className="small history-copied">{t('복사됨')}</span>
-                )}
-              </button>
-            ))}
-          </div>
+      {tab === 'raw' ? (
+        <RawHistory rows={allRows} copied={copied} onCopy={copy} />
+      ) : (
+        <div className="history-folders">
+          {shown.length === 0 && !busy && (
+            <p className="muted small history-empty">
+              {query.trim()
+                ? t('검색과 맞는 것이 없습니다.')
+                : changesOnly
+                  ? t('이 기간에 바꾼 것이 없습니다. 조회까지 보려면 「바꾼 것만」 을 끄세요.')
+                  : t('이 기간에 기록된 명령이 없습니다.')}
+            </p>
+          )}
+          {shown.map((f) => (
+            <FolderCard
+              key={f.path}
+              folder={f}
+              here={cwd === f.path}
+              open={expanded.has(f.path)}
+              copied={copied}
+              onToggle={() =>
+                setExpanded((prev) => {
+                  const next = new Set(prev)
+                  if (!next.delete(f.path)) next.add(f.path)
+                  return next
+                })
+              }
+              onGoTo={onGoTo}
+              onCopy={copy}
+            />
+          ))}
+          {tab === 'recent' && folders.length > shown.length && (
+            <button className="ghost small-btn history-more" onClick={() => setTab('all')}>
+              {t('나머지 {n}곳 보기', { n: folders.length - shown.length })}
+            </button>
+          )}
         </div>
       )}
     </div>
   )
 }
 
-
-/** One directory in the tree, and its children when it is open. */
-function TreeRow({
-  node,
-  open,
-  picked,
+/** One folder, its commands, and how sure the panel is about the name. */
+function FolderCard({
+  folder,
   here,
+  open,
+  copied,
   onToggle,
-  onPick,
+  onGoTo,
+  onCopy,
 }: {
-  node: TreeNode
-  open: Set<string>
-  picked: string | null
-  /** Where the terminal is standing. Marked rather than filtered: the point is
-   *  to find it at a glance, not to hide everywhere else. */
-  here?: string
-  onToggle: (path: string) => void
-  onPick: (path: string) => void
+  folder: Folder
+  here: boolean
+  open: boolean
+  copied: string | null
+  onToggle: () => void
+  onGoTo?: (path: string) => void
+  onCopy: (text: string, key: string) => void
 }) {
-  const expanded = open.has(node.path)
-  const hasKids = node.children.length > 0
-
+  const rows = open ? folder.rows : folder.rows.slice(0, PREVIEW_COMMANDS)
+  // Sending a shell to `…/src` would be sending it somewhere this does not know.
+  const canGo = !!onGoTo && folder.anchored
+  const more = folder.rows.length > PREVIEW_COMMANDS
   return (
-    <div className="history-node">
-      <div
-        className="history-dir"
-        data-picked={picked === node.path || undefined}
-        data-here={here === node.path || undefined}
-        style={{ paddingLeft: 8 + node.depth * 12 }}
-      >
-        <button
-          className="history-twisty"
-          disabled={!hasKids}
-          onClick={() => onToggle(node.path)}
-          aria-label={expanded ? t('접기') : t('펼치기')}
-        >
-          {hasKids ? (expanded ? '▾' : '▸') : '·'}
-        </button>
-        <button className="history-dir-name" onClick={() => onPick(node.path)}>
-          <span
-            className="mono ellipsis"
-            data-guess={!node.certain || undefined}
-            title={node.path}
+    <section className="history-card" data-here={here || undefined}>
+      <header className="history-card-head">
+        <span className="mono history-card-path" title={folder.path}>
+          {folder.anchored ? folder.path : `…/${folder.path}`}
+          {!folder.anchored && (
+            <span className="muted small"> ({t('시작 위치 불명')})</span>
+          )}
+        </span>
+        <span className="history-badge" data-sure={folder.certain || undefined}>
+          {folder.certain ? t('정확') : t('추정')}
+        </span>
+      </header>
+      <p className="muted small history-card-meta">
+        {folder.latest ? t('마지막 작업 {when}', { when: ago(folder.latest) }) + ' · ' : ''}
+        {t('명령 {n}개', { n: folder.rows.length })}
+      </p>
+
+      <div className="history-runs">
+        {rows.map((r, i) => (
+          <button
+            key={`${r.at}-${i}`}
+            className="history-run"
+            data-effect={r.effect}
+            data-refused={r.refused || undefined}
+            data-source={r.source}
+            onClick={() => onCopy(r.command, r.at + r.command)}
+            title={`${r.timed ? new Date(r.at).toLocaleString() + ' · ' : ''}${
+              r.source === 'sudo'
+                ? t('sudo 저널')
+                : r.source === 'typed'
+                  ? t('이 앱의 터미널')
+                  : t('셸 이력 파일')
+            } · ${t('클릭하면 복사')}`}
           >
-            {node.label}
-            {!node.certain && <span className="history-guess">?</span>}
-          </span>
-        </button>
-        <span className="muted small history-count">{node.total}</span>
+            <span className="history-mark">{EFFECT_MARK[r.effect]}</span>
+            <span className="mono history-cmd">{r.command}</span>
+            {r.source !== 'shell' && (
+              <span className="history-source small">
+                {r.source === 'sudo' ? t('sudo') : t('앱')}
+              </span>
+            )}
+            {r.refused && (
+              <span className="history-refused small" title={r.reason}>
+                {t('실행 안 됨')}
+              </span>
+            )}
+            {r.timed && <span className="muted small history-when">{ago(r.at)}</span>}
+            {copied === r.at + r.command && (
+              <span className="small history-copied">{t('복사됨')}</span>
+            )}
+          </button>
+        ))}
       </div>
 
-      {expanded &&
-        node.children.map((c) => (
-          <TreeRow
-            key={c.path}
-            node={c}
-            open={open}
-            picked={picked}
-            here={here}
-            onToggle={onToggle}
-            onPick={onPick}
-          />
-        ))}
-    </div>
+      {/* Omitted rather than emptied. A fragment path has nowhere to send a
+          shell, and an empty bar still drew its border and its padding. */}
+      {(canGo || more) && (
+        <div className="history-card-foot">
+          {canGo && (
+            <button className="ghost small-btn" onClick={() => onGoTo!(folder.path)}>
+              {t('이 위치로 이동')}
+            </button>
+          )}
+          {more && (
+            <button className="ghost small-btn" onClick={onToggle}>
+              {open ? t('접기') : t('전체 명령 보기')}
+            </button>
+          )}
+        </div>
+      )}
+    </section>
   )
 }
 
-function findNode(ns: TreeNode[], path: string): TreeNode | null {
-  for (const n of ns) {
-    if (n.path === path) return n
-    const hit = findNode(n.children, path)
-    if (hit) return hit
-  }
-  return null
+/** The file as it stands, with nothing worked out from it.
+ *
+ *  Every other view here is a reading of the history. This one is the history,
+ *  and it is what somebody checks when they doubt the reading. */
+function RawHistory({
+  rows,
+  copied,
+  onCopy,
+}: {
+  rows: HistoryRow[]
+  copied: string | null
+  onCopy: (text: string, key: string) => void
+}) {
+  return (
+    <div className="history-raw">
+      {rows.length === 0 && <p className="muted small history-empty">{t('기록이 없습니다.')}</p>}
+      {rows.map((r, i) => (
+        <button
+          key={`${r.at}-${i}`}
+          className="history-run"
+          data-effect={r.effect}
+          data-source={r.source}
+          onClick={() => onCopy(r.command, 'raw' + i)}
+          title={r.pwd || t('시작 위치 불명')}
+        >
+          <span className="history-mark">{EFFECT_MARK[r.effect]}</span>
+          <span className="mono history-cmd">{r.command}</span>
+          {r.timed && <span className="muted small history-when">{ago(r.at)}</span>}
+          {copied === 'raw' + i && <span className="small history-copied">{t('복사됨')}</span>}
+        </button>
+      ))}
+    </div>
+  )
 }

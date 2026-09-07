@@ -63,12 +63,15 @@ type typedLog struct {
 	// cwd tracks where each terminal session is standing, and whether that is
 	// known. Keyed by terminal id, because two terminals on one host are in
 	// two different directories.
-	cwd map[string]typedCwd
-}
-
-type typedCwd struct {
-	path    string
-	certain bool
+	//
+	// The tracker is the history replay's own walker. The terminal used to
+	// carry a second, smaller cd parser; see adapter.CdTracker for what the two
+	// disagreed about.
+	cwd map[string]*adapter.CdTracker
+	// home per host, so a `cd ~` here lands on the same spelling the shell
+	// history's replay produces. Two spellings of one directory grow two
+	// branches in the tree, which is the panel disagreeing with itself.
+	home map[string]string
 }
 
 // typedLogMax bounds one host's history.
@@ -82,7 +85,8 @@ func newTypedLog(dir string) *typedLog {
 	l := &typedLog{
 		path: filepath.Join(dir, "typed.json"),
 		byID: map[string][]TypedCommand{},
-		cwd:  map[string]typedCwd{},
+		cwd:  map[string]*adapter.CdTracker{},
+		home: map[string]string{},
 	}
 	l.load()
 	return l
@@ -121,30 +125,32 @@ func (l *typedLog) save() {
 func (l *typedLog) enter(hostID, termID, line string, blind bool) *TypedCommand {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	home := l.home[hostID]
 
 	here := l.cwd[termID]
+	if here == nil {
+		// No anchor yet — a container shell, or a session opened before the
+		// home was known. It follows moves from nothing, which an absolute
+		// `cd` repairs.
+		here = adapter.NewCdTracker("", home)
+		l.cwd[termID] = here
+	}
 	if blind {
 		// Something was run that could not be read. It may well have been a
 		// `cd`, so the path is no longer trustworthy — but it is not discarded
 		// either: a stale path marked uncertain is more useful than none.
-		here.certain = false
-		l.cwd[termID] = here
+		here.Blind()
 		return nil
 	}
+	here.Step(line)
 
-	if dir, ok := adapter.ParseCd(line); ok {
-		// A readable `cd` is the only thing that makes the path certain again.
-		here.path = adapter.ResolveCd(here.path, dir)
-		here.certain = true
-		l.cwd[termID] = here
-	}
-
+	pwd, certain := here.Here()
 	cmd := TypedCommand{
 		HostID:     hostID,
 		At:         time.Now().UTC(),
 		Command:    line,
-		PWD:        here.path,
-		PWDCertain: here.certain && here.path != "",
+		PWD:        pwd,
+		PWDCertain: certain,
 		Effect:     adapter.ClassifyCommand(line),
 	}
 	rows := append(l.byID[hostID], cmd)
@@ -158,10 +164,24 @@ func (l *typedLog) enter(hostID, termID, line string, blind bool) *TypedCommand 
 
 // setCwd anchors a terminal's directory from something authoritative — the
 // shell itself, asked once when the session opens.
-func (l *typedLog) setCwd(termID, path string) {
+func (l *typedLog) setCwd(hostID, termID, path string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.cwd[termID] = typedCwd{path: path, certain: path != ""}
+	l.cwd[termID] = adapter.NewCdTracker(path, l.home[hostID])
+}
+
+// setHome records a host's home directory, asked once and reused.
+func (l *typedLog) setHome(hostID, home string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.home[hostID] = home
+}
+
+func (l *typedLog) knowsHome(hostID string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	_, ok := l.home[hostID]
+	return ok
 }
 
 func (l *typedLog) forgetTerm(termID string) {
@@ -193,12 +213,32 @@ func (a *App) TypedEntered(hostID, termID, line string, blind bool) {
 	if a.typed == nil {
 		return
 	}
+	a.learnHome(hostID)
 	if !blind && strings.TrimSpace(line) == "" {
 		// Enter on an empty prompt. Not a command, and not a reason to doubt
 		// where the shell is standing.
 		return
 	}
 	a.typed.enter(hostID, termID, strings.TrimSpace(line), blind)
+}
+
+// learnHome resolves a host's home once and remembers it.
+//
+// Needed before a tracker is made, not after: bare `cd` and `~` are the two
+// operands that cannot be followed without it, and a tracker built with an
+// empty home stays that way for the life of the session.
+func (a *App) learnHome(hostID string) {
+	if a.typed == nil || a.typed.knowsHome(hostID) {
+		return
+	}
+	// Getwd on an open SFTP session is local — the value was resolved at the
+	// handshake — but opening that session may not be, which is why this is
+	// asked once and kept.
+	home, err := a.HomeDir(hostID)
+	if err != nil {
+		home = ""
+	}
+	a.typed.setHome(hostID, home)
 }
 
 // TypedHistory is what was typed in this app's terminal on a host, newest first.
@@ -225,5 +265,8 @@ func (a *App) TerminalCwd(termID string) (string, bool) {
 	a.typed.mu.Lock()
 	defer a.typed.mu.Unlock()
 	c := a.typed.cwd[termID]
-	return c.path, c.certain
+	if c == nil {
+		return "", false
+	}
+	return c.Here()
 }
