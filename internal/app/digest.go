@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
@@ -48,6 +49,60 @@ type DigestView struct {
 // cover a holiday and short enough to stay one cheap read.
 const digestFloor = 7 * 24 * time.Hour
 
+// digestCache holds one answer per host.
+//
+// The digest is the most expensive single thing this app runs. Measured through
+// the Command Log on a real server: **2.7 to 4.1 seconds a call, four calls in
+// one session.** It reads up to a week of journal, and on a box facing the
+// internet that is tens of thousands of lines — the one this was measured on
+// takes over three thousand failed logins a day. The strip that shows it
+// re-mounts whenever the active host changes, so switching away and back paid
+// the whole cost again for an answer that had not moved.
+//
+// There is no TTL, and that is deliberate. The question is "what happened since
+// *you last looked*", so the answer only changes when the mark moves — which is
+// exactly what `since` in the key catches. A timer here would put the four
+// seconds back on a schedule, which is the thing being fixed.
+type digestCache struct {
+	mu   sync.Mutex
+	byID map[string]digestEntry
+}
+
+type digestEntry struct {
+	// gen is the connection this was counted through. A reconnect can be a
+	// rebooted machine, and its journal is not the one counted here.
+	gen uint64
+	// since is the mark it was counted from. Dismissing the strip moves the
+	// mark, and a cache that ignored that would answer the old question
+	// forever.
+	since int64
+	view  DigestView
+}
+
+func newDigestCache() *digestCache { return &digestCache{byID: map[string]digestEntry{}} }
+
+func (c *digestCache) get(id string, gen uint64, since int64) (DigestView, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.byID[id]
+	if !ok || e.gen != gen || e.since != since {
+		return DigestView{}, false
+	}
+	return e.view, true
+}
+
+func (c *digestCache) put(id string, gen uint64, since int64, view DigestView) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.byID[id] = digestEntry{gen: gen, since: since, view: view}
+}
+
+func (c *digestCache) forget(id string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.byID, id)
+}
+
 // HostDigest counts what happened since this person last looked at the host.
 func (a *App) HostDigest(hostID string) (DigestView, error) {
 	info, err := a.requireCapability(hostID, adapter.CapEvents, i18n.S("변경 요약"))
@@ -58,6 +113,12 @@ func (a *App) HostDigest(hostID string) (DigestView, error) {
 	if a.settings != nil {
 		since = a.settings.Get().LastSeen[hostID]
 	}
+	// Keyed on the mark as well as the connection, so dismissing the strip is
+	// what reopens the question — see digestCache for why there is no timer.
+	gen := a.mgr.Generation(hostID)
+	if cached, ok := a.digests.get(hostID, gen, since); ok {
+		return cached, nil
+	}
 	view := DigestView{Since: since, First: since == 0}
 
 	if !info.HasSystemd || !info.CanReadJournal {
@@ -65,6 +126,7 @@ func (a *App) HostDigest(hostID string) (DigestView, error) {
 		// but "nothing to say" is not "first visit", and reporting it as one
 		// would tell somebody who has been here for months that they are new.
 		view.Quiet = true
+		a.digests.put(hostID, gen, since, view)
 		return view, nil
 	}
 
@@ -93,6 +155,7 @@ func (a *App) HostDigest(hostID string) (DigestView, error) {
 	view.Digest = adapter.ParseDigest(string(res.Stdout))
 	view.Readable = true
 	view.Quiet = view.Digest.Quiet()
+	a.digests.put(hostID, gen, since, view)
 	return view, nil
 }
 

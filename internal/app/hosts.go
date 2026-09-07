@@ -153,6 +153,7 @@ func (a *App) DisconnectHost(hostID string) error {
 	// covers a reconnect on its own; this is so a host that stays disconnected
 	// does not keep a listing nobody can verify.
 	a.ifaces.forget(hostID)
+	a.digests.forget(hostID)
 	// The GPU feed rides a channel on the connection being dropped, and its
 	// "this host has no card" is only true of the machine that just answered.
 	a.gpus.forget(hostID)
