@@ -16,7 +16,7 @@ import (
 // confidently wrong, which is worse than one that admits it does not know.
 func TestBlindLineCostsThePathItsConfidence(t *testing.T) {
 	l := newTypedLog(t.TempDir())
-	l.setCwd("term1", "/srv/app")
+	l.setCwd("h", "term1", "/srv/app")
 
 	first := l.enter("h", "term1", "ls -la", false)
 	if first == nil || first.PWD != "/srv/app" || !first.PWDCertain {
@@ -46,36 +46,50 @@ func TestBlindLineCostsThePathItsConfidence(t *testing.T) {
 	}
 }
 
-func TestCdFormsThisCannotFollowLeaveThePathAlone(t *testing.T) {
-	for _, line := range []string{
-		"cd $DEPLOY_DIR", // the value is the shell's, not ours
-		"cd -",           // needs the previous directory, which is not tracked
-		"cd ~/x/../y",    // fine to resolve, but home is not known here
-		"cd a b",         // not a cd this can reason about
-		"cd 'my dir'",    // quoting this side does not parse
+// What the terminal can and cannot follow, now that it walks with the same
+// code the history replay uses.
+//
+// The list used to be much longer on the "cannot" side, because the terminal
+// carried a second, smaller parser. Quoted names, `cd -` and `~` were all
+// dropped there and followed here, and a dropped move left the tracked path
+// stale *and still marked certain* — the one combination that misleads.
+func TestTerminalFollowsWhatTheReplayFollows(t *testing.T) {
+	const home = "/home/deploy"
+	for _, tc := range []struct {
+		line    string
+		wantPWD string
+		certain bool
+	}{
+		{"cd sub", "/start/sub", true},
+		{"cd 'my dir'", "/start/my dir", true},
+		{"cd ~", home, true},
+		{"cd ~/x/../y", home + "/y", true},
+		{"cd /etc", "/etc", true},
+		// Followable in principle, not from here: the value is the shell's.
+		{"cd $DEPLOY_DIR", "/start", false},
+		{"cd a b", "/start", false},
+		{"cd ~someone", "/start", false},
+		{"pushd", "/start", false},
 	} {
 		l := newTypedLog(t.TempDir())
-		l.setCwd("t", "/start")
-		got := l.enter("h", "t", line, false)
+		l.setHome("h", home)
+		l.setCwd("h", "t", "/start")
+		got := l.enter("h", "t", tc.line, false)
 		if got == nil {
-			t.Fatalf("%q was not recorded at all", line)
+			t.Fatalf("%q 가 아예 기록되지 않았다", tc.line)
 		}
-		if line == "cd ~/x/../y" {
-			// The tilde is kept as written rather than expanded to a guess.
-			if got.PWD != "~/x/../y" && got.PWD != "/start" {
-				t.Errorf("%q moved the path to %q", line, got.PWD)
-			}
-			continue
+		if got.PWD != tc.wantPWD {
+			t.Errorf("%q → %q, 기대 %q", tc.line, got.PWD, tc.wantPWD)
 		}
-		if got.PWD != "/start" {
-			t.Errorf("%q moved the path to %q; it should have stayed", line, got.PWD)
+		if got.PWDCertain != tc.certain {
+			t.Errorf("%q → 확신 %v, 기대 %v", tc.line, got.PWDCertain, tc.certain)
 		}
 	}
 }
 
 func TestRelativeCdIsJoinedOntoTheCurrentPath(t *testing.T) {
 	l := newTypedLog(t.TempDir())
-	l.setCwd("t", "/srv")
+	l.setCwd("h", "t", "/srv")
 	if got := l.enter("h", "t", "cd app/config", false); got.PWD != "/srv/app/config" {
 		t.Errorf("pwd = %q, want /srv/app/config", got.PWD)
 	}
@@ -99,8 +113,8 @@ func TestNoAnchorMeansNoPath(t *testing.T) {
 // Two terminals on one host stand in two different directories.
 func TestTerminalsTrackTheirOwnDirectory(t *testing.T) {
 	l := newTypedLog(t.TempDir())
-	l.setCwd("a", "/one")
-	l.setCwd("b", "/two")
+	l.setCwd("h", "a", "/one")
+	l.setCwd("h", "b", "/two")
 	if got := l.enter("h", "a", "ls", false); got.PWD != "/one" {
 		t.Errorf("terminal a is in %q", got.PWD)
 	}
@@ -112,7 +126,7 @@ func TestTerminalsTrackTheirOwnDirectory(t *testing.T) {
 func TestHistorySurvivesARestart(t *testing.T) {
 	dir := t.TempDir()
 	l := newTypedLog(dir)
-	l.setCwd("t", "/srv")
+	l.setCwd("h", "t", "/srv")
 	l.enter("h", "t", "systemctl restart app", false)
 
 	// "What did I do here last time" is the question, so it has to outlive the

@@ -52,6 +52,13 @@ type ShellHistoryView struct {
 // crosses to the UI.
 const shellHistoryMax = 2000
 
+// rootHome is where /root/.bash_history's shell was standing when it started.
+//
+// Not read from the server: the file being at /root/.bash_history is what says
+// whose it is, and a login shell for root starts in root's home on every
+// distribution that puts the file there.
+const rootHome = "/root"
+
 // HostShellHistory reads the shell history for a host.
 //
 // elevate additionally reads root's history through sudo. That is a separate
@@ -92,18 +99,22 @@ func (a *App) HostShellHistory(hostID string, elevate bool) (ShellHistoryView, e
 		cmds = adapter.ParseZshHistory(text)
 	}
 
+	// Replayed here, before root's file is appended. Each file is one shell's
+	// own run of moves: walking them as a single stream started root's first
+	// relative `cd` from wherever the user's last command left off, and sent
+	// root's bare `cd` to the user's home.
+	view.Timed = anyTimed(cmds)
+	cmds = adapter.ReplayCd(cmds, home)
+
 	if elevate {
 		if root, ok := a.rootHistory(hostID); ok {
 			view.Root = true
 			// Appended, not merged by time: root's file has no times either, and
 			// interleaving two untimed files by guesswork would invent an order
 			// that neither of them claims.
-			cmds = append(cmds, root...)
+			cmds = append(cmds, adapter.ReplayCd(root, rootHome)...)
 		}
 	}
-
-	view.Timed = anyTimed(cmds)
-	cmds = adapter.ReplayCd(cmds, home)
 	if len(cmds) > shellHistoryMax {
 		cmds = cmds[len(cmds)-shellHistoryMax:]
 	}

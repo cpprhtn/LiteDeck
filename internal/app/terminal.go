@@ -207,7 +207,8 @@ func (a *App) OpenTerminal(hostID string, opts TerminalOptions) (TerminalInfo, e
 	// unanchored on purpose: opts.Dir is a path on the host, and inside the
 	// container it means something else or nothing at all.
 	if a.typed != nil && opts.Dir != "" && opts.ContainerID == "" {
-		a.typed.setCwd(info.ID, opts.Dir)
+		a.learnHome(hostID)
+		a.typed.setCwd(hostID, info.ID, opts.Dir)
 	}
 	return info, nil
 }

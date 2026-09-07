@@ -176,6 +176,34 @@ func ReplayCd(cmds []ShellCommand, home string) []ShellCommand {
 	return out
 }
 
+// CdTracker follows the working directory for a shell that is still running.
+//
+// The same walker the history replay uses, exposed for the app's own terminal.
+// That terminal used to carry a second, smaller cd parser, and the two
+// disagreed in both directions: it spelled `~` differently, so one directory
+// grew two branches in the tree; and it silently ignored `cd -`, `cd $VAR` and
+// `pushd`, leaving a stale path still marked certain. One implementation cannot
+// disagree with itself.
+type CdTracker struct{ w cdWalker }
+
+// NewCdTracker starts a tracker at here, with home for bare `cd` and `~`.
+func NewCdTracker(here, home string) *CdTracker {
+	return &CdTracker{w: cdWalker{here: here, home: home, certain: here != ""}}
+}
+
+// Step feeds one entered line.
+func (t *CdTracker) Step(line string) { t.w.step(line) }
+
+// Blind records that a line went by unread. It may well have been a `cd`, so
+// the path stops claiming to be right — but it is kept, because a stale path
+// marked uncertain is more useful than none.
+func (t *CdTracker) Blind() { t.w.certain = false }
+
+// Here is the tracked directory and whether it can be trusted.
+func (t *CdTracker) Here() (string, bool) {
+	return t.w.here, t.w.certain && t.w.here != ""
+}
+
 // cdWalker follows the working directory through a run of commands.
 type cdWalker struct {
 	here    string
@@ -202,7 +230,12 @@ func (w *cdWalker) step(line string) {
 		w.cd(rest)
 	case "pushd":
 		if rest == "" {
-			return // swaps the top two; not followed
+			// Swaps the top two entries of the stack. The shell moved and this
+			// cannot say where, so the path stops claiming to be right — it
+			// used to stay put and stay certain, which is the one combination
+			// that is a lie.
+			w.certain = false
+			return
 		}
 		if to, ok := w.resolve(rest); ok {
 			w.stack = append(w.stack, w.here)
@@ -221,6 +254,11 @@ func (w *cdWalker) step(line string) {
 }
 
 func (w *cdWalker) cd(arg string) {
+	// `--` ends the options, and `cd -- -x` is how you reach a directory whose
+	// name begins with a dash. Left in, it read as a directory called "--".
+	if rest, ok := strings.CutPrefix(arg, "--"); ok {
+		arg = strings.TrimSpace(rest)
+	}
 	if arg == "" {
 		w.moveTo(w.home) // bare `cd` is home
 		return
@@ -268,6 +306,10 @@ func (w *cdWalker) resolve(arg string) (string, bool) {
 	switch {
 	case arg == "~":
 		return w.home, w.home != ""
+	case strings.HasPrefix(arg, "~") && !strings.HasPrefix(arg, "~/"):
+		// `cd ~root`. Another account's home, which only the server knows.
+		// Joining it onto the current path invented `/home/deploy/~root`.
+		return "", false
 	case strings.HasPrefix(arg, "~/"):
 		if w.home == "" {
 			return "", false
@@ -329,44 +371,4 @@ func quotesBalanced(s string) bool {
 		}
 	}
 	return !single && !double
-}
-
-// ParseCd reads a `cd` off a command line.
-//
-// Only the plain forms. `cd $DEPLOY_DIR`, `cd -`, `pushd`, `(cd x && …)` and
-// `make -C` are all real and none can be resolved from the text alone, so they
-// are treated as "not a cd this can follow" — which leaves the path where it
-// was rather than moving it somewhere invented.
-func ParseCd(line string) (string, bool) {
-	f := strings.Fields(strings.TrimSpace(line))
-	if len(f) == 0 || f[0] != "cd" {
-		return "", false
-	}
-	if len(f) == 1 {
-		return "~", true // bare `cd` is home
-	}
-	if len(f) > 2 {
-		return "", false
-	}
-	arg := f[1]
-	if strings.ContainsAny(arg, "$`*?\"'") || arg == "-" {
-		return "", false
-	}
-	return arg, true
-}
-
-// ResolveCd joins a target onto the current path.
-func ResolveCd(base, target string) string {
-	switch {
-	case target == "~" || strings.HasPrefix(target, "~/"):
-		// Home is not known from here, and guessing /home/<user> is wrong for
-		// root and on macOS. The tilde is kept as written.
-		return target
-	case strings.HasPrefix(target, "/"):
-		return path.Clean(target)
-	case base == "":
-		return ""
-	default:
-		return path.Clean(path.Join(base, target))
-	}
 }
