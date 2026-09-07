@@ -88,9 +88,10 @@ All of it read from `/proc` and `df`. **There is still nothing installed on the 
 **"I worked on that server three months ago. What did I do?"**
 
 A collapsible panel beside the terminal tab. The question is always two questions —
-*which directory was I working in*, and *what did I run there* — so the top is a
-directory tree and the bottom is what ran in the directory you picked. It opens
-wherever the terminal is standing.
+*which directory was I working in*, and *what did I run there* — so **recently worked
+folders stack up as cards**, each holding the commands run there, newest first.
+**Go here** types a `cd` into the terminal rather than running one behind your back,
+so you can read it, edit it or cancel it. A **Raw** tab holds the file as it stands.
 
 Three sources, **kept apart and labelled** rather than merged:
 
@@ -101,9 +102,17 @@ Three sources, **kept apart and labelled** rather than merged:
 | **The shell's history file** | `~/.bash_history`, `~/.zsh_history`. Most of it is here |
 
 A history file knows **what** was typed and not **where**. Replaying `cd` recovers the
-path, and a line the replay could not follow **says on screen that it is an estimate**.
-bash also writes no timestamps at all unless `HISTTIMEFORMAT` is set, so entries keep
-the order the file gave them — **an absent time is not invented**.
+path, and every card says whether that path is **exact** or **inferred**. bash also
+writes no timestamps at all unless `HISTTIMEFORMAT` is set, so entries keep the order
+the file gave them — **an absent time is not invented**.
+
+The replay has one trap in it. bash appends a session's lines when that shell *exits*,
+so the file is several shells concatenated with nothing marking the seams. Walked as
+one shell, a new session's `cd project` lands inside the last one's directory and
+produces `project/project/project` — **a path nobody ever stood in**. So a relative
+move is checked against the server, and when it lands somewhere that is not there the
+same move is tried from home. If neither is there the path stays put and stops
+claiming to be right.
 
 > **Reading the shell history is enabled per server, and off by default.** It is the
 > densest credential file on most machines, and a feature that reads it every time a tab
