@@ -134,6 +134,11 @@ function finish(b: Building, depth: number): TreeNode {
     cur = only
   }
 
+  // A top-level absolute path keeps its leading slash. Without it `/etc/nginx`
+  // renders as `etc/nginx`, which is a different path — and the one place the
+  // panel must not be casual is where a command ran.
+  if (depth === 0 && b.path.startsWith('/')) label = '/' + label
+
   const children = sortNodes([...cur.kids.values()].map((k) => finish(k, depth + 1)))
   const rows = [...cur.rows].sort(byNewest)
 

@@ -2290,10 +2290,29 @@ button.danger {
    directory inline pushes everything under it off the bottom, and the thing
    that gets pushed off is the answer. */
 .history-tree {
-  flex: 1 1 55%;
+  /* Takes what the command list leaves. The split used to be a fixed 55/45,
+     which meant a six-row tree held 300px of nothing while the list below it
+     was cut off. */
+  flex: 1;
   min-height: 0;
   overflow: auto;
   padding: var(--sp-1) 0;
+}
+.history-undated {
+  padding: var(--sp-1) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+/* Which record a line came from. Only the two that carry more than the file
+   does are marked — the shell history is the bulk, and tagging every row of it
+   would be noise where the command should be. */
+.history-source {
+  flex: none;
+  color: var(--fg-faint);
+  font-size: var(--text-xs);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  padding: 0 3px;
+  line-height: 1.4;
 }
 .history-dir {
   display: grid;
@@ -2346,7 +2365,11 @@ button.danger {
 }
 
 .history-chosen {
-  flex: 1 1 45%;
+  /* A fixed height the user sets, not a share of the panel. The two halves
+     answer different questions and which one needs the room changes with the
+     server — a deep tree wants the top, a busy directory wants the bottom. */
+  position: relative;
+  flex: none;
   min-height: 0;
   display: flex;
   flex-direction: column;

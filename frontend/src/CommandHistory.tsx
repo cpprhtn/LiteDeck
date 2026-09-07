@@ -13,6 +13,8 @@ import {
 import { AccessNotice } from './EventTimeline'
 import { buildTree, pathTo, type HistoryRow, type TreeNode } from './historyTree'
 import { k, t } from './i18n'
+import { ResizeHandle } from './ResizeHandle'
+import { usePref } from './prefs'
 
 // Command history (arch/07, 명령 이력).
 //
@@ -49,6 +51,22 @@ const RANGES: { id: HistoryRange; label: string }[] = [
 ]
 
 type HistoryRange = '24h' | '7d' | 'max'
+
+/** The oldest instant a range admits, or 0 for "no window". */
+function cutoffOf(range: HistoryRange): number {
+  if (range === 'max') return 0
+  return Date.now() - (range === '24h' ? 24 : 24 * 7) * 3_600_000
+}
+
+/** Whether a line only moved the shell.
+ *
+ *  `cd monitoring/vector` is not something anybody looks back for — the tree
+ *  above already says they went there, and listing the walking with the work
+ *  buries the work. Only a line that is *nothing but* a move is dropped:
+ *  `cd build && make` did something and stays. */
+function isNavigation(command: string): boolean {
+  return /^(cd|pushd|popd)(\s+[^&|;]*)?$/.test(command.trim())
+}
 
 const EFFECT_MARK: Record<SudoRun['effect'], string> = {
   change: '●',
@@ -133,6 +151,7 @@ export function CommandHistory({
   // apart is what makes the second question askable at all.
   const [picked, setPicked] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
+  const chosenHeight = usePref('historyChosenHeight')
 
   const load = useCallback(
     async (elevate: boolean) => {
@@ -164,22 +183,35 @@ export function CommandHistory({
     void load(false)
   }, [load])
 
-  const tree = useMemo(() => {
-    const rows = [
+  const rows = useMemo(() => {
+    const all = [
       ...(view?.runs ?? []).map(fromSudo),
       ...typed.map(fromTyped),
       ...(shell?.commands ?? []).map(fromShell),
     ]
+    // The range is applied here, to every dated source, rather than only to the
+    // journal on the way out of Go. It used to bind the journal alone, which is
+    // a slice of the rows — so picking 24시간 or 최대 produced the same screen
+    // and the control looked broken. What it cannot do is judge a row with no
+    // date; those are kept and counted rather than guessed at.
+    const cutoff = cutoffOf(range)
+    return all.filter((r) => !isNavigation(r.command) && (!r.timed || Date.parse(r.at) >= cutoff))
+  }, [view, typed, shell, range])
+
+  /** Rows the range could not judge, because the file carries no times. */
+  const undated = useMemo(() => rows.filter((r) => !r.timed).length, [rows])
+
+  const tree = useMemo(() => {
     // Timed rows sort by time. Untimed ones cannot, so they keep the order the
     // file gave them and fall in behind — inventing a position for them would
     // be inventing a time.
-    rows.sort((a, b) => {
+    const sorted = [...rows].sort((a, b) => {
       if (a.timed !== b.timed) return a.timed ? -1 : 1
       if (!a.timed) return 0
       return a.at < b.at ? 1 : a.at > b.at ? -1 : 0
     })
-    return buildTree(changesOnly ? rows.filter((r) => r.effect !== 'read') : rows)
-  }, [view, typed, shell, changesOnly])
+    return buildTree(changesOnly ? sorted.filter((r) => r.effect !== 'read') : sorted)
+  }, [rows, changesOnly])
 
   // Opens where the terminal is standing, once, when the tree first arrives.
   // Not on every change: re-opening under somebody who has been clicking around
@@ -267,6 +299,16 @@ export function CommandHistory({
         </p>
       )}
 
+      {/* Said once, where the control is, rather than left as a mystery. bash
+          writes no times unless HISTTIMEFORMAT is set, so on most servers this
+          is most of the list — and a range that silently does not apply to it
+          is a control that looks broken. */}
+      {undated > 0 && range !== 'max' && (
+        <p className="history-undated muted small">
+          {t('이력 파일 {n}건은 시각이 없어 기간과 무관하게 보입니다.', { n: undated })}
+        </p>
+      )}
+
       {tree.length === 0 && !busy && (
         <p className="muted small history-empty">
           {changesOnly
@@ -297,7 +339,8 @@ export function CommandHistory({
           picking a directory does not push everything below it down the
           screen, which is what an inline expander does in a panel this narrow. */}
       {chosen && (
-        <div className="history-chosen">
+        <div className="history-chosen" style={{ height: chosenHeight }}>
+          <ResizeHandle pref="historyChosenHeight" label={t('명령 목록 높이')} />
           <div className="history-chosen-head">
             <span className="mono ellipsis" title={chosen.path}>
               {chosen.path}
@@ -324,10 +367,15 @@ export function CommandHistory({
                     : r.source === 'typed'
                       ? t('이 앱의 터미널')
                       : t('셸 이력 파일')
-                }`}
+                } · ${t('클릭하면 복사')}`}
               >
                 <span className="history-mark">{EFFECT_MARK[r.effect]}</span>
                 <span className="mono history-cmd">{r.command}</span>
+                {r.source !== 'shell' && (
+                  <span className="history-source small">
+                    {r.source === 'sudo' ? t('sudo') : t('앱')}
+                  </span>
+                )}
                 {r.refused && (
                   <span className="history-refused small" title={r.reason}>
                     {t('실행 안 됨')}
