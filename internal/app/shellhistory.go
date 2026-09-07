@@ -2,9 +2,9 @@ package app
 
 import (
 	"context"
+	"io/fs"
+	"path"
 	"strings"
-
-	"github.com/pkg/sftp"
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
 	"github.com/cpprhtn/LiteDeck/internal/i18n"
@@ -50,36 +50,6 @@ type ShellHistoryView struct {
 	Checked bool `json:"checked"`
 }
 
-// dirCheck answers "is this directory really there", once per path.
-//
-// The replay needs it to tell a real subdirectory from a session seam, and it
-// asks about the same handful of directories over and over — a 2,000-line
-// history walks maybe a hundred distinct places. Memoised, that is a hundred
-// SFTP stats for the whole read; unmemoised it would be one per `cd`.
-type dirCheck struct {
-	client *sftp.Client
-	seen   map[string]bool
-	asked  int
-}
-
-func newDirCheck(client *sftp.Client) *dirCheck {
-	return &dirCheck{client: client, seen: map[string]bool{}}
-}
-
-func (d *dirCheck) exists(p string) bool {
-	if p == "" {
-		return false
-	}
-	if got, ok := d.seen[p]; ok {
-		return got
-	}
-	d.asked++
-	fi, err := d.client.Stat(p)
-	ok := err == nil && fi.IsDir()
-	d.seen[p] = ok
-	return ok
-}
-
 // shellHistoryMax bounds how much of the file is turned into rows.
 //
 // The measured file was 2,000 lines, which is bash's default HISTFILESIZE and
@@ -93,6 +63,99 @@ const shellHistoryMax = 2000
 // whose it is, and a login shell for root starts in root's home on every
 // distribution that puts the file there.
 const rootHome = "/root"
+
+// dirLister is the part of an SFTP client dirCheck needs. An interface so the
+// listing logic can be tested without a server — the round-trip counting below
+// is the whole point of the type, and counting it needs a fake.
+type dirLister interface {
+	ReadDir(path string) ([]fs.FileInfo, error)
+	Stat(path string) (fs.FileInfo, error)
+}
+
+// dirCheck answers "is this directory really there".
+//
+// The replay needs it to tell a real subdirectory from a session seam. It used
+// to be one Stat per path, one after another: a 2,000-line history walks around
+// a hundred distinct places, so the panel sat on **a hundred sequential round
+// trips** before it could draw — 2.8 seconds on the server this was measured
+// against and 4.2 on a Raspberry Pi, both from the measured RTT.
+//
+// It asks the parent instead. One ReadDir names every child, so every sibling
+// the history ever mentions is answered by that one listing, and a history
+// spends most of its time in a handful of parents. Where a parent will not list
+// — a home directory with the read bit off is unusual but real — it falls back
+// to Stat for that subtree and remembers not to try the listing again.
+type dirCheck struct {
+	client dirLister
+	// kids maps a parent to the set of directory names in it. A nil set means
+	// the parent could not be listed and Stat is answering for it.
+	kids  map[string]map[string]bool
+	seen  map[string]bool
+	reads int
+	stats int
+}
+
+func newDirCheck(client dirLister) *dirCheck {
+	return &dirCheck{
+		client: client,
+		kids:   map[string]map[string]bool{},
+		seen:   map[string]bool{},
+	}
+}
+
+// asked reports how many round trips this check has cost, for the caller that
+// wants to say whether the paths were settled against the server at all.
+func (d *dirCheck) asked() int { return d.reads + d.stats }
+
+func (d *dirCheck) exists(p string) bool {
+	if p == "" || !strings.HasPrefix(p, "/") {
+		// Empty, or an unanchored fragment. Neither names a place to look.
+		return false
+	}
+	if got, ok := d.seen[p]; ok {
+		return got
+	}
+	ok := d.lookUp(p)
+	d.seen[p] = ok
+	return ok
+}
+
+func (d *dirCheck) lookUp(p string) bool {
+	if p == "/" {
+		return true
+	}
+	parent, name := path.Split(p)
+	parent = path.Clean(parent)
+
+	set, listed := d.kids[parent]
+	if !listed {
+		set = d.list(parent)
+		d.kids[parent] = set
+	}
+	if set != nil {
+		return set[name]
+	}
+	// The parent would not list. Ask about this one directly.
+	d.stats++
+	fi, err := d.client.Stat(p)
+	return err == nil && fi.IsDir()
+}
+
+// list names the directories inside parent, or nil when it cannot be read.
+func (d *dirCheck) list(parent string) map[string]bool {
+	d.reads++
+	entries, err := d.client.ReadDir(parent)
+	if err != nil {
+		return nil
+	}
+	set := map[string]bool{}
+	for _, e := range entries {
+		if e.IsDir() {
+			set[e.Name()] = true
+		}
+	}
+	return set
+}
 
 // HostShellHistory reads the shell history for a host.
 //
@@ -151,7 +214,7 @@ func (a *App) HostShellHistory(hostID string, elevate bool) (ShellHistoryView, e
 			cmds = append(cmds, adapter.ReplayCdChecked(root, rootHome, dirs.exists)...)
 		}
 	}
-	view.Checked = dirs.asked > 0
+	view.Checked = dirs.asked() > 0
 	if len(cmds) > shellHistoryMax {
 		cmds = cmds[len(cmds)-shellHistoryMax:]
 	}
