@@ -2288,22 +2288,19 @@ button.danger {
    directory inline pushes everything under it off the bottom, and the thing
    that gets pushed off is the answer. */
 .history-search {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
   padding: var(--sp-2) var(--sp-3);
   border-bottom: 1px solid var(--border);
 }
 .history-search .search {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   max-width: none;
-}
-.history-filters {
-  border-bottom: 1px solid var(--border);
 }
 .history-tally {
   white-space: nowrap;
-}
-.history-undated {
-  padding: var(--sp-1) var(--sp-3);
-  border-bottom: 1px solid var(--border);
 }
 /* Which record a line came from. Only the two that carry more than the file
    does are marked — the shell history is the bulk, and tagging every row of it

@@ -33,22 +33,16 @@ import { k, t } from './i18n'
 // `rm -rf`, and a list that runs things on click is a list nobody can safely
 // scroll.
 
-// The window applies to sudo's journal, which is the only one of the three
-// sources that has a date on every row and can therefore be asked for one.
+
+// One control, not two.
 //
-// `최대` drops the window rather than widening it. It is still bounded — by the
-// journal's 500-line cap, the same way the shell history is bounded by
-// HISTFILESIZE — because "everything" in a history has always meant a number of
-// lines and never a span of time. Reaching the very first entry a server ever
-// wrote is not the question anybody asks.
-const RANGES: { id: HistoryRange; label: string }[] = [
-  { id: '24h', label: k('24시간') },
-  { id: '7d', label: k('7일') },
-  { id: 'max', label: k('최대') },
-]
-
-type HistoryRange = '24h' | '7d' | 'max'
-
+// There used to be a time window (24시간 · 7일 · 최대) beside these, and the two
+// were asking the same question twice — 최근 작업 and 24시간 are both "recently".
+// Worse, the window barely worked: bash writes no timestamps unless
+// HISTTIMEFORMAT is set, so most rows could not be judged by it and the panel
+// carried a line apologising for that. A control that needs an apology is the
+// wrong control. Recency is a count here, which is the one thing an untimed
+// file can still be ordered by, and each card says when it was last touched.
 const TABS: { id: HistoryTab; label: string }[] = [
   { id: 'recent', label: k('최근 작업') },
   { id: 'all', label: k('전체') },
@@ -125,12 +119,6 @@ function groupByFolder(rows: HistoryRow[], changesOnly: boolean): Folder[] {
     if (a.latest && b.latest) return a.latest < b.latest ? 1 : a.latest > b.latest ? -1 : 0
     return a.rank - b.rank
   })
-}
-
-/** The oldest instant a range admits, or 0 for "no window". */
-function cutoffOf(range: HistoryRange): number {
-  if (range === 'max') return 0
-  return Date.now() - (range === '24h' ? 24 : 24 * 7) * 3_600_000
 }
 
 /** Whether a line only moved the shell.
@@ -228,7 +216,6 @@ export function CommandHistory({
   const [view, setView] = useState<CommandHistoryView | null>(null)
   const [typed, setTyped] = useState<TypedCommand[]>([])
   const [shell, setShell] = useState<ShellHistoryView | null>(null)
-  const [range, setRange] = useState<HistoryRange>('7d')
   const [tab, setTab] = useState<HistoryTab>('recent')
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
@@ -244,7 +231,9 @@ export function CommandHistory({
         // it is a file this app wrote — so a rejection there must not hide the
         // journal's answer.
         const [remote, local, file] = await Promise.all([
-          HostCommandHistory(hostID, range, elevate),
+          // No window: the journal's own 500-line cap is the bound, the same
+          // way the shell history's is HISTFILESIZE.
+          HostCommandHistory(hostID, 'max', elevate),
           TypedHistory(hostID).catch(() => [] as TypedCommand[]),
           HostShellHistory(hostID, elevate).catch(() => null),
         ])
@@ -257,11 +246,11 @@ export function CommandHistory({
         setBusy(false)
       }
     },
-    [hostID, range, onError],
+    [hostID, onError],
   )
 
-  // One read per open or range change. The past does not change, so there is
-  // nothing here for a poller to find.
+  // One read per open. The past does not change, so there is nothing here for a
+  // poller to find.
   useEffect(() => {
     void load(false)
   }, [load])
@@ -279,17 +268,7 @@ export function CommandHistory({
     [view, typed, shell],
   )
 
-  const rows = useMemo(() => {
-    const all = allRows
-    // The range is applied to every dated source, not only to the journal on
-    // the way out of Go. What it cannot do is judge a row with no date; those
-    // are kept and counted rather than guessed at.
-    const cutoff = cutoffOf(range)
-    return all.filter((r) => !isNavigation(r.command) && (!r.timed || Date.parse(r.at) >= cutoff))
-  }, [allRows, range])
-
-  /** Rows the range could not judge, because the file carries no times. */
-  const undated = useMemo(() => rows.filter((r) => !r.timed).length, [rows])
+  const rows = useMemo(() => allRows.filter((r) => !isNavigation(r.command)), [allRows])
 
   const folders = useMemo(() => groupByFolder(rows, changesOnly), [rows, changesOnly])
 
@@ -346,19 +325,6 @@ export function CommandHistory({
               placeholder={t('폴더 또는 명령 검색…')}
               onChange={(e) => setQuery(e.target.value)}
             />
-          </div>
-          <div className="history-bar history-filters">
-            <div className="segmented">
-              {RANGES.map((r) => (
-                <button
-                  key={r.id}
-                  data-on={range === r.id || undefined}
-                  onClick={() => setRange(r.id)}
-                >
-                  {t(r.label)}
-                </button>
-              ))}
-            </div>
             <label className="history-toggle">
               <input
                 type="checkbox"
@@ -405,12 +371,6 @@ export function CommandHistory({
           {t('비밀번호나 토큰으로 보이는 명령 {n}건을 가렸습니다.', {
             n: (view?.secrets ?? 0) + (shell?.secrets ?? 0),
           })}
-        </p>
-      )}
-
-      {tab !== 'raw' && undated > 0 && range !== 'max' && (
-        <p className="history-undated muted small">
-          {t('이력 파일 {n}건은 시각이 없어 기간과 무관하게 보입니다.', { n: undated })}
         </p>
       )}
 
