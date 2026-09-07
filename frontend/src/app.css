@@ -1,5 +1,3 @@
-/* Layout. Every colour resolves through tokens.css — nothing here hard-codes
-   a hex value, so the platform-native theming in §4.7-1 stays a value swap. */
 
 .boot,
 .placeholder {
@@ -2289,14 +2287,19 @@ button.danger {
    Two panes rather than one expanding list: in a panel this narrow, opening a
    directory inline pushes everything under it off the bottom, and the thing
    that gets pushed off is the answer. */
-.history-tree {
-  /* Takes what the command list leaves. The split used to be a fixed 55/45,
-     which meant a six-row tree held 300px of nothing while the list below it
-     was cut off. */
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: var(--sp-1) 0;
+.history-search {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+.history-search .search {
+  width: 100%;
+  max-width: none;
+}
+.history-filters {
+  border-bottom: 1px solid var(--border);
+}
+.history-tally {
+  white-space: nowrap;
 }
 .history-undated {
   padding: var(--sp-1) var(--sp-3);
@@ -2314,100 +2317,74 @@ button.danger {
   padding: 0 3px;
   line-height: 1.4;
 }
-.history-dir {
-  display: grid;
-  grid-template-columns: 14px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--sp-1);
-  width: 100%;
-  border: 0;
-  border-radius: 0;
-  padding-right: var(--sp-3);
-  color: inherit;
-  font: inherit;
-  font-size: var(--text-sm);
-  text-align: left;
-  cursor: pointer;
-  /* One rule at the left edge of every ancestor level; `background-size` is set
-     per row to depth × 14px, so each row draws exactly as many as it has
-     parents and the pattern stops where its own name begins. Same idiom as the
-     file tree, so the two read alike. */
-  background-color: transparent;
-  background-image: repeating-linear-gradient(
-    to right,
-    var(--tree-guide) 0 1px,
-    transparent 1px 14px
-  );
-  background-repeat: no-repeat;
-  background-position: left center;
-}
-.history-dir:hover {
-  background-color: var(--bg-hover);
-}
-.history-dir[data-picked] {
-  background-color: var(--bg-selected);
-}
-/* A directory nothing was recorded below: the tree ends here. Marked in the
-   twisty column only — greying the name as well said "less important", and a
-   leaf is often exactly where the work happened. */
-.history-dir[data-leaf] .history-twisty::before {
-  content: '─';
-  color: var(--fg-faint);
-}
-/* Where the terminal is standing. Marked, not filtered — the point is to find
-   it at a glance, not to hide everywhere else. */
-.history-dir[data-here] .history-dir-name::before {
-  content: '▶';
-  color: var(--accent);
-  font-size: 9px;
-  padding-right: 4px;
-}
-.history-twisty {
-  text-align: center;
-  color: var(--fg-muted);
-  /* Bigger than the file tree's 9px. There the twisty is one of several marks
-     on a row and the icon carries the meaning; here it is the only thing
-     saying whether anything is underneath. */
-  font-size: 12px;
-  line-height: 1;
-  user-select: none;
-}
-.history-dir:hover .history-twisty {
-  color: var(--fg);
-}
-.history-dir-name {
-  padding: 4px 0;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-}
-.history-count {
-  font-variant-numeric: tabular-nums;
-}
 
-.history-chosen {
-  /* A fixed height the user sets, not a share of the panel. The two halves
-     answer different questions and which one needs the room changes with the
-     server — a deep tree wants the top, a busy directory wants the bottom. */
-  position: relative;
-  flex: none;
+/* One folder per card, in a flat list.
+   A tree had to invent the levels between two directories, and on paths that
+   are themselves worked out that made the inference the loudest thing on
+   screen. */
+.history-folders,
+.history-raw {
+  flex: 1;
   min-height: 0;
+  overflow: auto;
+  padding: var(--sp-2);
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--border);
+  gap: var(--sp-2);
 }
-.history-chosen-head {
+.history-card {
+  /* Never squeezed. In a flex column the default is to shrink, which cropped
+     each card's buttons off the bottom as soon as the list was long. */
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+/* Where the terminal beside this panel is standing. */
+.history-card[data-here] {
+  border-color: var(--accent);
+}
+.history-card-head {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
   gap: var(--sp-2);
-  padding: var(--sp-1) var(--sp-3);
-  background: var(--bg-sunken);
-  border-bottom: 1px solid var(--border);
-  font-size: var(--text-sm);
-  font-weight: 600;
+  padding: var(--sp-2) var(--sp-3) 0;
 }
-.history-chosen > .history-runs {
+.history-card-path {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+/* Whether the folder's name is a record or a reconstruction. Said on every
+   card rather than once at the top: the two kinds sit next to each other. */
+.history-badge {
+  flex: none;
+  font-size: var(--text-xs);
+  border-radius: 999px;
+  padding: 1px 7px;
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+}
+.history-badge[data-sure] {
+  color: var(--accent);
+  background: var(--bg-selected);
+}
+.history-card-meta {
+  margin: 2px 0 var(--sp-2);
+  padding: 0 var(--sp-3);
+}
+.history-card-foot {
+  display: flex;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--border);
+}
+.history-more {
+  align-self: center;
+}
+.history-runs {
   flex: 1;
   min-height: 0;
   overflow: auto;

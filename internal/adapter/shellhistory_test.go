@@ -114,12 +114,26 @@ func TestUnresolvableCdDoesNotMoveThePath(t *testing.T) {
 	}
 }
 
-// Nothing absolute has been seen yet, so there is nothing to say.
-// With no home to start from and nothing absolute yet, there is nothing to say.
-func TestReplayClaimsNoPathBeforeItHasOne(t *testing.T) {
-	for _, c := range ReplayCd(ParseBashHistory("ls\ndocker ps\ncd sub\nls\n"), "") {
+// With no home and no absolute move yet there is no path — but the relative
+// tail is still worth carrying. `…/src` narrows it down; the leading slash is
+// what says the whole path is known, and a fragment never gets one or claims
+// to be certain.
+func TestUnanchoredReplayKeepsTheTailAndNotTheClaim(t *testing.T) {
+	got := ReplayCd(ParseBashHistory("ls\ndocker ps\ncd sub\nls\n"), "")
+	for _, c := range got[:2] {
 		if c.PWD != "" {
-			t.Errorf("%q was given the path %q with nothing to base it on", c.Command, c.PWD)
+			t.Errorf("%q 는 아직 아무 근거도 없는데 경로 %q 를 받았다", c.Command, c.PWD)
+		}
+	}
+	for _, c := range got[2:] {
+		if c.PWD != "sub" {
+			t.Errorf("%q → %q, 기대 %q", c.Command, c.PWD, "sub")
+		}
+		if strings.HasPrefix(c.PWD, "/") {
+			t.Errorf("조각인데 절대경로처럼 보인다: %q", c.PWD)
+		}
+		if c.PWDCertain {
+			t.Errorf("%q 의 경로가 조각인데 확신한다고 되어 있다", c.Command)
 		}
 	}
 }
@@ -447,5 +461,44 @@ func TestTrackerBlindLineKeepsThePathAndDropsCertainty(t *testing.T) {
 	}
 	if certain {
 		t.Error("못 읽은 줄이 지나갔는데 확신이 남아 있다")
+	}
+}
+
+// A history file is several sessions concatenated, not one shell.
+//
+// bash appends a session's lines when that shell *exits*, so the file is
+// ordered by when sessions ended and every session began at home. Walked as one
+// continuous shell, the second session's `cd project` lands inside the first
+// session's last directory — and a file with four sessions that each start
+// `cd project` produces project/project/project/project, a path that does not
+// exist on any server.
+func TestSessionRestartDoesNotNestIntoItself(t *testing.T) {
+	const home = "/home/deploy"
+	exists := func(p string) bool {
+		switch p {
+		case home, home + "/project", home + "/project/src":
+			return true
+		}
+		return false
+	}
+	lines := []string{
+		"cd project", "make", // session 1
+		"cd project", "make", // session 2, from home again
+		"cd project", "cd src", "make", // session 3
+	}
+	cmds := make([]ShellCommand, len(lines))
+	for i, l := range lines {
+		cmds[i] = ShellCommand{Command: l}
+	}
+	got := ReplayCdChecked(cmds, home, exists)
+	want := []string{
+		home + "/project", home + "/project",
+		home + "/project", home + "/project",
+		home + "/project", home + "/project/src", home + "/project/src",
+	}
+	for i := range want {
+		if got[i].PWD != want[i] {
+			t.Errorf("%d번째 %q → %q, 기대 %q", i, lines[i], got[i].PWD, want[i])
+		}
 	}
 }

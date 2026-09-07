@@ -21,8 +21,6 @@ export interface Prefs {
   editorFontSize: number
   /** Width of the history panel beside the terminal, in px. */
   historyWidth: number
-  /** Height of the command list under the history tree, in px. */
-  historyChosenHeight: number
   /** Whether the host list is showing. Collapsed, the shell drops to one
    *  column and the editor gets the width back. */
   sidebarOpen: boolean
@@ -37,7 +35,6 @@ export const DEFAULTS: Prefs = {
   liveLogHeight: 260,
   editorFontSize: 13,
   historyWidth: 320,
-  historyChosenHeight: 240,
   sidebarOpen: true,
 }
 
@@ -48,8 +45,6 @@ const LIMITS: Record<NumericPref, [number, number]> = {
   // Wide enough for a docker command without wrapping; capped so the terminal
   // stays the thing on this tab.
   historyWidth: [220, 720],
-  // Floor is a head plus three rows; the ceiling leaves the tree usable.
-  historyChosenHeight: [96, 900],
 }
 
 function clamp<K extends keyof Prefs>(key: K, value: unknown): Prefs[K] {

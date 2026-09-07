@@ -403,6 +403,17 @@ export function TerminalView({
     })
   }
 
+  // Sends the shell somewhere the history says work happened. Typed into the
+  // terminal rather than run behind it: what lands is a `cd` the user can see,
+  // edit or Ctrl-C, and it shows up in that shell's own history like any other
+  // line. The path is single-quoted because it came out of a history file —
+  // spaces and `$` in a directory name are ordinary, and neither should reach
+  // the shell as syntax.
+  const goTo = (termID: string, dir: string) => {
+    const quoted = "'" + dir.replaceAll("'", `'\\''`) + "'"
+    void WriteTerminal(termID, b64encode(`cd ${quoted}\n`)).catch((e) => onError(String(e)))
+  }
+
   return (
     <div className="view term-view">
       <div className="view-toolbar">
@@ -464,7 +475,12 @@ export function TerminalView({
         {histOpen && (
           <aside className="term-history" style={{ width: histWidth }}>
             <ResizeHandle pref="historyWidth" label={t('히스토리 너비')} axis="x" />
-            <CommandHistory hostID={hostID} cwd={cwd} onError={onError} />
+            <CommandHistory
+              hostID={hostID}
+              cwd={cwd}
+              onError={onError}
+              onGoTo={active ? (dir) => goTo(active, dir) : undefined}
+            />
           </aside>
         )}
       </div>

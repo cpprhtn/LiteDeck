@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 
+	"github.com/pkg/sftp"
+
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
 	"github.com/cpprhtn/LiteDeck/internal/i18n"
 )
@@ -43,6 +45,39 @@ type ShellHistoryView struct {
 	Timed bool `json:"timed"`
 	// Secrets counts commands that looked like they carried a credential.
 	Secrets int `json:"secrets"`
+	// Checked reports that the paths were settled against the server rather
+	// than by arithmetic alone. False on a host where nothing could be asked.
+	Checked bool `json:"checked"`
+}
+
+// dirCheck answers "is this directory really there", once per path.
+//
+// The replay needs it to tell a real subdirectory from a session seam, and it
+// asks about the same handful of directories over and over — a 2,000-line
+// history walks maybe a hundred distinct places. Memoised, that is a hundred
+// SFTP stats for the whole read; unmemoised it would be one per `cd`.
+type dirCheck struct {
+	client *sftp.Client
+	seen   map[string]bool
+	asked  int
+}
+
+func newDirCheck(client *sftp.Client) *dirCheck {
+	return &dirCheck{client: client, seen: map[string]bool{}}
+}
+
+func (d *dirCheck) exists(p string) bool {
+	if p == "" {
+		return false
+	}
+	if got, ok := d.seen[p]; ok {
+		return got
+	}
+	d.asked++
+	fi, err := d.client.Stat(p)
+	ok := err == nil && fi.IsDir()
+	d.seen[p] = ok
+	return ok
 }
 
 // shellHistoryMax bounds how much of the file is turned into rows.
@@ -104,7 +139,8 @@ func (a *App) HostShellHistory(hostID string, elevate bool) (ShellHistoryView, e
 	// relative `cd` from wherever the user's last command left off, and sent
 	// root's bare `cd` to the user's home.
 	view.Timed = anyTimed(cmds)
-	cmds = adapter.ReplayCd(cmds, home)
+	dirs := newDirCheck(client)
+	cmds = adapter.ReplayCdChecked(cmds, home, dirs.exists)
 
 	if elevate {
 		if root, ok := a.rootHistory(hostID); ok {
@@ -112,9 +148,10 @@ func (a *App) HostShellHistory(hostID string, elevate bool) (ShellHistoryView, e
 			// Appended, not merged by time: root's file has no times either, and
 			// interleaving two untimed files by guesswork would invent an order
 			// that neither of them claims.
-			cmds = append(cmds, adapter.ReplayCd(root, rootHome)...)
+			cmds = append(cmds, adapter.ReplayCdChecked(root, rootHome, dirs.exists)...)
 		}
 	}
+	view.Checked = dirs.asked > 0
 	if len(cmds) > shellHistoryMax {
 		cmds = cmds[len(cmds)-shellHistoryMax:]
 	}

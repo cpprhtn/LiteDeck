@@ -150,6 +150,18 @@ func TestShellHistoryResolvesEveryOperandFormOnARealServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SFTP: %v", err)
 	}
+	// Made for real. The replay asks the server whether a relative move landed
+	// on a directory that is there, so a history walking through directories
+	// that do not exist is a history it correctly refuses to follow.
+	if err := client.MkdirAll(home + "/work/sub/deeper"); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = client.RemoveDirectory(home + "/work/sub/deeper")
+		_ = client.RemoveDirectory(home + "/work/sub")
+		_ = client.RemoveDirectory(home + "/work")
+	})
+
 	path := home + "/.bash_history"
 	f, err := client.Create(path)
 	if err != nil {
@@ -199,6 +211,83 @@ func TestShellHistoryResolvesEveryOperandFormOnARealServer(t *testing.T) {
 	for _, c := range view.Commands {
 		if strings.Contains(c.Command, "HUNTER2") {
 			t.Error("비밀번호가 가려지지 않고 나왔다")
+		}
+	}
+}
+
+// The seam between two shell sessions, on a real server.
+//
+// The file is written the way bash writes it — session after session, each one
+// starting at home — and the directories are made for real, because the whole
+// repair turns on asking the server which of two candidate paths is there.
+func TestSessionSeamDoesNotInventNesting(t *testing.T) {
+	a := connectedApp(t)
+	a.settings = config.OpenSettings(a.configDir)
+	if err := a.SetShellHistoryAllowed("fixture", true); err != nil {
+		t.Fatalf("SetShellHistoryAllowed: %v", err)
+	}
+	home, err := a.HomeDir("fixture")
+	if err != nil {
+		t.Fatalf("HomeDir: %v", err)
+	}
+	client, err := a.mgr.SFTP("fixture")
+	if err != nil {
+		t.Fatalf("SFTP: %v", err)
+	}
+
+	// A real project and a real subdirectory. project/project is deliberately
+	// NOT created: that is the path the unchecked walk invents.
+	for _, d := range []string{home + "/project", home + "/project/src"} {
+		if err := client.MkdirAll(d); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+	t.Cleanup(func() {
+		_ = client.RemoveDirectory(home + "/project/src")
+		_ = client.RemoveDirectory(home + "/project")
+	})
+
+	lines := []string{
+		"cd project", "echo one", // session 1
+		"cd project", "echo two", // session 2, a fresh shell at home
+		"cd project", "cd src", "echo three", // session 3, then a real descent
+	}
+	path := home + "/.bash_history"
+	f, err := client.Create(path)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := f.Write([]byte(strings.Join(lines, "\n") + "\n")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	f.Close()
+	t.Cleanup(func() { _ = client.Remove(path) })
+
+	view, err := a.HostShellHistory("fixture", false)
+	if err != nil {
+		t.Fatalf("HostShellHistory: %v", err)
+	}
+	if !view.Checked {
+		t.Error("서버에 물어보지 않았다 — 이음매를 풀 근거가 없다")
+	}
+	got := map[string]string{}
+	for _, c := range view.Commands {
+		if after, ok := strings.CutPrefix(c.Command, "echo "); ok {
+			got[after] = c.PWD
+		}
+	}
+	for marker, want := range map[string]string{
+		"one":   home + "/project",
+		"two":   home + "/project",
+		"three": home + "/project/src",
+	} {
+		if got[marker] != want {
+			t.Errorf("%q → %q, 기대 %q", marker, got[marker], want)
+		}
+	}
+	for _, c := range view.Commands {
+		if strings.Contains(c.PWD, "project/project") {
+			t.Errorf("없는 폴더를 지어냈다: %q (%s)", c.PWD, c.Command)
 		}
 	}
 }

@@ -165,7 +165,32 @@ func ParseZshHistory(text string) []ShellCommand {
 // Pass "" when home is unknown; the path then stays empty until an absolute
 // `cd` gives the replay something to stand on.
 func ReplayCd(cmds []ShellCommand, home string) []ShellCommand {
-	w := cdWalker{here: home, certain: home != "", home: home}
+	return ReplayCdChecked(cmds, home, nil)
+}
+
+// ReplayCdChecked is ReplayCd with the server available to settle one question
+// the file cannot answer: where a session began.
+//
+// # Why this needs asking at all
+//
+// A history file is several shells concatenated. bash appends a session's lines
+// when that shell *exits*, so the file is ordered by when sessions ended, and
+// every one of them started at home. Nothing in the file marks the seam.
+//
+// Walked as one continuous shell, the second session's `cd project` lands
+// inside the first session's last directory. Somebody who opens a terminal,
+// runs `cd project`, and closes it four times leaves a file that replays to
+// project/project/project/project — a path that exists on no server, drawn as
+// four levels of nesting that never happened.
+//
+// exists reports whether a directory is really there, and may be nil, in which
+// case the walk is the old unchecked one. When a relative move lands somewhere
+// that is not there, the same move is tried from home: a shell that starts at
+// home and runs `cd project` is the ordinary explanation, and it is checked
+// rather than assumed. If neither is there the path stays put and stops
+// claiming to be right — the file said something this cannot follow.
+func ReplayCdChecked(cmds []ShellCommand, home string, exists func(string) bool) []ShellCommand {
+	w := cdWalker{here: home, certain: home != "", home: home, exists: exists}
 	out := make([]ShellCommand, len(cmds))
 	for i, c := range cmds {
 		w.step(c.Command)
@@ -211,6 +236,9 @@ type cdWalker struct {
 	stack   []string // for pushd/popd
 	home    string
 	certain bool
+	// exists asks the server whether a directory is really there. nil means
+	// nobody asked, and the walk trusts its own arithmetic.
+	exists func(string) bool
 }
 
 func (w *cdWalker) step(line string) {
@@ -271,6 +299,12 @@ func (w *cdWalker) cd(arg string) {
 		w.moveTo(w.prev)
 		return
 	}
+	if relative(arg) {
+		// The only kind a session seam can spoil, and the only kind worth
+		// asking the server about.
+		w.tryRelative(arg)
+		return
+	}
 	if to, ok := w.resolve(arg); ok {
 		w.moveTo(to)
 		return
@@ -278,6 +312,13 @@ func (w *cdWalker) cd(arg string) {
 	// `cd $DEPLOY_DIR` and friends. The shell went somewhere; this cannot say
 	// where, so the path stays put and stops claiming to be right.
 	w.certain = false
+}
+
+// relative reports whether an operand is resolved against the current
+// directory, which is the only kind a session restart can spoil. An absolute
+// path, `~`, `-` and the stack forms all say where they are going.
+func relative(arg string) bool {
+	return arg != "" && arg != "-" && !strings.HasPrefix(arg, "/") && !strings.HasPrefix(arg, "~")
 }
 
 // resolve turns a `cd` operand into a path, or reports that it cannot.
@@ -318,7 +359,10 @@ func (w *cdWalker) resolve(arg string) (string, bool) {
 	case strings.HasPrefix(arg, "/"):
 		return path.Clean(arg), true
 	case w.here == "":
-		return "", false
+		// Nothing to stand on — the home was not known and no absolute move has
+		// happened yet. The relative tail is still worth keeping: `…/src` says
+		// more than nothing, and the screen labels it as a fragment.
+		return path.Clean(arg), false
 	default:
 		return path.Clean(path.Join(w.here, arg)), true
 	}
@@ -331,6 +375,39 @@ func (w *cdWalker) moveTo(to string) {
 	w.prev, w.here = w.here, to
 	// An absolute answer puts the replay back on solid ground.
 	w.certain = true
+}
+
+// tryRelative moves by an operand resolved against the current directory,
+// falling back to the same move from home when the server says the first answer
+// is not a real directory. See ReplayCdChecked for why home is the fallback.
+func (w *cdWalker) tryRelative(arg string) {
+	to, ok := w.resolve(arg)
+	if !ok {
+		if to != "" {
+			// An unanchored fragment. Kept, never trusted, and never checked
+			// against the server — there is no path to check.
+			w.here = to
+		}
+		w.certain = false
+		return
+	}
+	if w.exists == nil || w.exists(to) {
+		w.moveTo(to)
+		return
+	}
+	if w.home != "" {
+		if restart := path.Clean(path.Join(w.home, arg)); w.exists(restart) {
+			// A new shell, started at home. The stitch is the file's, not the
+			// user's, and unpicking it here is what keeps the tree from growing
+			// levels nobody ever stood in.
+			w.prev, w.here = w.here, restart
+			w.certain = true
+			return
+		}
+	}
+	// Neither is there. Something moved that this cannot follow — a `cd` into a
+	// directory since deleted, or a seam this rule does not cover.
+	w.certain = false
 }
 
 // bashStamp reads a `#<epoch>` line.
