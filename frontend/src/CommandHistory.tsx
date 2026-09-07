@@ -52,6 +52,9 @@ const RANGES: { id: HistoryRange; label: string }[] = [
 
 type HistoryRange = '24h' | '7d' | 'max'
 
+/** Indent per level. The same 14px the file tree uses, so the two read alike. */
+const INDENT = 14
+
 /** The oldest instant a range admits, or 0 for "no window". */
 function cutoffOf(range: HistoryRange): number {
   if (range === 'max') return 0
@@ -418,32 +421,36 @@ function TreeRow({
 
   return (
     <div className="history-node">
-      <div
+      {/* The whole row, not a 10px triangle. Picking a directory and opening it
+          are the same intent — "show me this one" — and asking for a separate
+          click on a glyph that small is asking twice. A second click closes it,
+          which is what every file tree does. */}
+      <button
         className="history-dir"
         data-picked={picked === node.path || undefined}
         data-here={here === node.path || undefined}
-        style={{ paddingLeft: 8 + node.depth * 12 }}
+        data-leaf={!hasKids || undefined}
+        data-open={expanded || undefined}
+        title={node.path}
+        aria-expanded={hasKids ? expanded : undefined}
+        onClick={() => {
+          onPick(node.path)
+          if (hasKids) onToggle(node.path)
+        }}
+        style={{
+          paddingLeft: 6 + node.depth * INDENT,
+          // One rule per level of ancestry, drawn in the indent. Without them a
+          // row three levels down is just a row that starts further right.
+          backgroundSize: `${node.depth * INDENT}px 100%`,
+        }}
       >
-        <button
-          className="history-twisty"
-          disabled={!hasKids}
-          onClick={() => onToggle(node.path)}
-          aria-label={expanded ? t('접기') : t('펼치기')}
-        >
-          {hasKids ? (expanded ? '▾' : '▸') : '·'}
-        </button>
-        <button className="history-dir-name" onClick={() => onPick(node.path)}>
-          <span
-            className="mono ellipsis"
-            data-guess={!node.certain || undefined}
-            title={node.path}
-          >
-            {node.label}
-            {!node.certain && <span className="history-guess">?</span>}
-          </span>
-        </button>
+        <span className="history-twisty">{hasKids ? (expanded ? '▾' : '▸') : ''}</span>
+        <span className="mono ellipsis history-dir-name" data-guess={!node.certain || undefined}>
+          {node.label}
+          {!node.certain && <span className="history-guess">?</span>}
+        </span>
         <span className="muted small history-count">{node.total}</span>
-      </div>
+      </button>
 
       {expanded &&
         node.children.map((c) => (

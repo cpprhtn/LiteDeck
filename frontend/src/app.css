@@ -2316,17 +2316,43 @@ button.danger {
 }
 .history-dir {
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--sp-1);
+  width: 100%;
+  border: 0;
+  border-radius: 0;
   padding-right: var(--sp-3);
+  color: inherit;
+  font: inherit;
   font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+  /* One rule at the left edge of every ancestor level; `background-size` is set
+     per row to depth × 14px, so each row draws exactly as many as it has
+     parents and the pattern stops where its own name begins. Same idiom as the
+     file tree, so the two read alike. */
+  background-color: transparent;
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--tree-guide) 0 1px,
+    transparent 1px 14px
+  );
+  background-repeat: no-repeat;
+  background-position: left center;
 }
 .history-dir:hover {
-  background: var(--bg-hover);
+  background-color: var(--bg-hover);
 }
 .history-dir[data-picked] {
-  background: var(--accent-soft, var(--bg-hover));
+  background-color: var(--bg-selected);
+}
+/* A directory nothing was recorded below: the tree ends here. Marked in the
+   twisty column only — greying the name as well said "less important", and a
+   leaf is often exactly where the work happened. */
+.history-dir[data-leaf] .history-twisty::before {
+  content: '─';
+  color: var(--fg-faint);
 }
 /* Where the terminal is standing. Marked, not filtered — the point is to find
    it at a glance, not to hide everywhere else. */
@@ -2337,25 +2363,20 @@ button.danger {
   padding-right: 4px;
 }
 .history-twisty {
-  background: none;
-  border: 0;
-  padding: 0;
-  color: var(--fg-faint);
-  cursor: pointer;
-  font-size: 10px;
+  text-align: center;
+  color: var(--fg-muted);
+  /* Bigger than the file tree's 9px. There the twisty is one of several marks
+     on a row and the icon carries the meaning; here it is the only thing
+     saying whether anything is underneath. */
+  font-size: 12px;
+  line-height: 1;
+  user-select: none;
 }
-.history-twisty:disabled {
-  cursor: default;
-  opacity: 0.4;
+.history-dir:hover .history-twisty {
+  color: var(--fg);
 }
 .history-dir-name {
-  background: none;
-  border: 0;
-  padding: 3px 0;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
+  padding: 4px 0;
   min-width: 0;
   display: flex;
   align-items: center;
