@@ -410,3 +410,66 @@ func TestSubnetClustersAreFoundOnlyByGrouping(t *testing.T) {
 		t.Errorf("%+v", got[0])
 	}
 }
+
+// The ban log, which is the only place two things live: when bans happened,
+// and how many distinct addresses they landed on.
+//
+// The second is what makes a repeat rate mean anything. `fail2ban-client
+// status` gives the total and how many are banned right now, and dividing by
+// the second produced 143 on a server whose real figure was about four.
+func TestParseBanLogCountsDistinctAddresses(t *testing.T) {
+	h := ParseBanLog(golden(t, "ubuntu-24.04-fail2ban-bans.txt"))
+	if len(h.Bans) != 10 {
+		t.Fatalf("밴 %d건, 기대 10건 — Unban 은 빼야 한다", len(h.Bans))
+	}
+	if h.Unique != 5 {
+		t.Errorf("고유 주소 %d개, 기대 5개", h.Unique)
+	}
+	// Newest first: the screen reads downward from now.
+	if h.Bans[0].Address != "201.81.240.158" {
+		t.Errorf("첫 줄이 %+v — 최신이 위여야 한다", h.Bans[0])
+	}
+	if h.Bans[0].At.Format("2006-01-02 15:04") != "2026-09-08 23:15" {
+		t.Errorf("시각 %v", h.Bans[0].At)
+	}
+	// Ten bans across five addresses. This is the number the screen could not
+	// say before, and the reason 30분 was the right answer for bantime.
+	if got := h.Repeats(); got != 2 {
+		t.Errorf("재범률 %v, 기대 2", got)
+	}
+}
+
+func TestParseBanLogOnAnEmptyOrRotatedFile(t *testing.T) {
+	h := ParseBanLog("")
+	if len(h.Bans) != 0 || h.Unique != 0 || h.Repeats() != 0 {
+		t.Errorf("빈 로그에서 값이 나왔다: %+v", h)
+	}
+}
+
+// Failures over time, bucketed on the server.
+//
+// The point of the chart is whether a block worked, which is a shape and not a
+// total. Counting on the server keeps twenty thousand lines off the wire — the
+// screen wants twenty-four numbers.
+func TestParseFailureBuckets(t *testing.T) {
+	got := ParseFailureBuckets("2026-09-08 20 931\n2026-09-08 21 402\n2026-09-08 22 12\n")
+	if len(got) != 3 {
+		t.Fatalf("구간 %d개, 기대 3개", len(got))
+	}
+	if got[0].Count != 931 || got[2].Count != 12 {
+		t.Errorf("%+v", got)
+	}
+	if got[0].At.Hour() != 20 {
+		t.Errorf("시각 %v", got[0].At)
+	}
+	// Oldest first: a chart is read left to right.
+	if !got[0].At.Before(got[2].At) {
+		t.Error("오래된 것이 먼저여야 한다")
+	}
+}
+
+func TestParseFailureBucketsIgnoresRubbish(t *testing.T) {
+	if got := ParseFailureBuckets("-- No entries --\n\nnonsense\n"); len(got) != 0 {
+		t.Errorf("쓰레기에서 구간이 나왔다: %+v", got)
+	}
+}

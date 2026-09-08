@@ -10,7 +10,8 @@ import {
   type FirewallRule,
   type Listener,
   type Login,
-  type NftCounter,
+  type Ban,
+  type FailureBucket,
   type NftSet,
   type SecurityUnit,
   type SecurityView as View,
@@ -113,7 +114,13 @@ export function SecurityView({
       ? 'iptables'
       : ''
   const dropCounters = (view.counters ?? []).filter((c) => c.packets > 0)
-  const dropped = dropCounters.reduce((n, c) => n + c.packets, 0)
+  const dropped = view.dropped || dropCounters.reduce((n, c) => n + c.packets, 0)
+  // Bans divided by the addresses they landed on. Computed from the ban log,
+  // which is the only place the second number exists — dividing by the count
+  // banned right now once turned ten bans on five addresses into 143.
+  const bans = view.banHistory
+    ? { ...view.banHistory, repeats: view.banHistory.bans.length / view.banHistory.unique }
+    : null
   const lastLogin = logins.find((l) => !l.boot)
   const news = logins.filter((l) => !l.boot && l.from && fresh.has(l.from))
 
@@ -193,7 +200,13 @@ export function SecurityView({
           <Panel
             label={t('버린 패킷')}
             value={dropped > 0 ? dropped.toLocaleString() : '—'}
-            sub={dropCounters.map((c) => `${c.table} ${c.verdict}`)}
+            sub={[
+              // The rise is what says it is still happening. A total says it
+              // happened at some point, which a switched-off rule also does.
+              view.droppedSince
+                ? t('마지막으로 본 뒤 +{n}', { n: view.droppedSince.toLocaleString() })
+                : dropCounters.map((c) => `${c.table} ${c.verdict}`).join(' · '),
+            ].filter(Boolean)}
           />
           <Panel
             label={t('최근 접속')}
@@ -206,6 +219,14 @@ export function SecurityView({
                 : undefined
             }
           />
+          {bans && bans.unique > 0 && (
+            <Panel
+              label={t('재범률')}
+              value={bans.repeats.toFixed(1)}
+              warn={bans.repeats >= 3}
+              sub={[t('{n}회를 {u}개 주소에', { n: bans.bans.length, u: bans.unique })]}
+            />
+          )}
           <Panel
             label={t('누적 실패')}
             value={jail ? jail.totalFailed.toLocaleString() : '—'}
@@ -234,8 +255,27 @@ export function SecurityView({
           </section>
         )}
 
+        {view.failures && view.failures.length > 0 && (
+          <section className="panel">
+            <h3>{t('24시간 실패 추이')}</h3>
+            <FailureChart buckets={view.failures} bans={bans?.bans ?? []} />
+          </section>
+        )}
+
         <Logins logins={logins} fresh={fresh} />
         <Blocking view={view} />
+
+        {bans && bans.bans.length > 0 && (
+          <section className="panel">
+            <h3>{t('최근 차단')}</h3>
+            {bans.bans.slice(0, 10).map((b, i) => (
+              <div className="security-ban" key={`${b.at}-${i}`}>
+                <span className="mono">{b.address}</span>
+                <span className="muted small">{new Date(b.at).toLocaleString()}</span>
+              </div>
+            ))}
+          </section>
+        )}
 
         <section className="panel security-detail">
           <h3>{t('규칙')}</h3>
@@ -272,6 +312,51 @@ function seconds(v: string): string {
   if (n % 3600 === 0) return t('{n}시간', { n: n / 3600 })
   if (n % 60 === 0) return t('{n}분', { n: n / 60 })
   return v
+}
+
+/** Failures over a day, with the moments a ban went on marked underneath.
+ *
+ *  The bars alone can mislead: an address blocked an hour ago still fills the
+ *  bars from before that, which reads as "not handled". The ban marks are what
+ *  turn a tall bar into a story — one that falls after a mark is the block
+ *  working, and one that does not is somebody the block did not cover. */
+function FailureChart({ buckets, bans }: { buckets: FailureBucket[]; bans: Ban[] }) {
+  const peak = Math.max(...buckets.map((b) => b.count), 1)
+  const from = new Date(buckets[0].at).getTime()
+  const to = new Date(buckets[buckets.length - 1].at).getTime() + 3_600_000
+  const span = Math.max(to - from, 1)
+
+  return (
+    <div className="security-chart">
+      <div className="security-bars">
+        {buckets.map((b) => (
+          <div
+            key={b.at}
+            className="security-bar"
+            style={{ height: `${Math.max((b.count / peak) * 100, 2)}%` }}
+            title={`${new Date(b.at).toLocaleString()} · ${b.count}`}
+          />
+        ))}
+        {bans.map((b, i) => {
+          const at = new Date(b.at).getTime()
+          if (at < from || at > to) return null
+          return (
+            <span
+              key={`${b.at}-${i}`}
+              className="security-banmark"
+              style={{ left: `${((at - from) / span) * 100}%` }}
+              title={`${t('차단')} ${b.address} · ${new Date(b.at).toLocaleString()}`}
+            />
+          )
+        })}
+      </div>
+      <div className="security-axis muted small">
+        <span>{new Date(buckets[0].at).toLocaleTimeString()}</span>
+        <span>{t('최대 {n}', { n: peak.toLocaleString() })}</span>
+        <span>{t('지금')}</span>
+      </div>
+    </div>
+  )
 }
 
 /** Who actually got in, and which of them came from somewhere new.

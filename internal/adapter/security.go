@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Reading what is guarding the server (T-35).
@@ -947,4 +948,126 @@ func SubnetClusters(attackers []Attacker, min int) []SubnetCluster {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Count > out[j].Count })
 	return out
+}
+
+// Ban is one address fail2ban put away, and when.
+type Ban struct {
+	At      time.Time `json:"at"`
+	Address string    `json:"address"`
+}
+
+// BanHistory is the recent bans and what they add up to.
+type BanHistory struct {
+	// Bans is newest first — the screen reads downward from now.
+	Bans []Ban `json:"bans"`
+	// Unique is how many distinct addresses those bans landed on. It is the
+	// number `fail2ban-client status` does not report and the only honest
+	// denominator for a repeat rate.
+	Unique int `json:"unique"`
+}
+
+// Repeats is bans divided by the addresses they landed on.
+//
+// A high number means the ban lifts before whoever it landed on gives up, so
+// they come back and are banned again — a `bantime` that is too short, said in
+// a way the screen can act on. Measured across three servers at about 4.6, and
+// raising bantime from one minute to thirty was the answer.
+//
+// This is the calculation that was got wrong once: dividing by the addresses
+// banned *right now* turned ten bans on five addresses into a rate of 143.
+func (h BanHistory) Repeats() float64 {
+	if h.Unique == 0 {
+		return 0
+	}
+	return float64(len(h.Bans)) / float64(h.Unique)
+}
+
+// ParseBanLog reads fail2ban's log for its Ban lines.
+//
+// Unban lines are left out on purpose: this counts what happened, and a ban
+// that has since lifted still happened. Counting both would make the busiest
+// server look like the quietest.
+func ParseBanLog(text string) BanHistory {
+	var h BanHistory
+	seen := map[string]bool{}
+
+	for _, line := range strings.Split(text, "\n") {
+		// "... NOTICE  [sshd] Ban 1.2.3.4". The bracketed jail sits between the
+		// timestamp and the verb, so the verb is found rather than positioned.
+		idx := strings.Index(line, "] Ban ")
+		if idx < 0 {
+			continue
+		}
+		addr := strings.TrimSpace(line[idx+len("] Ban "):])
+		if net.ParseIP(addr) == nil {
+			continue
+		}
+		f := strings.Fields(line)
+		if len(f) < 2 {
+			continue
+		}
+		// fail2ban writes milliseconds after a comma, which Go's layout has no
+		// verb for. Cutting it off loses nothing a ban list needs.
+		stamp := f[0] + " " + f[1]
+		if i := strings.IndexByte(stamp, ','); i >= 0 {
+			stamp = stamp[:i]
+		}
+		at, err := time.ParseInLocation("2006-01-02 15:04:05", stamp, time.Local)
+		if err != nil {
+			continue
+		}
+		h.Bans = append(h.Bans, Ban{At: at, Address: addr})
+		if !seen[addr] {
+			seen[addr] = true
+			h.Unique++
+		}
+	}
+	// Newest first.
+	sort.SliceStable(h.Bans, func(i, j int) bool { return h.Bans[i].At.After(h.Bans[j].At) })
+	return h
+}
+
+// FailureBucket is how many failed logins fell in one hour.
+type FailureBucket struct {
+	At    time.Time `json:"at"`
+	Count int       `json:"count"`
+}
+
+// FailuresScript counts failed logins per hour over a day.
+//
+// Bucketed on the server. The chart wants twenty-four numbers and the journal
+// holds tens of thousands of lines — on the box this was measured against, over
+// three thousand failures a day. Sending them all to count them here would be
+// sending the haystack to report the number of straws.
+const FailuresScript = `journalctl -t sshd -t sshd-session --since '-24 hours' --no-pager -q -o short-iso 2>/dev/null | awk '
+/Failed password|Invalid user/ {
+  split($1, p, "T")
+  split(p[2], h, ":")
+  key = p[1] " " h[1]
+  n[key]++
+}
+END { for (k in n) print k, n[k] }' | sort
+:`
+
+// ParseFailureBuckets reads "2026-09-08 20 931" lines.
+func ParseFailureBuckets(out string) []FailureBucket {
+	var buckets []FailureBucket
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) != 3 {
+			continue
+		}
+		at, err := time.ParseInLocation("2006-01-02 15", f[0]+" "+f[1], time.Local)
+		if err != nil {
+			continue
+		}
+		n := jailInt(f[2])
+		if n == 0 {
+			continue
+		}
+		buckets = append(buckets, FailureBucket{At: at, Count: n})
+	}
+	// Oldest first: a chart is read left to right.
+	sort.SliceStable(buckets, func(i, j int) bool { return buckets[i].At.Before(buckets[j].At) })
+	return buckets
 }

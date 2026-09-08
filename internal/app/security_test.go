@@ -266,3 +266,30 @@ func TestElevatedScriptReadsUfwAndTheRulesetBoth(t *testing.T) {
 		}
 	}
 }
+
+// The drop counter's rise between two reads, which is what says the blocking is
+// still happening rather than merely configured.
+func TestDropDeltaIsZeroUntilThereIsSomethingToCompare(t *testing.T) {
+	d := newDropCounts()
+	if got := d.since("h", 1, 10_000); got != 0 {
+		t.Errorf("첫 조회에서 %d — 비교할 것이 없으면 0이어야 한다", got)
+	}
+	if got := d.since("h", 1, 11_042); got != 1042 {
+		t.Errorf("증가 %d, 기대 1042", got)
+	}
+	// A reconnect can be a different machine, and its counter is not the
+	// continuation of this one.
+	if got := d.since("h", 2, 500); got != 0 {
+		t.Errorf("다시 연결했는데 %d — 이어서 세면 안 된다", got)
+	}
+	// Reloading the ruleset resets the counter. That is not packets being
+	// un-dropped, and reporting a negative rise would say it was.
+	d.since("h", 2, 900)
+	if got := d.since("h", 2, 3); got != 0 {
+		t.Errorf("카운터가 되감겼는데 %d", got)
+	}
+	d.forget("h")
+	if got := d.since("h", 2, 3); got != 0 {
+		t.Errorf("잊은 뒤인데 %d", got)
+	}
+}

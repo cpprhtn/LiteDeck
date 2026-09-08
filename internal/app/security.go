@@ -86,6 +86,24 @@ type SecurityView struct {
 	// are put together.
 	Attackers []adapter.Attacker      `json:"attackers,omitempty"`
 	Clusters  []adapter.SubnetCluster `json:"clusters,omitempty"`
+	// Bans is the recent ban history, and the only place the distinct-address
+	// count lives — the denominator a repeat rate needs and `fail2ban-client
+	// status` does not report.
+	BanHistory *adapter.BanHistory `json:"banHistory,omitempty"`
+	// Failures is failed logins per hour over a day. A shape, not a total: the
+	// question is whether a block worked, and that is only visible as a line
+	// that falls.
+	Failures []adapter.FailureBucket `json:"failures,omitempty"`
+	// Dropped is packets the firewall threw away, and DroppedSince how many of
+	// them since this person last looked.
+	//
+	// The delta rather than a sparkline. A rate needs samples over time and
+	// this tab does not poll — a firewall does not change between two ticks of
+	// a timer, and adding a timer to draw a line would be paying for the graph
+	// with the thing the graph is about. Two readings a visit apart answer the
+	// question the graph would: is it still dropping.
+	Dropped      int64 `json:"dropped"`
+	DroppedSince int64 `json:"droppedSince,omitempty"`
 	// AttackersAccess is about the journal alone. "Could not read" and "nobody
 	// is knocking" must never arrive as the same screen.
 	AttackersAccess EventAccess `json:"attackersAccess"`
@@ -129,6 +147,46 @@ func firewallVerdict(v SecurityView) string {
 		return VerdictUnknown
 	}
 	return VerdictNone
+}
+
+// dropCounts remembers the last drop total per host, so the next read can say
+// how many packets arrived in between.
+//
+// Not a sample store and not a sparkline. A rate needs readings over time and
+// this tab does not poll — the audit that came before this feature was about
+// exactly that kind of repeat, and a firewall does not change between two ticks
+// of a timer. Two readings a visit apart answer what a graph would: is it still
+// dropping, and roughly how fast.
+type dropCounts struct {
+	mu   sync.Mutex
+	byID map[string]dropEntry
+}
+
+type dropEntry struct {
+	gen   uint64
+	total int64
+}
+
+func newDropCounts() *dropCounts { return &dropCounts{byID: map[string]dropEntry{}} }
+
+// since records a new total and returns the rise since the last one. Zero on
+// the first reading of a connection, and on a counter that went backwards —
+// which means the rules were reloaded, not that packets were un-dropped.
+func (d *dropCounts) since(id string, gen uint64, total int64) int64 {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	prev, ok := d.byID[id]
+	d.byID[id] = dropEntry{gen: gen, total: total}
+	if !ok || prev.gen != gen || total < prev.total {
+		return 0
+	}
+	return total - prev.total
+}
+
+func (d *dropCounts) forget(id string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	delete(d.byID, id)
 }
 
 // sudoUnlock holds a sudo password for the life of one connection.
@@ -232,7 +290,7 @@ func (a *App) HostSecurity(hostID string, elevate bool) (SecurityView, error) {
 		view.RulesError = i18n.T("이 계정에는 sudo 가 없습니다")
 		return view, nil
 	}
-	rules, ruleset, bans, jailOut, err := a.securityRules(ctx, conn, hostID, info)
+	rules, ruleset, bans, jailOut, banLog, err := a.securityRules(ctx, conn, hostID, info)
 	if err != nil {
 		// A refused password is a normal answer. The free half stands.
 		view.RulesError = err.Error()
@@ -266,6 +324,16 @@ func (a *App) HostSecurity(hostID string, elevate bool) (SecurityView, error) {
 		view.Jail = &jail
 		view.Mismatches = adapter.JailMismatches(jailDeclared, jail)
 	}
+	if strings.TrimSpace(banLog) != "" {
+		h := adapter.ParseBanLog(banLog)
+		view.BanHistory = &h
+	}
+	// The delta is what says whether it is still dropping, and it needs the
+	// previous reading — see the field's note on why this is not a sparkline.
+	for _, c := range view.Counters {
+		view.Dropped += c.Packets
+	}
+	view.DroppedSince = a.dropped.since(hostID, a.mgr.Generation(hostID), view.Dropped)
 	return view, nil
 }
 
@@ -287,13 +355,15 @@ echo '#get sshd bantime'
 fail2ban-client get sshd bantime 2>/dev/null
 echo '#status sshd'
 fail2ban-client status sshd 2>/dev/null
+echo '#banlog'
+grep '] Ban ' /var/log/fail2ban.log 2>/dev/null | tail -200
 echo '#end'
 :`
 
 // securityRules reads the parts that need root, in one elevated round trip.
 func (a *App) securityRules(
 	ctx context.Context, conn *sshcore.Conn, hostID string, info ServerInfoView,
-) (rules, ruleset, bans, jail string, err error) {
+) (rules, ruleset, bans, jail, banLog string, err error) {
 	// Compile-time constant, like the free script. `2>&1` because these tools
 	// explain a refusal on stderr and that explanation is the useful part.
 	// ufw's own summary and the kernel ruleset are read separately, not chained.
@@ -315,18 +385,19 @@ func (a *App) securityRules(
 	} else {
 		password, ok := a.unlocked.get(hostID, a.mgr.Generation(hostID))
 		if !ok {
-			return "", "", "", "", i18n.Errorf("잠겨 있습니다")
+			return "", "", "", "", "", i18n.Errorf("잠겨 있습니다")
 		}
 		res, err = conn.ExecOpts(ctx,
 			sshcore.ExecOptions{Stdin: strings.NewReader(password + "\n")},
 			"sudo", "-S", "-p", "", "--", "sh", "-c", script)
 	}
 	if err != nil {
-		return "", "", "", "", err
+		return "", "", "", "", "", err
 	}
 	out := string(res.Stdout)
 	head, rest, _ := strings.Cut(out, "#bans")
-	bansPart, jailPart, _ := strings.Cut(rest, "#get sshd maxretry")
+	bansPart, jailAndLog, _ := strings.Cut(rest, "#get sshd maxretry")
+	jailPart, banLogPart, _ := strings.Cut(jailAndLog, "#banlog")
 	rulesPart, kernelPart, _ := strings.Cut(head, "#ruleset")
 	rules = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(rulesPart), "#rules"))
 	// The kernel side is nft where it answered and iptables where it did not.
@@ -340,7 +411,8 @@ func (a *App) securityRules(
 	// Put the marker back: ParseJailStatus keys off it, and cutting on it is
 	// what found the boundary.
 	jail = strings.TrimSuffix(strings.TrimSpace("#get sshd maxretry"+jailPart), "#end")
-	return rules, ruleset, bans, strings.TrimSpace(jail), nil
+	return rules, ruleset, bans, strings.TrimSpace(jail),
+		strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(banLogPart), "#end")), nil
 }
 
 // readAttackers counts who is knocking, and filters out what is already
@@ -369,6 +441,14 @@ func (a *App) readAttackers(
 	}
 	view.AttackersAccess = EventAccessOK
 	view.rawAttackers = adapter.ParseAttackerCounts(string(res.Stdout))
+
+	// The shape over a day, on the same permission. Bucketed on the server:
+	// the chart wants twenty-four numbers and the journal holds tens of
+	// thousands of lines.
+	if hours, err := a.execMaybeElevated(ctx, conn, hostID, elevate && !info.CanReadJournal,
+		"sh", "-c", adapter.FailuresScript); err == nil {
+		view.Failures = adapter.ParseFailureBuckets(string(hours.Stdout))
+	}
 	// Without the lock the only blocked addresses known are fail2ban's, from
 	// its own status. That is better than nothing and less than the ruleset.
 	view.Attackers = adapter.TopAttackers(view.rawAttackers, blockedFrom(*view), 12)

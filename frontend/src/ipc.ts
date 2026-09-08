@@ -626,6 +626,23 @@ export interface SubnetCluster {
   count: number
 }
 
+export interface Ban {
+  at: string
+  address: string
+}
+
+export interface BanHistory {
+  /** Newest first. */
+  bans: Ban[]
+  /** Distinct addresses those bans landed on — the honest denominator. */
+  unique: number
+}
+
+export interface FailureBucket {
+  at: string
+  count: number
+}
+
 export interface JailStatus {
   maxRetry: number
   findTime: number
@@ -672,6 +689,15 @@ export interface SecurityView {
    *  because a list including handled addresses is one nobody can act on. */
   attackers?: Attacker[]
   clusters?: SubnetCluster[]
+  /** Recent bans, and the distinct-address count a repeat rate needs. */
+  banHistory?: BanHistory
+  /** Failed logins per hour over a day. A shape, not a total. */
+  failures?: FailureBucket[]
+  /** Packets the firewall threw away, and how many since the last read.
+   *  The delta rather than a sparkline: this tab does not poll, and adding a
+   *  timer to draw a line would pay for the graph with the thing it is about. */
+  dropped: number
+  droppedSince?: number
   /** About the journal alone. "Could not read" and "nobody is knocking" must
    *  never arrive as the same screen. */
   attackersAccess: string

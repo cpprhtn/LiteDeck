@@ -3368,3 +3368,55 @@ button.events-unit {
   color: var(--warn);
   margin: var(--sp-1) 0 0;
 }
+
+/* Failures over a day, with the moments a ban went on marked under them.
+   Bars alone mislead — an address blocked an hour ago still fills the bars from
+   before that — so the marks are what turn a tall bar into a story. */
+.security-chart {
+  margin-top: var(--sp-2);
+}
+.security-bars {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 90px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-strong);
+}
+.security-bar {
+  flex: 1;
+  min-width: 3px;
+  background: var(--accent);
+  opacity: 0.7;
+  border-radius: 1px 1px 0 0;
+}
+.security-bar:hover {
+  opacity: 1;
+}
+.security-banmark {
+  position: absolute;
+  bottom: 0;
+  width: 2px;
+  height: 10px;
+  margin-left: -1px;
+  background: var(--warn);
+}
+.security-axis {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 2px;
+}
+/* Its own row rather than the login grid's: an address needs the width a
+   username does not, and reusing that grid cut every ban to "109.160.32…". */
+.security-ban {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+.security-ban:last-of-type {
+  border-bottom: 0;
+}
