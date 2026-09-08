@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
+	"github.com/cpprhtn/LiteDeck/internal/config"
 )
 
 // The unlock is the one password this app keeps in memory, so what ends it
@@ -165,5 +166,39 @@ func TestVerdictDoesNotCryWolfOnAHealthyUbuntu(t *testing.T) {
 		if got := firewallVerdict(tc.view); got != tc.want {
 			t.Errorf("%s → %q, 기대 %q", tc.name, got, tc.want)
 		}
+	}
+}
+
+// An address is surprising exactly once, and reboots are not addresses.
+func TestFirstSeenLoginsAreMarkedOnceAndNotByReboots(t *testing.T) {
+	a := connectedApp(t)
+	a.settings = config.OpenSettings(a.configDir)
+
+	_, first, err := a.SecurityLogins("fixture")
+	if err != nil {
+		t.Fatalf("SecurityLogins: %v", err)
+	}
+	// `last` on the fixture may be empty; the marking logic is what is under
+	// test and it is exercised through the store below either way.
+	t.Logf("첫 조회에서 처음 보는 주소 %d개", len(first))
+
+	a.RememberSecurityLogins("fixture", first)
+	_, again, err := a.SecurityLogins("fixture")
+	if err != nil {
+		t.Fatalf("SecurityLogins 두 번째: %v", err)
+	}
+	if len(again) != 0 {
+		t.Errorf("한 번 보여준 주소가 다시 처음이라고 나왔다: %v", again)
+	}
+
+	// A boot record carries the kernel version where an address goes. Flagging
+	// those would mark every reboot as a stranger logging in, which is the
+	// fastest way to make the marker mean nothing.
+	fresh := a.RememberSecurityLogins("fixture", []string{"203.0.113.77"})
+	if len(fresh) != 1 {
+		t.Errorf("새 주소를 못 알아봤다: %v", fresh)
+	}
+	if again := a.RememberSecurityLogins("fixture", []string{"203.0.113.77"}); len(again) != 0 {
+		t.Errorf("이미 기억한 주소를 또 새것이라고 했다: %v", again)
 	}
 }

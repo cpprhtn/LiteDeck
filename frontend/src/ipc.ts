@@ -595,6 +595,23 @@ export interface KernelFirewall {
   iptablesRefs: number
 }
 
+export interface JailStatus {
+  maxRetry: number
+  findTime: number
+  banTime: number
+  currentlyFailed: number
+  totalFailed: number
+  currentlyBanned: number
+  totalBanned: number
+  banned?: string[]
+}
+
+export interface JailMismatch {
+  key: string
+  declared: string
+  running: string
+}
+
 export interface SecurityView {
   units: SecurityUnit[]
   kernel: KernelFirewall
@@ -612,6 +629,11 @@ export interface SecurityView {
   /** `sudo -n` works, so unlocking costs no password. */
   freeElevation: boolean
   unlocked: boolean
+  /** The sshd jail as fail2ban is running it, and what the file asked for and
+   *  did not get. The second is why the first is read: a screen that only reads
+   *  the file reports an intention as a state, forever. */
+  jail?: JailStatus
+  mismatches?: JailMismatch[]
   /** Parsed where the tool was ufw. Absent for nft and iptables. */
   firewall?: FirewallStatus
   rules?: string
@@ -919,6 +941,8 @@ interface Bindings {
   HostUpdates(id: string): Promise<UpdateStatus>
   HostDigest(id: string): Promise<DigestView>
   HostSecurity(id: string, elevate: boolean): Promise<SecurityView>
+  SecurityLogins(id: string): Promise<[LoginsView, string[]]>
+  RememberSecurityLogins(id: string, addrs: string[]): Promise<string[]>
   UnlockSecurity(id: string): Promise<boolean>
   LockSecurity(id: string): Promise<void>
   TypedEntered(hostID: string, termID: string, line: string, blind: boolean): Promise<void>
@@ -1163,6 +1187,9 @@ export const HostCommandHistory = (id: string, range: string, elevate: boolean) 
 export const HostUpdates = (id: string) => api().HostUpdates(id)
 export const HostDigest = (id: string) => api().HostDigest(id)
 export const HostSecurity = (id: string, elevate: boolean) => api().HostSecurity(id, elevate)
+export const SecurityLogins = (id: string) => api().SecurityLogins(id)
+export const RememberSecurityLogins = (id: string, addrs: string[]) =>
+  api().RememberSecurityLogins(id, addrs)
 export const UnlockSecurity = (id: string) => api().UnlockSecurity(id)
 export const LockSecurity = (id: string) => api().LockSecurity(id)
 export const TypedEntered = (hostID: string, termID: string, line: string, blind: boolean) =>

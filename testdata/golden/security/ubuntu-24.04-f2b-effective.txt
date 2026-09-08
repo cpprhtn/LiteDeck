@@ -1,0 +1,16 @@
+#get sshd maxretry
+5
+#get sshd findtime
+600
+#get sshd bantime
+600
+#status sshd
+Status for the jail: sshd
+|- Filter
+|  |- Currently failed:	2
+|  |- Total failed:	14135
+|  `- File list:	/var/log/auth.log
+`- Actions
+   |- Currently banned:	9
+   |- Total banned:	287
+   `- Banned IP list:	203.0.113.10 203.0.113.11 198.51.100.20

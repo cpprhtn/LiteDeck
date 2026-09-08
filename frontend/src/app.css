@@ -3275,3 +3275,39 @@ button.events-unit {
   padding: 0 3px;
   margin-right: 4px;
 }
+.security-login {
+  display: grid;
+  /* The last column is a fixed width rather than auto: with auto the badge
+     ran off the right edge as soon as the panel was narrow, and the one row
+     that can be urgent is the wrong one to clip. */
+  grid-template-columns: 90px minmax(0, 1fr) auto 92px;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+.security-login:last-of-type {
+  border-bottom: 0;
+}
+.security-login-user {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.security-login > :last-child {
+  text-align: right;
+  white-space: nowrap;
+}
+/* An address this person has not seen succeed here before. The only row in
+   this tab that can be urgent, so it is the only one with a background. */
+.security-login[data-new] {
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+}
+.security-mismatch {
+  border-left: 2px solid var(--warn);
+  padding-left: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+.security-mismatch p {
+  margin: 2px 0;
+}

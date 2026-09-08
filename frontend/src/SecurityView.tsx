@@ -3,9 +3,12 @@ import {
   HostNetwork,
   HostSecurity,
   LockSecurity,
+  RememberSecurityLogins,
+  SecurityLogins,
   UnlockSecurity,
   type FirewallRule,
   type Listener,
+  type Login,
   type SecurityUnit,
   type SecurityView as View,
 } from './ipc'
@@ -47,6 +50,8 @@ export function SecurityView({
 }) {
   const [view, setView] = useState<View | null>(null)
   const [listening, setListening] = useState<Listener[]>([])
+  const [logins, setLogins] = useState<Login[]>([])
+  const [fresh, setFresh] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(
@@ -57,12 +62,21 @@ export function SecurityView({
         // read of `ss` from inside the security script: two reads of the same
         // thing can disagree, and a security screen disagreeing with the
         // network screen about which ports are open is worse than a round trip.
-        const [sec, net] = await Promise.all([
+        const [sec, net, who] = await Promise.all([
           HostSecurity(hostID, elevate),
           HostNetwork(hostID).catch(() => null),
+          SecurityLogins(hostID).catch(() => null),
         ])
         setView(sec)
         setListening(net?.listeners ?? [])
+        if (who) {
+          const [view, unseen] = who
+          setLogins(view.logins ?? [])
+          setFresh(new Set(unseen ?? []))
+          // Marked only now, after the list is on screen. Doing it inside the
+          // read would spend the surprise before anybody had it.
+          if (unseen?.length) void RememberSecurityLogins(hostID, unseen).catch(() => {})
+        }
       } catch (e) {
         onError(String(e))
       } finally {
@@ -126,6 +140,8 @@ export function SecurityView({
       </div>
 
       <div className="security-body">
+        <Logins logins={logins} fresh={fresh} />
+
         <section className="panel">
           <h3>{t('방화벽')}</h3>
           <FirewallSummary view={view} />
@@ -143,6 +159,19 @@ export function SecurityView({
 
         <section className="panel">
           <h3>fail2ban</h3>
+          {view.mismatches && view.mismatches.length > 0 && (
+            <div className="security-mismatch">
+              <p className="small">
+                {t('설정 파일과 실제로 도는 값이 다릅니다 — fail2ban 을 다시 시작해야 파일이 읽힙니다.')}
+              </p>
+              {view.mismatches.map((m) => (
+                <p key={m.key} className="mono small">
+                  {m.key}: {t('설정값')} <b>{m.declared}</b> · {t('실제 동작')}{' '}
+                  <b>{m.key === 'maxretry' ? m.running : `${m.running} (${seconds(m.running)})`}</b>
+                </p>
+              ))}
+            </div>
+          )}
           {f2b ? (
             <ToolRow unit={f2b} />
           ) : (
@@ -181,6 +210,62 @@ export function SecurityView({
         </section>
       </div>
     </div>
+  )
+}
+
+/** fail2ban reports its durations in seconds and the file is written in its own
+ *  syntax, so the two halves of a mismatch read as different kinds of thing.
+ *  Spelling the seconds out is what makes `1d` against `600` legible as the
+ *  disagreement it is. */
+function seconds(v: string): string {
+  const n = Number(v)
+  if (!Number.isFinite(n) || n < 60) return v
+  if (n % 86400 === 0) return t('{n}일', { n: n / 86400 })
+  if (n % 3600 === 0) return t('{n}시간', { n: n / 3600 })
+  if (n % 60 === 0) return t('{n}분', { n: n / 60 })
+  return v
+}
+
+/** Who actually got in, and which of them came from somewhere new.
+ *
+ *  First on the screen, because it is the only thing here that can be urgent.
+ *  Failed passwords arrive by the thousand on any box facing the internet — two
+ *  to twenty thousand a day on the servers this was built against — and mean
+ *  nothing on their own. One success from an address nobody recognises means
+ *  something whatever the failure count says.
+ *
+ *  Reboots are left out. `last` puts the kernel version where the address goes
+ *  on those rows, and marking them would flag every restart as a stranger. */
+function Logins({ logins, fresh }: { logins: Login[]; fresh: Set<string> }) {
+  const rows = logins.filter((l) => !l.boot).slice(0, 8)
+  const news = rows.filter((l) => l.from && fresh.has(l.from))
+
+  return (
+    <section className="panel">
+      <h3>{t('최근 접속 성공')}</h3>
+      {news.length > 0 && (
+        <p className="security-warn small">
+          {t('처음 보는 주소에서 접속에 성공한 기록이 {n}건 있습니다.', { n: news.length })}
+        </p>
+      )}
+      {rows.length === 0 && <p className="muted small">{t('기록이 없습니다.')}</p>}
+      {rows.map((l, i) => (
+        <div className="security-login" key={`${l.at}-${i}`} data-new={l.from && fresh.has(l.from) ? true : undefined}>
+          <span className="mono security-login-user">{l.user}</span>
+          <span className="mono small">{l.from || t('콘솔')}</span>
+          <span className="muted small">{new Date(l.at).toLocaleString()}</span>
+          <span className="small">
+            {l.from && fresh.has(l.from) ? (
+              <span className="security-warn">{t('처음 보는 주소')}</span>
+            ) : l.open ? (
+              t('접속 중')
+            ) : (
+              ''
+            )}
+          </span>
+        </div>
+      ))}
+    </section>
   )
 }
 

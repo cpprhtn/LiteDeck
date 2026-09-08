@@ -190,6 +190,37 @@ func ParseUfwConf(text string) (on bool, found bool) {
 	return on, found
 }
 
+// ParseJailDeclared reads the settings a config file asks for, merging the
+// DEFAULT block with the named jail's own — which is how fail2ban reads it.
+//
+// Only what the file says. What the daemon is running comes from
+// `fail2ban-client get`, and the gap between the two is the point (JailStatus).
+func ParseJailDeclared(text, jail string) map[string]string {
+	out := map[string]string{}
+	section := ""
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+			continue
+		}
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			section = strings.TrimSpace(line[1 : len(line)-1])
+			continue
+		}
+		// DEFAULT first, then the jail's own block overriding it — the order
+		// the file is read in, so a later value wins by being written later.
+		if !strings.EqualFold(section, "DEFAULT") && !strings.EqualFold(section, jail) {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		out[strings.ToLower(strings.TrimSpace(key))] = strings.TrimSpace(value)
+	}
+	return out
+}
+
 // ParseFail2banJails names the jails a config file switches on.
 //
 // What the file declares, not what fail2ban is running — the effective set
@@ -447,4 +478,175 @@ func ParseFirewallModules(text string) KernelFirewall {
 		}
 	}
 	return k
+}
+
+// JailStatus is a fail2ban jail as the daemon is actually running it.
+//
+// # Why the file is not enough
+//
+// `apt install fail2ban` starts the service, so a later `systemctl enable --now`
+// changes nothing that is already running. The daemon goes on with whatever it
+// read at install time, and the file somebody edited afterwards describes an
+// intention rather than a state. Measured on a real server: jail.local said
+// twenty retries and the jail was doing five.
+//
+// A screen that reads only the file reports that intention as fact, and reports
+// it forever — there is no later moment at which it notices. This is the same
+// shape as the unit-versus-ufw.conf disagreement, one layer up.
+type JailStatus struct {
+	// Effective settings, as `fail2ban-client get` reports them. Seconds for
+	// the two durations, which is the only unit that command uses.
+	MaxRetry int `json:"maxRetry"`
+	FindTime int `json:"findTime"`
+	BanTime  int `json:"banTime"`
+
+	CurrentlyFailed int `json:"currentlyFailed"`
+	TotalFailed     int `json:"totalFailed"`
+	CurrentlyBanned int `json:"currentlyBanned"`
+	TotalBanned     int `json:"totalBanned"`
+	// Banned is who is in the jail right now.
+	Banned []string `json:"banned,omitempty"`
+}
+
+// Repeats is bans divided by the addresses they landed on.
+//
+// A high number means the ban expires before whoever it landed on gives up, so
+// they come back and are banned again — which is a `bantime` that is too short,
+// said in a way the screen can act on. Measured across three servers it ran at
+// about 4.6, and raising bantime from one minute to thirty was the answer.
+func (j JailStatus) Repeats(uniqueAddresses int) float64 {
+	if uniqueAddresses <= 0 {
+		return 0
+	}
+	return float64(j.TotalBanned) / float64(uniqueAddresses)
+}
+
+// ParseJailStatus reads the marked output of the elevated fail2ban reads.
+func ParseJailStatus(out string) JailStatus {
+	var j JailStatus
+	section := ""
+	for _, line := range strings.Split(out, "\n") {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "#") {
+			section = t
+			continue
+		}
+		if t == "" {
+			continue
+		}
+		switch section {
+		case "#get sshd maxretry":
+			j.MaxRetry = jailInt(t)
+		case "#get sshd findtime":
+			j.FindTime = jailInt(t)
+		case "#get sshd bantime":
+			j.BanTime = jailInt(t)
+		case "#status sshd":
+			parseJailStatusLine(t, &j)
+		}
+	}
+	return j
+}
+
+// parseJailStatusLine reads one row of `fail2ban-client status`, which draws a
+// tree with box characters and separates label from value with a tab.
+func parseJailStatusLine(line string, j *JailStatus) {
+	body := strings.TrimLeft(line, "|`- \t")
+	label, value, ok := strings.Cut(body, ":")
+	if !ok {
+		return
+	}
+	label = strings.TrimSpace(label)
+	value = strings.TrimSpace(value)
+	switch label {
+	case "Currently failed":
+		j.CurrentlyFailed = jailInt(value)
+	case "Total failed":
+		j.TotalFailed = jailInt(value)
+	case "Currently banned":
+		j.CurrentlyBanned = jailInt(value)
+	case "Total banned":
+		j.TotalBanned = jailInt(value)
+	case "Banned IP list":
+		j.Banned = strings.Fields(value)
+	}
+}
+
+// jailInt reads a number, treating anything unreadable as zero — which callers
+// take as "do not compare" rather than as the value nought.
+func jailInt(s string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+// JailMismatch is one setting the file and the daemon disagree about.
+type JailMismatch struct {
+	Key      string `json:"key"`
+	Declared string `json:"declared"`
+	Running  string `json:"running"`
+}
+
+// JailMismatches compares what the file asked for against what is running.
+//
+// Values are compared after being reduced to the same unit, because `30m` and
+// `1800` are the same instruction — reporting those as a disagreement would
+// teach people to ignore this line, which is the one line here worth reading.
+func JailMismatches(declared map[string]string, running JailStatus) []JailMismatch {
+	var out []JailMismatch
+	for _, c := range []struct {
+		key     string
+		running int
+		seconds bool
+	}{
+		{"maxretry", running.MaxRetry, false},
+		{"findtime", running.FindTime, true},
+		{"bantime", running.BanTime, true},
+	} {
+		want, ok := declared[c.key]
+		if !ok || strings.TrimSpace(want) == "" {
+			// Not declared: the daemon's default applies and there is nothing
+			// to disagree with.
+			continue
+		}
+		var wantN int
+		if c.seconds {
+			wantN = ParseFail2banDuration(want)
+		} else {
+			wantN = jailInt(want)
+		}
+		if wantN == 0 || wantN == c.running {
+			continue
+		}
+		out = append(out, JailMismatch{
+			Key: c.key, Declared: strings.TrimSpace(want), Running: strconv.Itoa(c.running),
+		})
+	}
+	return out
+}
+
+// ParseFail2banDuration reads fail2ban's time syntax into seconds.
+//
+// It accepts bare numbers as seconds and a suffix otherwise. Returns 0 for
+// anything it cannot read, which callers treat as "do not compare" rather than
+// as zero seconds — guessing would report a disagreement that is really a
+// parser gap.
+func ParseFail2banDuration(v string) int {
+	v = strings.TrimSpace(strings.ToLower(v))
+	if v == "" {
+		return 0
+	}
+	unit := map[byte]int{'s': 1, 'm': 60, 'h': 3600, 'd': 86400, 'w': 604800, 'y': 31536000}
+	last := v[len(v)-1]
+	mult, suffixed := unit[last]
+	if !suffixed {
+		return jailInt(v)
+	}
+	n := jailInt(v[:len(v)-1])
+	if n == 0 {
+		return 0
+	}
+	return n * mult
 }

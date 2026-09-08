@@ -46,6 +46,19 @@ type Settings struct {
 	// shell history is the densest credential file on a server, and reading one
 	// is a different decision from opening a terminal on the same box.
 	ShellHistory map[string]bool `json:"shellHistory,omitempty"`
+
+	// KnownLogins lists the addresses this person has already seen succeed on a
+	// host, by host ID.
+	//
+	// The security tab marks a successful login from anywhere else. That is the
+	// one line on the screen that can be urgent: failed passwords arrive by the
+	// thousand and mean nothing on their own, and a success from an address
+	// nobody recognises means something whatever the failure count says.
+	//
+	// Local for the same reason LastSeen is. "Addresses I recognise" is a fact
+	// about this person — the colleague who logs in from another country is not
+	// a surprise to themselves — and one shared list would be wrong for both.
+	KnownLogins map[string][]string `json:"knownLogins,omitempty"`
 }
 
 // MCPSettings is the AI integration (§4 of the MCP design note).
@@ -159,6 +172,47 @@ func (s *SettingsStore) SetLastSeen(hostID string, at int64) error {
 	s.settings.LastSeen[hostID] = at
 	s.mu.Unlock()
 	return s.save()
+}
+
+// RememberLogins adds addresses to a host's known set and reports which of them
+// were new.
+//
+// Called when the security tab has shown them, not when they are read: the mark
+// exists so an address is surprising exactly once, and moving it before anybody
+// looked would consume the surprise.
+func (s *SettingsStore) RememberLogins(hostID string, addrs []string) []string {
+	s.mu.Lock()
+	if s.settings.KnownLogins == nil {
+		s.settings.KnownLogins = map[string][]string{}
+	}
+	known := map[string]bool{}
+	for _, a := range s.settings.KnownLogins[hostID] {
+		known[a] = true
+	}
+	var fresh []string
+	for _, a := range addrs {
+		if a == "" || known[a] {
+			continue
+		}
+		known[a] = true
+		fresh = append(fresh, a)
+		s.settings.KnownLogins[hostID] = append(s.settings.KnownLogins[hostID], a)
+	}
+	s.mu.Unlock()
+	if len(fresh) == 0 {
+		return nil
+	}
+	// A failed write costs the mark, not the answer: the addresses are still
+	// reported as new this time, and asked about again next time.
+	_ = s.save()
+	return fresh
+}
+
+// KnownLogins is the addresses already seen succeeding on a host.
+func (s *SettingsStore) KnownLogins(hostID string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.settings.KnownLogins[hostID]...)
 }
 
 // SetShellHistory turns the shell history on or off for one host.

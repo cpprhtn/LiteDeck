@@ -250,3 +250,48 @@ func TestLoadedButUnusedIsNotInUse(t *testing.T) {
 		t.Error("참조가 0인데 쓰인다고 했다")
 	}
 }
+
+// The jail as fail2ban is actually running it, against the file that was meant
+// to configure it.
+//
+// This is the failure a config reader cannot see. `apt install` starts the
+// service, so a later `enable --now` changes nothing and the daemon goes on
+// running whatever it read first — the file said 20 retries and the jail was
+// doing 5. Reading only the file reports the intent as if it were the state.
+func TestJailStatusReadsWhatIsRunning(t *testing.T) {
+	j := ParseJailStatus(golden(t, "ubuntu-24.04-f2b-effective.txt"))
+	if j.MaxRetry != 5 || j.FindTime != 600 || j.BanTime != 600 {
+		t.Errorf("유효값 %+v, 기대 5/600/600", j)
+	}
+	if j.CurrentlyBanned != 9 || j.TotalBanned != 287 {
+		t.Errorf("밴 %d/%d, 기대 9/287", j.CurrentlyBanned, j.TotalBanned)
+	}
+	if j.TotalFailed != 14135 {
+		t.Errorf("누적 실패 %d, 기대 14135", j.TotalFailed)
+	}
+	if len(j.Banned) != 3 || j.Banned[0] != "203.0.113.10" {
+		t.Errorf("차단 목록 %v", j.Banned)
+	}
+}
+
+// The declared value and the running one, side by side.
+func TestJailMismatchIsFoundOnlyByComparing(t *testing.T) {
+	running := JailStatus{MaxRetry: 5, FindTime: 600, BanTime: 600}
+	declared := map[string]string{"maxretry": "20", "findtime": "1d", "bantime": "30m"}
+
+	got := JailMismatches(declared, running)
+	if len(got) != 3 {
+		t.Fatalf("불일치 %d건, 기대 3건: %+v", len(got), got)
+	}
+	if got[0].Key != "maxretry" || got[0].Declared != "20" || got[0].Running != "5" {
+		t.Errorf("%+v", got[0])
+	}
+
+	// Same value written differently is not a mismatch. 30m and 1800 are the
+	// same instruction, and reporting them as a disagreement would teach people
+	// to ignore this line.
+	agreeing := map[string]string{"maxretry": "5", "findtime": "10m", "bantime": "600"}
+	if got := JailMismatches(agreeing, running); len(got) != 0 {
+		t.Errorf("같은 값인데 %d건 불일치라고 했다: %+v", len(got), got)
+	}
+}

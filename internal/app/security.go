@@ -69,6 +69,12 @@ type SecurityView struct {
 	Firewall *adapter.FirewallStatus `json:"firewall,omitempty"`
 	Rules    string                  `json:"rules,omitempty"`
 	Bans     string                  `json:"bans,omitempty"`
+	// Jail is the sshd jail as fail2ban is running it, and Mismatches what the
+	// file asked for and did not get. The second one is the reason the first is
+	// read: a screen that only reads the file reports an intention as a state,
+	// and goes on doing it forever.
+	Jail       *adapter.JailStatus    `json:"jail,omitempty"`
+	Mismatches []adapter.JailMismatch `json:"mismatches,omitempty"`
 	// RulesError says why the elevated read did not happen, when it did not.
 	RulesError string `json:"rulesError,omitempty"`
 }
@@ -190,6 +196,9 @@ func (a *App) HostSecurity(hostID string, elevate bool) (SecurityView, error) {
 	}
 	view.Kernel = adapter.ParseFirewallModules(modules)
 	view.Verdict = firewallVerdict(view)
+	// Kept for the comparison below, which only happens when the lock is open.
+	// The file is free to read; what it was supposed to configure is not.
+	jailDeclared := adapter.ParseJailDeclared(jails, "sshd")
 
 	if !elevate {
 		return view, nil
@@ -198,7 +207,7 @@ func (a *App) HostSecurity(hostID string, elevate bool) (SecurityView, error) {
 		view.RulesError = i18n.T("이 계정에는 sudo 가 없습니다")
 		return view, nil
 	}
-	rules, bans, err := a.securityRules(ctx, conn, hostID, info)
+	rules, bans, jailOut, err := a.securityRules(ctx, conn, hostID, info)
 	if err != nil {
 		// A refused password is a normal answer. The free half stands.
 		view.RulesError = err.Error()
@@ -214,19 +223,32 @@ func (a *App) HostSecurity(hostID string, elevate bool) (SecurityView, error) {
 		parsed := adapter.ParseUfwStatus(rules)
 		view.Firewall = &parsed
 	}
+	if strings.Contains(jailOut, "Status for the jail") {
+		jail := adapter.ParseJailStatus(jailOut)
+		view.Jail = &jail
+		view.Mismatches = adapter.JailMismatches(jailDeclared, jail)
+	}
 	return view, nil
 }
 
 // securityRules reads the parts that need root, in one elevated round trip.
 func (a *App) securityRules(
 	ctx context.Context, conn *sshcore.Conn, hostID string, info ServerInfoView,
-) (rules, bans string, err error) {
+) (rules, bans, jail string, err error) {
 	// Compile-time constant, like the free script. `2>&1` because these tools
 	// explain a refusal on stderr and that explanation is the useful part.
 	const script = `echo '#rules'
 ufw status verbose 2>&1 || nft list ruleset 2>&1 || iptables -S 2>&1
 echo '#bans'
 fail2ban-client status 2>&1
+echo '#get sshd maxretry'
+fail2ban-client get sshd maxretry 2>/dev/null
+echo '#get sshd findtime'
+fail2ban-client get sshd findtime 2>/dev/null
+echo '#get sshd bantime'
+fail2ban-client get sshd bantime 2>/dev/null
+echo '#status sshd'
+fail2ban-client status sshd 2>/dev/null
 echo '#end'
 :`
 	var res *sshcore.Result
@@ -235,20 +257,71 @@ echo '#end'
 	} else {
 		password, ok := a.unlocked.get(hostID, a.mgr.Generation(hostID))
 		if !ok {
-			return "", "", i18n.Errorf("잠겨 있습니다")
+			return "", "", "", i18n.Errorf("잠겨 있습니다")
 		}
 		res, err = conn.ExecOpts(ctx,
 			sshcore.ExecOptions{Stdin: strings.NewReader(password + "\n")},
 			"sudo", "-S", "-p", "", "--", "sh", "-c", script)
 	}
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	out := string(res.Stdout)
-	rulesPart, bansPart, _ := strings.Cut(out, "#bans")
+	rulesPart, rest, _ := strings.Cut(out, "#bans")
+	bansPart, jailPart, _ := strings.Cut(rest, "#get sshd maxretry")
 	rules = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(rulesPart), "#rules"))
-	bans = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(bansPart), "#end"))
-	return rules, bans, nil
+	bans = strings.TrimSpace(bansPart)
+	// Put the marker back: ParseJailStatus keys off it, and cutting on it is
+	// what found the boundary.
+	jail = strings.TrimSuffix(strings.TrimSpace("#get sshd maxretry"+jailPart), "#end")
+	return rules, bans, strings.TrimSpace(jail), nil
+}
+
+// SecurityLogins is the successful logins, with the addresses this person has
+// not seen before marked.
+//
+// The most urgent line on this screen, and the only one that is. Failed
+// passwords arrive by the thousand on any box facing the internet — the servers
+// this was built against take two to twenty thousand a day — and they mean
+// nothing on their own. A success from an address nobody recognises means
+// something whatever the failure count says.
+//
+// Reading is separate from remembering. The mark moves only when the caller
+// says the list has been shown, so an address is surprising exactly once and
+// not zero times because a background read got there first.
+func (a *App) SecurityLogins(hostID string) (LoginsView, []string, error) {
+	view, err := a.HostLogins(hostID, false)
+	if err != nil {
+		return LoginsView{}, nil, err
+	}
+	if a.settings == nil {
+		return view, nil, nil
+	}
+	known := map[string]bool{}
+	for _, addr := range a.settings.KnownLogins(hostID) {
+		known[addr] = true
+	}
+	var fresh []string
+	for _, l := range view.Logins {
+		// Boot pseudo-records put the kernel version in the address column.
+		// Treating that as a login from an unknown host would flag every
+		// reboot, which is the fastest way to make this marker meaningless.
+		if l.Boot || l.From == "" || known[l.From] {
+			continue
+		}
+		known[l.From] = true
+		fresh = append(fresh, l.From)
+	}
+	return view, fresh, nil
+}
+
+// RememberSecurityLogins marks addresses as seen, after the screen has shown
+// them. Returns the ones that were new, which is what it just marked.
+func (a *App) RememberSecurityLogins(hostID string, addrs []string) []string {
+	if a.settings == nil {
+		return nil
+	}
+	return a.settings.RememberLogins(hostID, addrs)
 }
 
 // UnlockSecurity takes the sudo password for this connection.
