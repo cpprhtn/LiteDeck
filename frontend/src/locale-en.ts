@@ -262,7 +262,7 @@ export const en: Record<string, string> = {
   '버린 패킷': 'Packets dropped',
   '마지막으로 본 뒤 +{n}': '+{n} since you last looked',
   '재범률': 'Repeat rate',
-  '{n}회를 {u}개 주소에': '{n} bans on {u} addresses',
+  '최근 {n}회를 {u}개 주소에': 'last {n} bans, on {u} addresses',
   '24시간 실패 추이': 'Failures over 24 hours',
   '최근 차단': 'Recent bans',
   '차단': 'Ban',

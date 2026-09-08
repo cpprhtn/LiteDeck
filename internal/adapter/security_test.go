@@ -473,3 +473,50 @@ func TestParseFailureBucketsIgnoresRubbish(t *testing.T) {
 		t.Errorf("쓰레기에서 구간이 나왔다: %+v", got)
 	}
 }
+
+// Only a rule that refuses traffic is evidence of protection.
+//
+// Docker writes NAT and forward chains whose counters run into the hundreds of
+// millions — 367,282,813 on one measured server — and they count packets that
+// were *carried*. Summing those into "packets dropped" made a box whose
+// firewall was switched off look like the busiest one on the screen.
+func TestOnlyRefusingVerdictsCountAsDropped(t *testing.T) {
+	for _, v := range []string{"drop", "reject", "DROP", " reject "} {
+		if !IsBlockingVerdict(v) {
+			t.Errorf("%q 는 막는 것이다", v)
+		}
+	}
+	for _, v := range []string{"accept", "masquerade", "dnat", "return", "snat", ""} {
+		if IsBlockingVerdict(v) {
+			t.Errorf("%q 를 막는 것으로 셌다", v)
+		}
+	}
+}
+
+// The same ruleset a Docker host produces: a blackhole that drops, and Docker's
+// own chains that carry.
+func TestCountersFromADockerHostSeparateCarriedFromRefused(t *testing.T) {
+	cs := ParseNftCounters(`table inet blackhole {
+	chain input {
+		ip saddr @banned counter packets 11418 bytes 685080 drop
+	}
+}
+table ip nat {
+	chain DOCKER {
+		iifname "docker0" counter packets 608133 bytes 36487980 return
+	}
+	chain POSTROUTING {
+		oifname != "docker0" counter packets 367282813 bytes 22036968780 masquerade
+	}
+}
+`)
+	var dropped int64
+	for _, c := range cs {
+		if IsBlockingVerdict(c.Verdict) {
+			dropped += c.Packets
+		}
+	}
+	if dropped != 11418 {
+		t.Errorf("버린 패킷 %d, 기대 11418 — 도커가 나른 것까지 셌다", dropped)
+	}
+}

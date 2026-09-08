@@ -331,6 +331,13 @@ func (a *App) HostSecurity(hostID string, elevate bool) (SecurityView, error) {
 	// The delta is what says whether it is still dropping, and it needs the
 	// previous reading — see the field's note on why this is not a sparkline.
 	for _, c := range view.Counters {
+		if !adapter.IsBlockingVerdict(c.Verdict) {
+			// Docker's NAT and forward chains carry counters in the hundreds of
+			// millions — they count traffic that was *carried*, not refused.
+			// Summing them reported 367 million dropped packets on a box whose
+			// firewall was off.
+			continue
+		}
 		view.Dropped += c.Packets
 	}
 	view.DroppedSince = a.dropped.since(hostID, a.mgr.Generation(hostID), view.Dropped)
@@ -467,6 +474,18 @@ func blockedFrom(v SecurityView) []string {
 	return blocked
 }
 
+// SecurityLoginsView is the successful logins and which addresses are new.
+//
+// One struct rather than two returns. Every other binding here returns a value
+// and an error, and this was the only one returning two values and an error —
+// which the binding layer does not carry, so the call failed and the panel sat
+// empty on every server while `last` had rows to show.
+type SecurityLoginsView struct {
+	Logins []adapter.Login `json:"logins"`
+	// Fresh is the addresses not seen succeeding on this host before.
+	Fresh []string `json:"fresh"`
+}
+
 // SecurityLogins is the successful logins, with the addresses this person has
 // not seen before marked.
 //
@@ -479,19 +498,22 @@ func blockedFrom(v SecurityView) []string {
 // Reading is separate from remembering. The mark moves only when the caller
 // says the list has been shown, so an address is surprising exactly once and
 // not zero times because a background read got there first.
-func (a *App) SecurityLogins(hostID string) (LoginsView, []string, error) {
+func (a *App) SecurityLogins(hostID string) (SecurityLoginsView, error) {
 	view, err := a.HostLogins(hostID, false)
 	if err != nil {
-		return LoginsView{}, nil, err
+		return SecurityLoginsView{}, err
+	}
+	out := SecurityLoginsView{Logins: view.Logins, Fresh: []string{}}
+	if out.Logins == nil {
+		out.Logins = []adapter.Login{}
 	}
 	if a.settings == nil {
-		return view, nil, nil
+		return out, nil
 	}
 	known := map[string]bool{}
 	for _, addr := range a.settings.KnownLogins(hostID) {
 		known[addr] = true
 	}
-	var fresh []string
 	for _, l := range view.Logins {
 		// Boot pseudo-records put the kernel version in the address column.
 		// Treating that as a login from an unknown host would flag every
@@ -500,9 +522,9 @@ func (a *App) SecurityLogins(hostID string) (LoginsView, []string, error) {
 			continue
 		}
 		known[l.From] = true
-		fresh = append(fresh, l.From)
+		out.Fresh = append(out.Fresh, l.From)
 	}
-	return view, fresh, nil
+	return out, nil
 }
 
 // RememberSecurityLogins marks addresses as seen, after the screen has shown

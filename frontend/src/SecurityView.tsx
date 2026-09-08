@@ -75,12 +75,11 @@ export function SecurityView({
         setView(sec)
         setListening(net?.listeners ?? [])
         if (who) {
-          const [view, unseen] = who
-          setLogins(view.logins ?? [])
-          setFresh(new Set(unseen ?? []))
+          setLogins(who.logins ?? [])
+          setFresh(new Set(who.fresh ?? []))
           // Marked only now, after the list is on screen. Doing it inside the
           // read would spend the surprise before anybody had it.
-          if (unseen?.length) void RememberSecurityLogins(hostID, unseen).catch(() => {})
+          if (who.fresh?.length) void RememberSecurityLogins(hostID, who.fresh).catch(() => {})
         }
       } catch (e) {
         onError(String(e))
@@ -113,7 +112,11 @@ export function SecurityView({
     : view.kernel?.iptables
       ? 'iptables'
       : ''
-  const dropCounters = (view.counters ?? []).filter((c) => c.packets > 0)
+  // Only the rules that refuse. Docker's NAT and forward chains carry counters
+  // in the hundreds of millions and they count traffic that was delivered.
+  const dropCounters = (view.counters ?? []).filter(
+    (c) => c.packets > 0 && (c.verdict === 'drop' || c.verdict === 'reject'),
+  )
   const dropped = view.dropped || dropCounters.reduce((n, c) => n + c.packets, 0)
   // Bans divided by the addresses they landed on. Computed from the ban log,
   // which is the only place the second number exists — dividing by the count
@@ -224,7 +227,7 @@ export function SecurityView({
               label={t('재범률')}
               value={bans.repeats.toFixed(1)}
               warn={bans.repeats >= 3}
-              sub={[t('{n}회를 {u}개 주소에', { n: bans.bans.length, u: bans.unique })]}
+              sub={[t('최근 {n}회를 {u}개 주소에', { n: bans.bans.length, u: bans.unique })]}
             />
           )}
           <Panel

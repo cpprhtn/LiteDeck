@@ -175,21 +175,25 @@ func TestFirstSeenLoginsAreMarkedOnceAndNotByReboots(t *testing.T) {
 	a := connectedApp(t)
 	a.settings = config.OpenSettings(a.configDir)
 
-	_, first, err := a.SecurityLogins("fixture")
+	first, err := a.SecurityLogins("fixture")
 	if err != nil {
 		t.Fatalf("SecurityLogins: %v", err)
 	}
+	// Never nil: the panel maps over both.
+	if first.Logins == nil || first.Fresh == nil {
+		t.Fatalf("nil 필드가 왔다: %+v", first)
+	}
 	// `last` on the fixture may be empty; the marking logic is what is under
 	// test and it is exercised through the store below either way.
-	t.Logf("첫 조회에서 처음 보는 주소 %d개", len(first))
+	t.Logf("첫 조회: 기록 %d건, 처음 보는 주소 %d개", len(first.Logins), len(first.Fresh))
 
-	a.RememberSecurityLogins("fixture", first)
-	_, again, err := a.SecurityLogins("fixture")
+	a.RememberSecurityLogins("fixture", first.Fresh)
+	again, err := a.SecurityLogins("fixture")
 	if err != nil {
 		t.Fatalf("SecurityLogins 두 번째: %v", err)
 	}
-	if len(again) != 0 {
-		t.Errorf("한 번 보여준 주소가 다시 처음이라고 나왔다: %v", again)
+	if len(again.Fresh) != 0 {
+		t.Errorf("한 번 보여준 주소가 다시 처음이라고 나왔다: %v", again.Fresh)
 	}
 
 	// A boot record carries the kernel version where an address goes. Flagging

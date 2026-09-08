@@ -626,6 +626,12 @@ export interface SubnetCluster {
   count: number
 }
 
+export interface SecurityLoginsView {
+  logins: Login[]
+  /** Addresses not seen succeeding on this host before. */
+  fresh: string[]
+}
+
 export interface Ban {
   at: string
   address: string
@@ -1008,7 +1014,7 @@ interface Bindings {
   HostUpdates(id: string): Promise<UpdateStatus>
   HostDigest(id: string): Promise<DigestView>
   HostSecurity(id: string, elevate: boolean): Promise<SecurityView>
-  SecurityLogins(id: string): Promise<[LoginsView, string[]]>
+  SecurityLogins(id: string): Promise<SecurityLoginsView>
   RememberSecurityLogins(id: string, addrs: string[]): Promise<string[]>
   UnlockSecurity(id: string): Promise<boolean>
   LockSecurity(id: string): Promise<void>

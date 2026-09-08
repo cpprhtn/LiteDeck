@@ -1071,3 +1071,19 @@ func ParseFailureBuckets(out string) []FailureBucket {
 	sort.SliceStable(buckets, func(i, j int) bool { return buckets[i].At.Before(buckets[j].At) })
 	return buckets
 }
+
+// IsBlockingVerdict reports whether a rule's verdict refuses traffic.
+//
+// The distinction matters because a counter is only evidence of protection when
+// the rule it belongs to says no. Docker writes NAT and forward chains whose
+// counters run into the hundreds of millions — measured at 367,282,813 on one
+// server — and those count packets that were carried, not refused. Adding them
+// to a "packets dropped" figure turns a switched-off firewall into the busiest
+// one on the screen.
+func IsBlockingVerdict(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "drop", "reject":
+		return true
+	}
+	return false
+}
