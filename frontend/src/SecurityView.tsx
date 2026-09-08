@@ -230,10 +230,10 @@ function RuleTable({
       {/* The default policy first: a rule list under `allow (incoming)` is
           decoration, and reading the rules without it tells you nothing. */}
       <p className="security-policy small">
-        {t('들어오는 것')} <b data-deny={status.incoming === 'deny' || undefined}>{status.incoming}</b>
+        {t('인바운드')} <b data-deny={status.incoming === 'deny' || undefined}>{status.incoming}</b>
         {' · '}
-        {t('나가는 것')} <b>{status.outgoing}</b>
-        {status.routed ? ` · ${t('경유')} ${status.routed}` : ''}
+        {t('아웃바운드')} <b>{status.outgoing}</b>
+        {status.routed ? ` · ${t('라우팅')} ${status.routed}` : ''}
       </p>
 
       <div className="security-rules">
@@ -247,7 +247,7 @@ function RuleTable({
               {r.v4 && r.v6 ? ' v4·v6' : r.v6 ? ' v6' : ' v4'}
             </span>
             <span className="small security-heard">
-              {heard(r) ? t('듣는 중') : t('아무것도 안 듣는 중')}
+              {heard(r) ? t('사용 중') : t('미사용')}
             </span>
           </div>
         ))}
@@ -255,7 +255,7 @@ function RuleTable({
 
       {idle.length > 0 && (
         <p className="muted small">
-          {t('허용은 됐지만 지금 아무것도 듣지 않는 규칙 {n}개 — 지금 위험하지는 않지만, 무엇이든 그 포트를 잡는 순간 열립니다.', {
+          {t('열어 뒀지만 지금 아무 서비스도 안 쓰는 포트 {n}개 — 지금 위험하지는 않지만, 무엇이든 그 포트를 잡는 순간 외부에 열립니다.', {
             n: idle.length,
           })}
         </p>
