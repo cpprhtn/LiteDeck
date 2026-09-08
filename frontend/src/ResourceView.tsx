@@ -372,7 +372,12 @@ export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFact
 /** Every panel is the same shape: label, one big number, then whatever detail
  *  that particular resource has. Consistency is the point — a grid the eye has
  *  to relearn per cell reads slower than one it does not. */
-function Panel({
+/** One labelled figure in the panel grid.
+ *
+ *  Exported because the security tab draws the same kind of thing, and two
+ *  copies of a panel drift apart — one gains a warning colour the other does
+ *  not, and the app starts looking like two apps. */
+export function Panel({
   label,
   value,
   sub,

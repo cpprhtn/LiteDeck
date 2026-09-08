@@ -15,7 +15,7 @@ import {
   type SecurityUnit,
   type SecurityView as View,
 } from './ipc'
-import { AccessNotice } from './EventTimeline'
+import { Panel } from './ResourceView'
 import { k, t } from './i18n'
 
 // What is guarding this server (T-35).
@@ -101,6 +101,21 @@ export function SecurityView({
   }
 
   const f2b = view.units.find((u) => u.name === 'fail2ban.service')
+  const jail = view.jail
+  const front = view.ufwConfFound
+    ? { name: 'ufw', on: view.ufwEnabled }
+    : view.units.find((u) => u.name === 'firewalld.service' && u.active)
+      ? { name: 'firewalld', on: true }
+      : null
+  const backendLine = view.kernel?.nftables
+    ? `nftables ${view.kernel.nftablesRefs > 0 ? t('사용 중 (참조 {n})', { n: view.kernel.nftablesRefs }) : t('올라와 있지만 참조 없음')}`
+    : view.kernel?.iptables
+      ? 'iptables'
+      : ''
+  const dropCounters = (view.counters ?? []).filter((c) => c.packets > 0)
+  const dropped = dropCounters.reduce((n, c) => n + c.packets, 0)
+  const lastLogin = logins.find((l) => !l.boot)
+  const news = logins.filter((l) => !l.boot && l.from && fresh.has(l.from))
 
   const unlock = async () => {
     setBusy(true)
@@ -150,16 +165,61 @@ export function SecurityView({
       </div>
 
       <div className="security-body">
-        <Logins logins={logins} fresh={fresh} />
+        {/* The same panel grid the monitoring tab uses. Not a new language for
+            a new tab: a screen that looks like the rest of the app is one
+            people can read without learning it, and this one had drifted into
+            a column of sentences while every other view had settled on a grid
+            of panels with a label and a figure. */}
+        <div className="res-grid">
+          <Panel
+            label={t('방화벽')}
+            value={front ? (front.on ? front.name : t('꺼짐')) : t('알 수 없음')}
+            warn={view.verdict !== 'on'}
+            name
+            sub={backendLine ? [backendLine] : undefined}
+          />
+          <Panel
+            label="fail2ban"
+            value={f2b?.active ? t('활성') : f2b?.installed ? t('비활성') : t('없음')}
+            warn={!f2b?.active}
+            name
+            sub={view.jails.length > 0 ? [`jail: ${view.jails.join(' · ')}`] : undefined}
+          />
+          <Panel
+            label={t('지금 차단 중')}
+            value={jail ? String(jail.currentlyBanned) : '—'}
+            sub={jail ? [t('누적 {n}회', { n: jail.totalBanned.toLocaleString() })] : undefined}
+          />
+          <Panel
+            label={t('버린 패킷')}
+            value={dropped > 0 ? dropped.toLocaleString() : '—'}
+            sub={dropCounters.map((c) => `${c.table} ${c.verdict}`)}
+          />
+          <Panel
+            label={t('최근 접속')}
+            value={lastLogin ? lastLogin.from || t('콘솔') : '—'}
+            warn={news.length > 0}
+            name
+            sub={
+              lastLogin
+                ? [`${lastLogin.user} · ${new Date(lastLogin.at).toLocaleString()}`]
+                : undefined
+            }
+          />
+          <Panel
+            label={t('누적 실패')}
+            value={jail ? jail.totalFailed.toLocaleString() : '—'}
+            sub={
+              view.attackersAccess === 'ok'
+                ? [t('최근 15분 미차단 {n}건', { n: (view.attackers ?? []).length })]
+                : [t('저널 권한 필요')]
+            }
+          />
+        </div>
 
-        <section className="panel">
-          <h3>{t('방화벽')}</h3>
-          <FirewallSummary view={view} />
-        </section>
-
-        <section className="panel">
-          <h3>fail2ban</h3>
-          {view.mismatches && view.mismatches.length > 0 && (
+        {view.mismatches && view.mismatches.length > 0 && (
+          <section className="panel">
+            <h3>{t('설정 불일치')}</h3>
             <div className="security-mismatch">
               <p className="small">
                 {t('설정 파일과 실제로 도는 값이 다릅니다 — fail2ban 을 다시 시작해야 파일이 읽힙니다.')}
@@ -171,24 +231,10 @@ export function SecurityView({
                 </p>
               ))}
             </div>
-          )}
-          {f2b ? (
-            <ToolRow unit={f2b} />
-          ) : (
-            <p className="muted small">{t('설치되어 있지 않습니다.')}</p>
-          )}
-          {view.jails.length > 0 && (
-            <p className="muted small">
-              {t('설정 파일이 켜 둔 jail')}: <span className="mono">{view.jails.join(' · ')}</span>
-            </p>
-          )}
-          {f2b?.installed && view.jails.length === 0 && (
-            <p className="muted small">
-              {t('jail.local 을 찾지 못했습니다 — 실제로 도는 jail 은 잠금을 열어야 보입니다.')}
-            </p>
-          )}
-        </section>
+          </section>
+        )}
 
+        <Logins logins={logins} fresh={fresh} />
         <Blocking view={view} />
 
         <section className="panel security-detail">
@@ -323,42 +369,13 @@ function FirewallSummary({ view }: { view: View }) {
  *  for as long as the window reaches back past the ban. */
 function Blocking({ view }: { view: View }) {
   const sets = view.sets ?? []
-  const counters = (view.counters ?? []).filter((c) => c.packets > 0)
   const attackers = view.attackers ?? []
   const clusters = view.clusters ?? []
-  const jail = view.jail
-
   return (
     <section className="panel">
-      <h3>{t('차단 현황')}</h3>
-
-      {jail && (
-        <div className="security-tiles">
-          <Tile label={t('지금 차단 중')} value={jail.currentlyBanned} />
-          <Tile label={t('누적 차단')} value={jail.totalBanned} />
-          <Tile label={t('누적 실패')} value={jail.totalFailed} />
-          {/* No repeat rate here, deliberately. It is bans divided by the
-              *distinct addresses ever banned*, and `fail2ban-client status`
-              does not report that — it gives the total, and how many are
-              banned right now. Dividing by the second produced 143.5 on a
-              server whose real figure was about 4, which is worse than no
-              number: this tab's whole argument is that a wrong reading is
-              worse than a missing one. It needs the ban log, which is a
-              separate read. */}
-        </div>
-      )}
-
-      {counters.length > 0 && (
-        <div className="security-counters">
-          {counters.map((c, i) => (
-            <p key={i} className="small">
-              <span className="mono">{c.table}</span>
-              {c.fail2ban && <span className="security-profile">fail2ban</span>}{' '}
-              {t('{verdict} {n}개 패킷', { verdict: c.verdict, n: c.packets.toLocaleString() })}
-            </p>
-          ))}
-        </div>
-      )}
+      {/* The figures live in the panel grid above. This is the part a grid
+          cannot hold: who is on the list, and who is not on it yet. */}
+      <h3>{t('차단 목록')}</h3>
 
       {sets.map((s) => (
         <BlockedSet key={`${s.table}-${s.name}`} set={s} />
