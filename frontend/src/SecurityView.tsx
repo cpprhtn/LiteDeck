@@ -101,7 +101,6 @@ export function SecurityView({
   }
 
   const f2b = view.units.find((u) => u.name === 'fail2ban.service')
-  const ufwOff = view.ufwConfFound && !view.ufwEnabled
 
   const unlock = async () => {
     setBusy(true)
@@ -128,7 +127,14 @@ export function SecurityView({
   return (
     <div className="view security-view">
       <div className="view-toolbar">
-        <span className="security-verdict" data-verdict={view.verdict}>
+        {/* Why it is unclear belongs on the verdict, not on a line of its own:
+            it is read once, by whoever wonders, and a screen that explains
+            itself in prose beside every state is a screen nobody finishes. */}
+        <span
+          className="security-verdict"
+          data-verdict={view.verdict}
+          title={view.verdict === 'unknown' ? t('도커도 커널 필터를 이렇게 씁니다') : undefined}
+        >
           {view.verdict === 'on'
             ? t('방화벽 켜짐')
             : view.verdict === 'none'
@@ -149,16 +155,6 @@ export function SecurityView({
         <section className="panel">
           <h3>{t('방화벽')}</h3>
           <FirewallSummary view={view} />
-          {ufwOff && (
-            <p className="security-warn small">
-              {t('ufw 유닛은 활성이지만 ufw 자체는 꺼져 있습니다 — 규칙을 싣지 않고 끝난 것입니다.')}
-            </p>
-          )}
-          {view.verdict === 'unknown' && (
-            <p className="muted small">
-              {t('무언가 커널 패킷 필터를 쓰고 있는데 어느 도구인지 알 수 없습니다 — 도커도 이렇게 보입니다. 잠금을 열면 규칙을 셀 수 있습니다.')}
-            </p>
-          )}
         </section>
 
         <section className="panel">
@@ -210,7 +206,7 @@ export function SecurityView({
             <p className="muted small">
               {view.rulesError
                 ? view.rulesError
-                : t('규칙과 차단 목록은 관리자 권한이 필요합니다. 위 자물쇠를 여세요.')}
+                : t('관리자 권한이 필요합니다.')}
             </p>
           )}
         </section>
@@ -387,9 +383,7 @@ function Blocking({ view }: { view: View }) {
           ))}
           {clusters.map((c) => (
             <p key={c.cidr} className="small security-cluster">
-              {t('{cidr} 에서 {hosts}대가 {n}회 — 대역째 막는 편이 낫습니다', {
-                cidr: c.cidr, hosts: c.hosts, n: c.count,
-              })}
+              {t('{cidr} — {hosts}대 · {n}회', { cidr: c.cidr, hosts: c.hosts, n: c.count })}
             </p>
           ))}
         </>
@@ -477,8 +471,6 @@ function RuleTable({
 }) {
   const open = new Set(listening.filter((l) => l.exposed).map((l) => l.port))
   const heard = (r: FirewallRule) => (r.ports ?? []).some((p) => open.has(p))
-  const idle = status.rules.filter((r) => r.action.includes('ALLOW') && !heard(r))
-
   return (
     <>
       {/* The default policy first: a rule list under `allow (incoming)` is
@@ -506,14 +498,6 @@ function RuleTable({
           </div>
         ))}
       </div>
-
-      {idle.length > 0 && (
-        <p className="muted small">
-          {t('열어 뒀지만 지금 아무 서비스도 안 쓰는 포트 {n}개 — 지금 위험하지는 않지만, 무엇이든 그 포트를 잡는 순간 외부에 열립니다.', {
-            n: idle.length,
-          })}
-        </p>
-      )}
 
       {/* The text it was parsed from, so a reader who doubts the table above
           can check it rather than take it on faith. */}
