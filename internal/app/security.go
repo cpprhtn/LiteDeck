@@ -42,6 +42,16 @@ type SecurityView struct {
 	// Jails are the fail2ban jails the config file declares. The effective set
 	// needs fail2ban-client and root; this is the file's word.
 	Jails []string `json:"jails"`
+	// Kernel is what the packet filter is doing, which the unit states do not
+	// say — see adapter.KernelFirewall. nftables.service is a oneshot that
+	// Ubuntu ships disabled, so its `dead` means nothing either way.
+	Kernel adapter.KernelFirewall `json:"kernel"`
+	// Verdict is the one-line answer, and "none" is only said where it can be
+	// said: no front end on, and nothing holding a reference on netfilter.
+	// Where something is using it but no front end is switched on, this is
+	// "unknown" — Docker alone puts hundreds of references on nf_tables, and
+	// calling that a firewall would be the opposite mistake.
+	Verdict string `json:"verdict"`
 
 	// CanElevate is false where this account has no sudo at all. The lock is
 	// then drawn as one that will not open, rather than one that has not been
@@ -61,6 +71,39 @@ type SecurityView struct {
 	Bans     string                  `json:"bans,omitempty"`
 	// RulesError says why the elevated read did not happen, when it did not.
 	RulesError string `json:"rulesError,omitempty"`
+}
+
+// Verdicts. Three, not two: "no firewall" is a strong claim and gets said only
+// where the evidence supports it.
+const (
+	// VerdictOn is a front end that says so itself — ufw's own config, or
+	// firewalld running.
+	VerdictOn = "on"
+	// VerdictNone is nothing switched on *and* nothing holding a reference on
+	// netfilter. Then there really are no rules.
+	VerdictNone = "none"
+	// VerdictUnknown is something using netfilter with no front end to name it.
+	// Docker does exactly this, and so does a hand-written nft ruleset — the
+	// two look identical from here, and the honest move is to say the lock can
+	// settle it rather than guess which.
+	VerdictUnknown = "unknown"
+)
+
+func firewallVerdict(v SecurityView) string {
+	// ufw's own file, not its unit: the unit is a oneshot that reports a
+	// healthy `active (exited)` with the firewall switched off.
+	if v.UfwConfFound && v.UfwEnabled {
+		return VerdictOn
+	}
+	for _, u := range v.Units {
+		if u.Name == "firewalld.service" && u.Active {
+			return VerdictOn
+		}
+	}
+	if v.Kernel.InUse() {
+		return VerdictUnknown
+	}
+	return VerdictNone
 }
 
 // sudoUnlock holds a sudo password for the life of one connection.
@@ -139,12 +182,14 @@ func (a *App) HostSecurity(hostID string, elevate bool) (SecurityView, error) {
 	if err != nil {
 		return SecurityView{}, err
 	}
-	units, ufwConf, jails := adapter.SplitSecurityOutput(string(res.Stdout))
+	units, ufwConf, jails, modules := adapter.SplitSecurityOutput(string(res.Stdout))
 	view.Units = adapter.ParseSecurityUnits(units)
 	view.UfwEnabled, view.UfwConfFound = adapter.ParseUfwConf(ufwConf)
 	if got := adapter.ParseFail2banJails(jails); got != nil {
 		view.Jails = got
 	}
+	view.Kernel = adapter.ParseFirewallModules(modules)
+	view.Verdict = firewallVerdict(view)
 
 	if !elevate {
 		return view, nil

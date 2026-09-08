@@ -1,6 +1,10 @@
 package app
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/cpprhtn/LiteDeck/internal/adapter"
+)
 
 // The unlock is the one password this app keeps in memory, so what ends it
 // matters more than what starts it.
@@ -97,5 +101,69 @@ func TestElevatedReadWithoutUnlockSaysSoAndKeepsTheRest(t *testing.T) {
 	}
 	if len(view.Units) == 0 {
 		t.Error("잠긴 절반이 실패하면서 열린 절반까지 가져갔다")
+	}
+}
+
+// "No firewall" is a strong claim, and the first version of this screen made it
+// on every ordinary Ubuntu server.
+//
+// nftables.service is a oneshot that Ubuntu ships disabled — ufw is the front
+// end — so the unit is `dead` on a perfectly healthy machine. Reading that as
+// "off" lit a red lamp on the normal case, and a panel that cries wolf stops
+// being read. The kernel is what has the rules.
+func TestVerdictDoesNotCryWolfOnAHealthyUbuntu(t *testing.T) {
+	nftDead := adapter.SecurityUnit{
+		Name: "nftables.service", Installed: true, Enabled: false, Active: false, SubState: "dead",
+	}
+	for _, tc := range []struct {
+		name string
+		view SecurityView
+		want string
+	}{
+		{
+			// The measured case: ufw on, its unit a spent oneshot, nftables.service
+			// disabled, and the kernel doing the work underneath.
+			name: "ufw 켜짐 · nftables 유닛은 죽어 있음",
+			view: SecurityView{
+				Units:        []adapter.SecurityUnit{nftDead},
+				UfwConfFound: true, UfwEnabled: true,
+				Kernel: adapter.KernelFirewall{NFTables: true, NFTablesRefs: 814},
+			},
+			want: VerdictOn,
+		},
+		{
+			name: "ufw 꺼짐 · 커널도 놀고 있음",
+			view: SecurityView{
+				Units:        []adapter.SecurityUnit{nftDead},
+				UfwConfFound: true, UfwEnabled: false,
+				Kernel: adapter.KernelFirewall{NFTables: true},
+			},
+			want: VerdictNone,
+		},
+		{
+			// Something is filtering and nothing names itself. Docker does this,
+			// and so does a hand-written ruleset. Guessing either way is wrong.
+			name: "전면부 없음 · 커널은 쓰이는 중",
+			view: SecurityView{
+				Kernel: adapter.KernelFirewall{NFTables: true, NFTablesRefs: 300},
+			},
+			want: VerdictUnknown,
+		},
+		{
+			name: "firewalld",
+			view: SecurityView{
+				Units: []adapter.SecurityUnit{{Name: "firewalld.service", Installed: true, Active: true}},
+			},
+			want: VerdictOn,
+		},
+		{
+			name: "아무것도 없음",
+			view: SecurityView{},
+			want: VerdictNone,
+		},
+	} {
+		if got := firewallVerdict(tc.view); got != tc.want {
+			t.Errorf("%s → %q, 기대 %q", tc.name, got, tc.want)
+		}
 	}
 }

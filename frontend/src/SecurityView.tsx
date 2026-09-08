@@ -36,17 +36,6 @@ import { k, t } from './i18n'
 // green light on an unprotected machine. The file wins — it is what `ufw
 // enable` writes — but the disagreement is shown rather than quietly resolved.
 
-/** Tools whose absence is not news. iptables has no unit on a modern Ubuntu and
- *  saying "not installed" about it every time is noise, not information. */
-const QUIET_WHEN_ABSENT = new Set(['iptables.service', 'firewalld.service', 'nftables.service'])
-
-const FIREWALLS = new Set([
-  'ufw.service',
-  'nftables.service',
-  'iptables.service',
-  'firewalld.service',
-])
-
 export function SecurityView({
   hostID,
   visible,
@@ -93,12 +82,8 @@ export function SecurityView({
     return <div className="placeholder">{busy ? t('읽는 중…') : t('보안 상태를 읽는 중…')}</div>
   }
 
-  const firewalls = view.units.filter((u) => FIREWALLS.has(u.name))
   const f2b = view.units.find((u) => u.name === 'fail2ban.service')
-  const active = firewalls.filter((u) => u.installed && u.active)
-  // ufw's own file overrides its unit — see the note at the top.
   const ufwOff = view.ufwConfFound && !view.ufwEnabled
-  const guarded = active.some((u) => !(u.name === 'ufw.service' && ufwOff))
 
   const unlock = async () => {
     setBusy(true)
@@ -125,8 +110,12 @@ export function SecurityView({
   return (
     <div className="view security-view">
       <div className="view-toolbar">
-        <span className="security-verdict" data-guarded={guarded || undefined}>
-          {guarded ? t('방화벽 켜짐') : t('방화벽 없음')}
+        <span className="security-verdict" data-verdict={view.verdict}>
+          {view.verdict === 'on'
+            ? t('방화벽 켜짐')
+            : view.verdict === 'none'
+              ? t('방화벽 없음')
+              : t('방화벽 확인 필요')}
         </span>
         <span className="spacer" />
         {busy && <span className="muted small">{t('읽는 중…')}</span>}
@@ -139,25 +128,15 @@ export function SecurityView({
       <div className="security-body">
         <section className="panel">
           <h3>{t('방화벽')}</h3>
-          {firewalls.filter((u) => u.installed || !QUIET_WHEN_ABSENT.has(u.name)).length === 0 && (
-            <p className="muted small">{t('방화벽 도구가 설치되어 있지 않습니다.')}</p>
-          )}
-          {firewalls.map((u) =>
-            !u.installed && QUIET_WHEN_ABSENT.has(u.name) ? null : (
-              <ToolRow
-                key={u.name}
-                unit={u}
-                override={
-                  u.name === 'ufw.service' && view.ufwConfFound
-                    ? { on: view.ufwEnabled, from: '/etc/ufw/ufw.conf' }
-                    : undefined
-                }
-              />
-            ),
-          )}
+          <FirewallSummary view={view} />
           {ufwOff && (
             <p className="security-warn small">
               {t('ufw 유닛은 활성이지만 ufw 자체는 꺼져 있습니다 — 규칙을 싣지 않고 끝난 것입니다.')}
+            </p>
+          )}
+          {view.verdict === 'unknown' && (
+            <p className="muted small">
+              {t('무언가 커널 패킷 필터를 쓰고 있는데 어느 도구인지 알 수 없습니다 — 도커도 이렇게 보입니다. 잠금을 열면 규칙을 셀 수 있습니다.')}
             </p>
           )}
         </section>
@@ -202,6 +181,46 @@ export function SecurityView({
         </section>
       </div>
     </div>
+  )
+}
+
+/** The firewall, as one statement rather than a row per tool.
+ *
+ *  Listing ufw and nftables side by side is what produced "ufw 켜짐 · nftables
+ *  비활성", which is a contradiction: on a modern Ubuntu ufw *runs on*
+ *  nftables through iptables-nft. They are a front end and its back end, not
+ *  two firewalls, and the screen now says so. */
+function FirewallSummary({ view }: { view: View }) {
+  const front = view.ufwConfFound
+    ? { name: 'ufw', on: view.ufwEnabled, from: '/etc/ufw/ufw.conf' }
+    : view.units.find((u) => u.name === 'firewalld.service' && u.active)
+      ? { name: 'firewalld', on: true, from: 'systemd' }
+      : null
+
+  const backend = view.kernel.nftables
+    ? { name: 'nftables', refs: view.kernel.nftablesRefs }
+    : view.kernel.iptables
+      ? { name: 'iptables', refs: view.kernel.iptablesRefs }
+      : null
+
+  return (
+    <>
+      <div className="security-row" data-off={front !== null && !front.on ? true : undefined}>
+        <span className="mono security-tool">{front ? front.name : t('전면부 없음')}</span>
+        <span className="security-state">
+          {front ? (front.on ? t('켜짐') : t('꺼짐')) : t('알 수 없음')}
+        </span>
+        <span className="muted small security-src">{front ? front.from : ''}</span>
+      </div>
+      {backend && (
+        <p className="muted small">
+          {t('커널 백엔드')}: <span className="mono">{backend.name}</span>{' '}
+          {backend.refs > 0
+            ? t('사용 중 (참조 {n})', { n: backend.refs })
+            : t('올라와 있지만 참조 없음')}
+        </p>
+      )}
+    </>
   )
 }
 

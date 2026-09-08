@@ -581,8 +581,27 @@ export interface FirewallStatus {
   rules: FirewallRule[]
 }
 
+/** What the kernel's packet filter is doing, from /proc/modules.
+ *
+ *  The unit states do not answer this: nftables.service is a oneshot that
+ *  Ubuntu ships disabled because ufw is the front end, so `dead` is the healthy
+ *  case. References against the module are the closest thing to "there are
+ *  rules" available without root — but Docker takes hundreds of them too, so it
+ *  raises "something is filtering", never "you are protected". */
+export interface KernelFirewall {
+  nftables: boolean
+  nftablesRefs: number
+  iptables: boolean
+  iptablesRefs: number
+}
+
 export interface SecurityView {
   units: SecurityUnit[]
+  kernel: KernelFirewall
+  /** 'on' | 'none' | 'unknown'. Three, because "no firewall" is a strong claim
+   *  and gets made only where nothing is switched on *and* nothing holds a
+   *  reference on netfilter. */
+  verdict: string
   /** What /etc/ufw/ufw.conf says, and whether the file was there to say it.
    *  Kept apart from the unit state because the two disagree on real servers. */
   ufwEnabled: boolean

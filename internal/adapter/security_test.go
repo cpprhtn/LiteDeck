@@ -124,8 +124,12 @@ enabled = true
 // ufw.conf and an empty one would look the same — and so would an absent
 // ufw.conf and a jail.local that happened to follow it.
 func TestSplitSecurityOutputHandlesMissingFiles(t *testing.T) {
-	units, ufw, jails := SplitSecurityOutput(
-		"#units\nId=ufw.service\nLoadState=loaded\n#ufw\n#jails\n[sshd]\nenabled = true\n#end\n")
+	units, ufw, jails, mods := SplitSecurityOutput(
+		"#units\nId=ufw.service\nLoadState=loaded\n#ufw\n#jails\n[sshd]\nenabled = true\n" +
+			"#modules\nnf_tables 380928 814 - Live 0x0\n#end\n")
+	if !strings.Contains(mods, "nf_tables") {
+		t.Errorf("모듈 구역이 비었다: %q", mods)
+	}
 	if !strings.Contains(units, "Id=ufw.service") {
 		t.Errorf("유닛 구역이 비었다: %q", units)
 	}
@@ -196,5 +200,53 @@ func TestParseUfwStatusInactive(t *testing.T) {
 	}
 	if len(s.Rules) != 0 {
 		t.Errorf("규칙이 없는데 %d개 나왔다", len(s.Rules))
+	}
+}
+
+// What the kernel is running, read from /proc/modules without root.
+//
+// The unit state does not answer this. nftables.service is Type=oneshot: it
+// loads /etc/nftables.conf at boot and exits, so Ubuntu ships it disabled and
+// uses ufw as the front end. A screen that reads `dead` as "no firewall" puts a
+// red light on nearly every Ubuntu server — and a panel that cries wolf on a
+// healthy machine is worse than no panel, because the colour stops meaning
+// anything after the third time.
+func TestFirewallModulesReadTheKernelNotTheUnit(t *testing.T) {
+	k := ParseFirewallModules(golden(t, "ubuntu-24.04-modules.txt"))
+	if !k.NFTables {
+		t.Error("nf_tables 가 올라와 있는데 못 봤다")
+	}
+	if k.NFTablesRefs != 814 {
+		t.Errorf("nf_tables 참조 %d, 기대 814", k.NFTablesRefs)
+	}
+	// Loaded with nobody using it. Legacy iptables is present on this box and
+	// doing nothing, which is not the same as being in use.
+	if !k.IPTables {
+		t.Error("ip_tables 모듈이 있는데 없다고 했다")
+	}
+	if k.IPTablesRefs != 0 {
+		t.Errorf("ip_tables 참조 %d, 기대 0 — 올라와 있는 것과 쓰이는 것은 다르다", k.IPTablesRefs)
+	}
+	if !k.InUse() {
+		t.Error("참조 814 인데 안 쓰인다고 했다")
+	}
+}
+
+func TestFirewallModulesOnAKernelWithNone(t *testing.T) {
+	k := ParseFirewallModules("overlay 212992 0 - Live 0x0\nbtrfs 2056192 0 - Live 0x0\n")
+	if k.NFTables || k.IPTables || k.InUse() {
+		t.Errorf("netfilter 모듈이 없는데 있다고 했다: %+v", k)
+	}
+}
+
+// Loaded but idle is not "in use". A box where the modules came up with the
+// kernel and nothing ever added a rule must not read as protected.
+func TestLoadedButUnusedIsNotInUse(t *testing.T) {
+	k := ParseFirewallModules("nf_tables 380928 0 - Live 0x0\nip_tables 32768 0 - Live 0x0\n")
+	if !k.NFTables {
+		t.Error("모듈은 올라와 있다")
+	}
+	if k.InUse() {
+		t.Error("참조가 0인데 쓰인다고 했다")
 	}
 }

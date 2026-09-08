@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"strconv"
 	"strings"
 )
 
@@ -65,16 +66,23 @@ echo '#ufw'
 cat /etc/ufw/ufw.conf 2>/dev/null
 echo '#jails'
 cat /etc/fail2ban/jail.local 2>/dev/null
+echo '#modules'
+grep -E '^(nf_tables|ip_tables) ' /proc/modules 2>/dev/null
 echo '#end'
 :`
 
-// SplitSecurityOutput cuts the script's output into its three sections.
-func SplitSecurityOutput(out string) (units, ufwConf, jails string) {
+// SplitSecurityOutput cuts the script's output into its sections.
+//
+// The modules section is grepped on the server rather than read whole:
+// /proc/modules is 14KB on an ordinary desktop kernel and two lines of it are
+// wanted. Filtering there costs nothing — the command is already running — and
+// the round trip stays one.
+func SplitSecurityOutput(out string) (units, ufwConf, jails, modules string) {
 	section := ""
-	var u, f, j strings.Builder
+	var u, f, j, m strings.Builder
 	for _, line := range strings.Split(out, "\n") {
 		switch strings.TrimSpace(line) {
-		case "#units", "#ufw", "#jails", "#end":
+		case "#units", "#ufw", "#jails", "#modules", "#end":
 			section = strings.TrimSpace(line)
 			continue
 		}
@@ -85,9 +93,11 @@ func SplitSecurityOutput(out string) (units, ufwConf, jails string) {
 			f.WriteString(line + "\n")
 		case "#jails":
 			j.WriteString(line + "\n")
+		case "#modules":
+			m.WriteString(line + "\n")
 		}
 	}
-	return u.String(), f.String(), j.String()
+	return u.String(), f.String(), j.String(), m.String()
 }
 
 // SecurityUnit is one tool's systemd state.
@@ -377,4 +387,64 @@ func splitColumns(line string) []string {
 		}
 	}
 	return cols
+}
+
+// KernelFirewall is what the kernel's packet filter is actually doing, read
+// from /proc/modules.
+//
+// # Why the unit state is the wrong question
+//
+// nftables.service is `Type=oneshot`: it loads /etc/nftables.conf at boot and
+// exits, so a healthy machine reports it `dead`. Ubuntu ships it *disabled*
+// altogether because ufw is the front end. Reading that as "no firewall" lights
+// a red lamp on nearly every Ubuntu server, and a panel that cries wolf on a
+// healthy machine is worse than no panel — after the third time nobody reads
+// the colour.
+//
+// The rules live in the kernel, not in a unit. A loaded module with references
+// against it is the closest thing to "there are rules" that can be had without
+// root, and it is what says ufw is running on nftables rather than beside it:
+// on the server this was measured, `nft_compat` carried 133 references, which
+// is ufw's iptables-nft shim at work.
+//
+// # What it does not prove
+//
+// That something is using netfilter, not that something is *protecting* this
+// machine. Docker alone puts hundreds of references on nf_tables for its NAT
+// rules and forwards nothing away from the host. So this raises "in use", which
+// is a reason to go and count rules — never a verdict on its own.
+type KernelFirewall struct {
+	NFTables     bool `json:"nftables"`
+	NFTablesRefs int  `json:"nftablesRefs"`
+	IPTables     bool `json:"iptables"`
+	IPTablesRefs int  `json:"iptablesRefs"`
+}
+
+// InUse reports that something has taken a reference on a packet filter.
+func (k KernelFirewall) InUse() bool { return k.NFTablesRefs > 0 || k.IPTablesRefs > 0 }
+
+// ParseFirewallModules reads the netfilter lines out of /proc/modules.
+//
+// The format is `name size refcount deps state offset`. Only the count matters:
+// a module loaded with nothing referencing it came up with the kernel and is
+// doing nothing, which is a different answer from being switched off.
+func ParseFirewallModules(text string) KernelFirewall {
+	var k KernelFirewall
+	for _, line := range strings.Split(text, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 3 {
+			continue
+		}
+		refs, err := strconv.Atoi(f[2])
+		if err != nil {
+			continue
+		}
+		switch f[0] {
+		case "nf_tables":
+			k.NFTables, k.NFTablesRefs = true, refs
+		case "ip_tables":
+			k.IPTables, k.IPTablesRefs = true, refs
+		}
+	}
+	return k
 }

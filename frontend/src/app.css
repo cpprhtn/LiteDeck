@@ -3175,13 +3175,18 @@ button.events-unit {
   flex-direction: column;
   min-height: 0;
 }
-/* The one-line answer, before any of the detail. */
+/* The one-line answer, before any of the detail. Three colours for three
+   answers: "no firewall" is a strong claim and only gets the alarming one where
+   the evidence supports it. */
 .security-verdict {
   font-weight: 600;
-  color: var(--danger);
+  color: var(--warn);
 }
-.security-verdict[data-guarded] {
+.security-verdict[data-verdict='on'] {
   color: var(--ok);
+}
+.security-verdict[data-verdict='none'] {
+  color: var(--danger);
 }
 .security-body {
   flex: 1;
