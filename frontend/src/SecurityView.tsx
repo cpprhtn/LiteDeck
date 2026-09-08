@@ -227,7 +227,7 @@ export function SecurityView({
               label={t('재범률')}
               value={bans.repeats.toFixed(1)}
               warn={bans.repeats >= 3}
-              sub={[t('최근 {n}회를 {u}개 주소에', { n: bans.bans.length, u: bans.unique })]}
+              sub={[t('주소 {u}개를 {n}번 차단', { u: bans.unique, n: bans.bans.length })]}
             />
           )}
           <Panel
@@ -381,7 +381,7 @@ function Logins({ logins, fresh }: { logins: Login[]; fresh: Set<string> }) {
       <h3>{t('최근 접속 성공')}</h3>
       {news.length > 0 && (
         <p className="security-warn small">
-          {t('처음 보는 주소에서 접속에 성공한 기록이 {n}건 있습니다.', { n: news.length })}
+          {t('처음 보는 주소 {n}곳에서 접속했습니다.', { n: news.length })}
         </p>
       )}
       {rows.length === 0 && <p className="muted small">{t('기록이 없습니다.')}</p>}
