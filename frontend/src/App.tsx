@@ -8,6 +8,7 @@ import { ContainerView } from './ContainerView'
 import { FileExplorer } from './FileExplorer'
 import { HostEditor, emptyHost } from './HostEditor'
 import { HostSidebar } from './HostSidebar'
+import { SecurityView } from './SecurityView'
 import { setPref, usePref } from './prefs'
 import { ShellControls } from './ShellControls'
 import { MetricsBar } from './MetricsBar'
@@ -62,6 +63,7 @@ type Tab =
   | 'containers'
   | 'network'
   | 'sessions'
+  | 'security'
   | 'monitor'
   | 'terminal'
 
@@ -75,6 +77,10 @@ const TABS: { id: Tab; label: string; capability?: string }[] = [
   { id: 'containers', label: k('컨테이너'), capability: 'containers' },
   { id: 'network', label: k('네트워크'), capability: 'network' },
   { id: 'sessions', label: k('세션'), capability: 'sessions' },
+  // Gated on services because that is the capability that means "systemd is
+  // here and this app can ask it things" — the whole free half of the security
+  // read is one `systemctl show`.
+  { id: 'security', label: k('보안'), capability: 'services' },
   { id: 'monitor', label: k('모니터링'), capability: 'metrics' },
   { id: 'terminal', label: k('터미널') },
 ]
@@ -589,6 +595,17 @@ function renderTab(
 
     case 'processes':
       return <ProcessView hostID={hostID} visible={visible} onError={onError} />
+
+    case 'security':
+      if (!info.capabilities?.services) {
+        return (
+          <Unavailable
+            title={t('이 서버의 보안 상태를 읽을 수 없습니다')}
+            detail={t('방화벽과 fail2ban 상태는 systemd 에게 묻습니다.')}
+          />
+        )
+      }
+      return <SecurityView hostID={hostID} visible={visible} onError={onError} />
 
     case 'services':
       // Keyed on the capability, not on hasSystemd. Asking about systemd directly

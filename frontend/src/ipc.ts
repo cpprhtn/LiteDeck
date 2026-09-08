@@ -546,6 +546,36 @@ export interface ShellHistoryView {
   secrets: number
 }
 
+/** One security tool's systemd state. */
+export interface SecurityUnit {
+  name: string
+  /** False where systemd has no such unit — "there is no switch here to find",
+   *  which is a different answer from "installed and switched off". */
+  installed: boolean
+  enabled: boolean
+  active: boolean
+  /** systemd's own word. A firewall that is `active (exited)` is normal and
+   *  looks alarming, so the screen can show it rather than hide it. */
+  subState?: string
+}
+
+export interface SecurityView {
+  units: SecurityUnit[]
+  /** What /etc/ufw/ufw.conf says, and whether the file was there to say it.
+   *  Kept apart from the unit state because the two disagree on real servers. */
+  ufwEnabled: boolean
+  ufwConfFound: boolean
+  /** Jails the config file declares. The effective set needs root. */
+  jails: string[]
+  canElevate: boolean
+  /** `sudo -n` works, so unlocking costs no password. */
+  freeElevation: boolean
+  unlocked: boolean
+  rules?: string
+  bans?: string
+  rulesError?: string
+}
+
 export interface DigestView {
   boots: number
   unitFailures: number
@@ -842,6 +872,9 @@ interface Bindings {
   HostEvents(id: string, range: string, elevate: boolean): Promise<EventsView>
   HostUpdates(id: string): Promise<UpdateStatus>
   HostDigest(id: string): Promise<DigestView>
+  HostSecurity(id: string, elevate: boolean): Promise<SecurityView>
+  UnlockSecurity(id: string): Promise<boolean>
+  LockSecurity(id: string): Promise<void>
   TypedEntered(hostID: string, termID: string, line: string, blind: boolean): Promise<void>
   TypedHistory(hostID: string): Promise<TypedCommand[]>
   TerminalCwd(termID: string): Promise<[string, boolean]>
@@ -1083,6 +1116,9 @@ export const HostCommandHistory = (id: string, range: string, elevate: boolean) 
   api().HostCommandHistory(id, range, elevate)
 export const HostUpdates = (id: string) => api().HostUpdates(id)
 export const HostDigest = (id: string) => api().HostDigest(id)
+export const HostSecurity = (id: string, elevate: boolean) => api().HostSecurity(id, elevate)
+export const UnlockSecurity = (id: string) => api().UnlockSecurity(id)
+export const LockSecurity = (id: string) => api().LockSecurity(id)
 export const TypedEntered = (hostID: string, termID: string, line: string, blind: boolean) =>
   api().TypedEntered(hostID, termID, line, blind)
 export const TypedHistory = (hostID: string) => api().TypedHistory(hostID)

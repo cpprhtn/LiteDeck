@@ -1,0 +1,22 @@
+2026-09-08, Ubuntu 24.04.1 LTS · systemd 255 · 4코어 · 인터넷 노출 서버.
+LiteDeck 의 MCP 읽기 도구로 로그인 사용자 권한에서 그대로 받았다 — root 없음.
+
+이 캡처들이 지키는 모양:
+
+  units.txt   `systemctl show` 를 유닛 여러 개에 한 번 돌린 출력. 빈 줄로 갈린다.
+              iptables.service 는 LoadState=not-found — 「미설치」와 「설치됐지만
+              꺼짐」이 다른 답이라는 것이 이 파일의 요점이다.
+
+              ufw 가 SubState=exited 인 것도 요점이다. 부팅 때 규칙을 싣고 끝나는
+              oneshot 이라 정상인데, 「running 이어야 켜진 것」이라고 읽으면
+              켜진 방화벽을 꺼졌다고 보고한다.
+
+  ufw.conf    ENABLED=no. 이 서버의 유닛은 enabled·active 인데 ufw 자체는 꺼져
+              있었다. 유닛 상태만 보는 화면은 여기서 초록불을 켰을 것이다 —
+              이 기능이 존재하는 이유가 이 한 줄이다.
+
+  jail.local  fail2ban 은 실제로 돌고 있었다. sshd jail 켜짐.
+
+익명화: ignoreip 의 실제 IP 두 개를 RFC 5737 문서용 주소(203.0.113.10,
+198.51.100.20)로 바꿨다. 나머지는 손대지 않았다 — 한국어 주석과 들여쓰기까지
+서버에 있던 그대로다.

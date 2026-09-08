@@ -3167,3 +3167,66 @@ button.events-unit {
 .chart-bare {
   width: 100%;
 }
+
+/* Security tab (T-35) ---------------------------------------------------- */
+
+.security-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+/* The one-line answer, before any of the detail. */
+.security-verdict {
+  font-weight: 600;
+  color: var(--danger);
+}
+.security-verdict[data-guarded] {
+  color: var(--ok);
+}
+.security-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.security-row {
+  display: grid;
+  grid-template-columns: 120px 90px minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+.security-row:last-of-type {
+  border-bottom: 0;
+}
+.security-tool {
+  font-weight: 600;
+}
+.security-state {
+  font-size: var(--text-sm);
+}
+/* Off, where off is the thing worth noticing. Not applied to a tool that is
+   simply absent — nothing is wrong with a server that never installed
+   firewalld. */
+.security-row[data-off] .security-state {
+  color: var(--danger);
+}
+.security-src {
+  overflow-wrap: anywhere;
+}
+.security-warn {
+  color: var(--warn);
+}
+.security-pre {
+  margin: var(--sp-2) 0 0;
+  padding: var(--sp-2);
+  background: var(--bg-sunken);
+  border-radius: var(--radius);
+  overflow: auto;
+  max-height: 40vh;
+  white-space: pre;
+}
