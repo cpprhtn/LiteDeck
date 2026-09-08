@@ -3167,3 +3167,256 @@ button.events-unit {
 .chart-bare {
   width: 100%;
 }
+
+/* Security tab (T-35) ---------------------------------------------------- */
+
+.security-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+/* The one-line answer, before any of the detail. Three colours for three
+   answers: "no firewall" is a strong claim and only gets the alarming one where
+   the evidence supports it. */
+.security-verdict {
+  font-weight: 600;
+  color: var(--warn);
+}
+.security-verdict[data-verdict='on'] {
+  color: var(--ok);
+}
+.security-verdict[data-verdict='none'] {
+  color: var(--danger);
+}
+.security-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.security-row {
+  display: grid;
+  grid-template-columns: 120px 90px minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+.security-row:last-of-type {
+  border-bottom: 0;
+}
+.security-tool {
+  font-weight: 600;
+}
+.security-state {
+  font-size: var(--text-sm);
+}
+/* Off, where off is the thing worth noticing. Not applied to a tool that is
+   simply absent — nothing is wrong with a server that never installed
+   firewalld. */
+.security-row[data-off] .security-state {
+  color: var(--danger);
+}
+.security-src {
+  overflow-wrap: anywhere;
+}
+.security-warn {
+  color: var(--warn);
+}
+.security-pre {
+  margin: var(--sp-2) 0 0;
+  padding: var(--sp-2);
+  background: var(--bg-sunken);
+  border-radius: var(--radius);
+  overflow: auto;
+  max-height: 40vh;
+  white-space: pre;
+}
+.security-policy {
+  margin: 0 0 var(--sp-2);
+}
+/* The default that actually decides things. `deny` is the safe one, so it is
+   the one drawn in the safe colour — the opposite of every other state in this
+   tab, where red means off. */
+.security-policy b[data-deny] {
+  color: var(--ok);
+}
+.security-rules {
+  display: flex;
+  flex-direction: column;
+}
+.security-rule {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 90px 110px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+.security-rule-to {
+  font-weight: 600;
+}
+/* Allowed with nothing behind it. Muted rather than warned about: it is not
+   wrong today, and colouring it red would cry wolf on a server whose owner
+   opened a port for something they have not started yet. */
+.security-rule[data-idle] {
+  color: var(--fg-muted);
+}
+.security-heard {
+  color: var(--fg-faint);
+  white-space: nowrap;
+}
+.security-profile {
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  padding: 0 3px;
+  margin-right: 4px;
+}
+.security-login {
+  display: grid;
+  /* The last column is a fixed width rather than auto: with auto the badge
+     ran off the right edge as soon as the panel was narrow, and the one row
+     that can be urgent is the wrong one to clip. */
+  grid-template-columns: 90px minmax(0, 1fr) auto 92px;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+.security-login:last-of-type {
+  border-bottom: 0;
+}
+.security-login-user {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.security-login > :last-child {
+  text-align: right;
+  white-space: nowrap;
+}
+/* An address this person has not seen succeed here before. The only row in
+   this tab that can be urgent, so it is the only one with a background. */
+.security-login[data-new] {
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+}
+.security-mismatch {
+  border-left: 2px solid var(--warn);
+  padding-left: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+.security-mismatch p {
+  margin: 2px 0;
+}
+.security-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-2);
+}
+.security-tile .num {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+.security-counters p {
+  margin: 2px 0;
+}
+.security-set {
+  margin: var(--sp-2) 0;
+}
+.security-set p {
+  margin: 0 0 var(--sp-1);
+}
+.security-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.security-chip {
+  font-size: var(--text-xs);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+/* A network, not one host. One line either way and a very different decision,
+   so they do not get the same shape. */
+.security-chip[data-range] {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.security-attacker {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  padding: 3px 0;
+  cursor: copy;
+}
+.security-attacker:hover {
+  background: var(--bg-hover);
+}
+.security-cluster {
+  color: var(--warn);
+  margin: var(--sp-1) 0 0;
+}
+
+/* Failures over a day, with the moments a ban went on marked under them.
+   Bars alone mislead — an address blocked an hour ago still fills the bars from
+   before that — so the marks are what turn a tall bar into a story. */
+.security-chart {
+  margin-top: var(--sp-2);
+}
+.security-bars {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 90px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-strong);
+}
+.security-bar {
+  flex: 1;
+  min-width: 3px;
+  background: var(--accent);
+  opacity: 0.7;
+  border-radius: 1px 1px 0 0;
+}
+.security-bar:hover {
+  opacity: 1;
+}
+.security-banmark {
+  position: absolute;
+  bottom: 0;
+  width: 2px;
+  height: 10px;
+  margin-left: -1px;
+  background: var(--warn);
+}
+.security-axis {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 2px;
+}
+/* Its own row rather than the login grid's: an address needs the width a
+   username does not, and reusing that grid cut every ban to "109.160.32…". */
+.security-ban {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+.security-ban:last-of-type {
+  border-bottom: 0;
+}

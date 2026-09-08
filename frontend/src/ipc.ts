@@ -546,6 +546,174 @@ export interface ShellHistoryView {
   secrets: number
 }
 
+/** One security tool's systemd state. */
+export interface SecurityUnit {
+  name: string
+  /** False where systemd has no such unit — "there is no switch here to find",
+   *  which is a different answer from "installed and switched off". */
+  installed: boolean
+  enabled: boolean
+  active: boolean
+  /** systemd's own word. A firewall that is `active (exited)` is normal and
+   *  looks alarming, so the screen can show it rather than hide it. */
+  subState?: string
+}
+
+/** One rule of `ufw status`, with the v4 and v6 copies folded together. */
+export interface FirewallRule {
+  to: string
+  action: string
+  from: string
+  /** The numbers in `to`, split out for cross-referencing against listeners. */
+  ports?: string[]
+  comment?: string
+  v4: boolean
+  v6: boolean
+}
+
+export interface FirewallStatus {
+  active: boolean
+  /** The default incoming policy is the sentence that decides whether this
+   *  firewall does anything. A rule list under `allow` is decoration. */
+  incoming?: string
+  outgoing?: string
+  routed?: string
+  rules: FirewallRule[]
+}
+
+/** What the kernel's packet filter is doing, from /proc/modules.
+ *
+ *  The unit states do not answer this: nftables.service is a oneshot that
+ *  Ubuntu ships disabled because ufw is the front end, so `dead` is the healthy
+ *  case. References against the module are the closest thing to "there are
+ *  rules" available without root — but Docker takes hundreds of them too, so it
+ *  raises "something is filtering", never "you are protected". */
+export interface KernelFirewall {
+  nftables: boolean
+  nftablesRefs: number
+  iptables: boolean
+  iptablesRefs: number
+}
+
+export interface NftSet {
+  table: string
+  name: string
+  /** fail2ban's own table. Its entries come and go as bans expire; a hand-made
+   *  one stays until somebody removes it. */
+  fail2ban: boolean
+  elements: string[]
+  /** Entries that are a network rather than one address. */
+  ranges: number
+}
+
+export interface NftCounter {
+  table: string
+  chain: string
+  fail2ban: boolean
+  packets: number
+  bytes: number
+  verdict: string
+}
+
+export interface Attacker {
+  address: string
+  count: number
+}
+
+export interface SubnetCluster {
+  cidr: string
+  hosts: number
+  count: number
+}
+
+export interface SecurityLoginsView {
+  logins: Login[]
+  /** Addresses not seen succeeding on this host before. */
+  fresh: string[]
+}
+
+export interface Ban {
+  at: string
+  address: string
+}
+
+export interface BanHistory {
+  /** Newest first. */
+  bans: Ban[]
+  /** Distinct addresses those bans landed on — the honest denominator. */
+  unique: number
+}
+
+export interface FailureBucket {
+  at: string
+  count: number
+}
+
+export interface JailStatus {
+  maxRetry: number
+  findTime: number
+  banTime: number
+  currentlyFailed: number
+  totalFailed: number
+  currentlyBanned: number
+  totalBanned: number
+  banned?: string[]
+}
+
+export interface JailMismatch {
+  key: string
+  declared: string
+  running: string
+}
+
+export interface SecurityView {
+  units: SecurityUnit[]
+  kernel: KernelFirewall
+  /** 'on' | 'none' | 'unknown'. Three, because "no firewall" is a strong claim
+   *  and gets made only where nothing is switched on *and* nothing holds a
+   *  reference on netfilter. */
+  verdict: string
+  /** What /etc/ufw/ufw.conf says, and whether the file was there to say it.
+   *  Kept apart from the unit state because the two disagree on real servers. */
+  ufwEnabled: boolean
+  ufwConfFound: boolean
+  /** Jails the config file declares. The effective set needs root. */
+  jails: string[]
+  canElevate: boolean
+  /** `sudo -n` works, so unlocking costs no password. */
+  freeElevation: boolean
+  unlocked: boolean
+  /** The sshd jail as fail2ban is running it, and what the file asked for and
+   *  did not get. The second is why the first is read: a screen that only reads
+   *  the file reports an intention as a state, forever. */
+  jail?: JailStatus
+  mismatches?: JailMismatch[]
+  /** What the ruleset blocks with, and whether the blocking does anything. */
+  sets?: NftSet[]
+  counters?: NftCounter[]
+  /** Who is still getting through — everything already blocked is removed,
+   *  because a list including handled addresses is one nobody can act on. */
+  attackers?: Attacker[]
+  clusters?: SubnetCluster[]
+  /** Recent bans, and the distinct-address count a repeat rate needs. */
+  banHistory?: BanHistory
+  /** Failed logins per hour over a day. A shape, not a total. */
+  failures?: FailureBucket[]
+  /** Packets the firewall threw away, and how many since the last read.
+   *  The delta rather than a sparkline: this tab does not poll, and adding a
+   *  timer to draw a line would pay for the graph with the thing it is about. */
+  dropped: number
+  droppedSince?: number
+  /** About the journal alone. "Could not read" and "nobody is knocking" must
+   *  never arrive as the same screen. */
+  attackersAccess: string
+  /** Parsed where the tool was ufw. Absent for nft and iptables. */
+  firewall?: FirewallStatus
+  rules?: string
+  bans?: string
+  rulesError?: string
+}
+
 export interface DigestView {
   boots: number
   unitFailures: number
@@ -758,6 +926,9 @@ export interface SecretPrompt {
   kind: string
   label: string
   canRemember: boolean
+  /** Held only until this connection ends, whatever the keychain could do.
+   *  The dialog says so instead of offering a checkbox that would be a lie. */
+  sessionOnly?: boolean
   echo: boolean
 }
 
@@ -842,6 +1013,11 @@ interface Bindings {
   HostEvents(id: string, range: string, elevate: boolean): Promise<EventsView>
   HostUpdates(id: string): Promise<UpdateStatus>
   HostDigest(id: string): Promise<DigestView>
+  HostSecurity(id: string, elevate: boolean): Promise<SecurityView>
+  SecurityLogins(id: string): Promise<SecurityLoginsView>
+  RememberSecurityLogins(id: string, addrs: string[]): Promise<string[]>
+  UnlockSecurity(id: string): Promise<boolean>
+  LockSecurity(id: string): Promise<void>
   TypedEntered(hostID: string, termID: string, line: string, blind: boolean): Promise<void>
   TypedHistory(hostID: string): Promise<TypedCommand[]>
   TerminalCwd(termID: string): Promise<[string, boolean]>
@@ -1083,6 +1259,12 @@ export const HostCommandHistory = (id: string, range: string, elevate: boolean) 
   api().HostCommandHistory(id, range, elevate)
 export const HostUpdates = (id: string) => api().HostUpdates(id)
 export const HostDigest = (id: string) => api().HostDigest(id)
+export const HostSecurity = (id: string, elevate: boolean) => api().HostSecurity(id, elevate)
+export const SecurityLogins = (id: string) => api().SecurityLogins(id)
+export const RememberSecurityLogins = (id: string, addrs: string[]) =>
+  api().RememberSecurityLogins(id, addrs)
+export const UnlockSecurity = (id: string) => api().UnlockSecurity(id)
+export const LockSecurity = (id: string) => api().LockSecurity(id)
 export const TypedEntered = (hostID: string, termID: string, line: string, blind: boolean) =>
   api().TypedEntered(hostID, termID, line, blind)
 export const TypedHistory = (hostID: string) => api().TypedHistory(hostID)

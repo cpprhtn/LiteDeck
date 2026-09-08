@@ -1,0 +1,5 @@
+nft_limit 16384 13 - Live 0x0000000000000000
+nft_compat 20480 133 - Live 0x0000000000000000
+nf_tables 380928 814 nft_limit,nft_reject_inet,nft_reject,nft_chain_nat,nft_compat, Live 0x0000000000000000
+ip_tables 32768 0 - Live 0x0000000000000000
+x_tables 65536 17 ip6t_REJECT,xt_hl,nft_compat,ip_tables, Live 0x0000000000000000

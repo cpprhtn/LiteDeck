@@ -1,0 +1,18 @@
+[DEFAULT]
+ignoreip = 127.0.0.1/8 ::1 203.0.113.10 198.51.100.20
+
+# 하루 20번 실패해야 걸린다 — 사람은 닿기 어렵고 봇은 전부 넘긴다
+findtime = 1d
+maxretry = 20
+# 관찰 모드 — 며칠 지켜본 뒤 30m 으로 올린다
+bantime  = 30m
+
+bantime.increment = true
+bantime.factor    = 2
+bantime.maxtime   = 1w
+
+backend = systemd
+
+[sshd]
+enabled = true
+port    = 22
