@@ -124,6 +124,51 @@ claiming to be right.
 looked, successful and failed logins (thousands a day, so a summary rather than a list),
 and whether security updates or a reboot are pending. → [Features in detail](docs/features.en.md)
 
+## Security tab <sub>v1.8.0</sub>
+
+**"What is guarding this server right now?"**
+
+Not whether a firewall is installed — **what it is blocking and whether that is
+working**. Open ports were in the network tab, failed logins in sessions, pending
+updates in monitoring, and no tab could say all three at once.
+
+```
+Firewall  ufw     fail2ban  active   Banned now  3    Packets dropped  11,316
+nftables in use   jail: sshd         10 total          +1,042 since you looked
+```
+
+**Packets dropped is what this screen is for.** Everything else says a thing is
+*configured*; that one says it is *working*. It shows the rise since you last
+looked rather than the total — a total says it worked at some point, which a
+switched-off rule can also say.
+
+**The unit state is not the answer.** On a real server `ufw.service` was
+`enabled` and `active` while `/etc/ufw/ufw.conf` said `ENABLED=no` — **the unit
+was up and the firewall was off.** The opposite trap is there too:
+`nftables.service` is a oneshot that runs at boot and exits, so Ubuntu ships it
+disabled, and reading that as "no firewall" lights a red lamp on **nearly every
+Ubuntu server**. So the unit, the config file and the kernel are all read, and a
+disagreement between them is shown rather than resolved.
+
+**"No firewall" is only said where the evidence supports it.** With no front end
+on but something using the kernel packet filter, the answer is "unclear" —
+Docker looks exactly like that, and calling it a firewall would be the opposite
+mistake.
+
+**The config file is compared against what is running.** `apt install` starts
+the service, so editing the file afterwards changes nothing the daemon is doing.
+Measured: the file said twenty retries and the jail was doing five — **a screen
+that reads only the file never notices.**
+
+> **Rules and the block list need root, so they sit behind a lock.** The tab
+> itself opens: a view that demands a password before showing anything is a view
+> nobody opens. That password is **not stored** — the keychain is neither read
+> nor written, and it is forgotten when the connection ends.
+
+**Commands that block an address are text to copy, not buttons.** One firewall
+rule can end the session it was typed from, and unlike every other change this
+app makes there is no copy to restore from.
+
 ## Claude works your servers through this app
 
 MCP clients like Claude Code and Claude Desktop **sit where the GUI sat**: the same adapter, the same
