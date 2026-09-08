@@ -3311,3 +3311,60 @@ button.events-unit {
 .security-mismatch p {
   margin: 2px 0;
 }
+.security-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-2);
+}
+.security-tile .num {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+.security-counters p {
+  margin: 2px 0;
+}
+.security-set {
+  margin: var(--sp-2) 0;
+}
+.security-set p {
+  margin: 0 0 var(--sp-1);
+}
+.security-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.security-chip {
+  font-size: var(--text-xs);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+/* A network, not one host. One line either way and a very different decision,
+   so they do not get the same shape. */
+.security-chip[data-range] {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.security-attacker {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  padding: 3px 0;
+  cursor: copy;
+}
+.security-attacker:hover {
+  background: var(--bg-hover);
+}
+.security-cluster {
+  color: var(--warn);
+  margin: var(--sp-1) 0 0;
+}

@@ -202,3 +202,34 @@ func TestFirstSeenLoginsAreMarkedOnceAndNotByReboots(t *testing.T) {
 		t.Errorf("이미 기억한 주소를 또 새것이라고 했다: %v", again)
 	}
 }
+
+// "Could not read" and "nobody is knocking" are opposite answers, and an empty
+// list reading as "safe" is the worst thing this feature can produce.
+func TestAttackerAccessIsReportedApartFromTheList(t *testing.T) {
+	a := connectedApp(t)
+	view, err := a.HostSecurity("fixture", false)
+	if err != nil {
+		t.Fatalf("HostSecurity: %v", err)
+	}
+	if view.AttackersAccess == "" {
+		t.Error("공격자 목록의 권한 상태를 말하지 않았다 — 빈 목록이 「안전함」으로 읽힌다")
+	}
+	info, err := a.DetectHost("fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	switch {
+	case info.CanReadJournal:
+		if view.AttackersAccess != EventAccessOK {
+			t.Errorf("저널을 읽을 수 있는데 %q", view.AttackersAccess)
+		}
+	case info.HasSudo:
+		if view.AttackersAccess != EventAccessNeedsSudo {
+			t.Errorf("sudo 가 있는데 %q — 권한을 올릴 수 있다고 말해야 한다", view.AttackersAccess)
+		}
+		if len(view.Attackers) != 0 {
+			t.Error("못 읽었는데 목록이 채워졌다")
+		}
+	}
+	t.Logf("fixture: access=%q attackers=%d", view.AttackersAccess, len(view.Attackers))
+}

@@ -6,12 +6,16 @@ import {
   RememberSecurityLogins,
   SecurityLogins,
   UnlockSecurity,
+  type Attacker,
   type FirewallRule,
   type Listener,
   type Login,
+  type NftCounter,
+  type NftSet,
   type SecurityUnit,
   type SecurityView as View,
 } from './ipc'
+import { AccessNotice } from './EventTimeline'
 import { k, t } from './i18n'
 
 // What is guarding this server (T-35).
@@ -189,6 +193,8 @@ export function SecurityView({
           )}
         </section>
 
+        <Blocking view={view} />
+
         <section className="panel security-detail">
           <h3>{t('규칙')}</h3>
           {view.unlocked ? (
@@ -306,6 +312,150 @@ function FirewallSummary({ view }: { view: View }) {
         </p>
       )}
     </>
+  )
+}
+
+/** What is being blocked, whether it is working, and who is still getting in.
+ *
+ *  The counter is the only number in this tab that says a thing is *working*
+ *  rather than configured. Everything else — a unit that is enabled, a file that
+ *  says yes — describes an arrangement; the packet count describes an effect.
+ *
+ *  The attacker list has already-blocked addresses removed, including the ones
+ *  inside a blocked network. Leaving them in gives a list nobody can act on,
+ *  and it misleads twice over: a banned address goes on appearing in the log
+ *  for as long as the window reaches back past the ban. */
+function Blocking({ view }: { view: View }) {
+  const sets = view.sets ?? []
+  const counters = (view.counters ?? []).filter((c) => c.packets > 0)
+  const attackers = view.attackers ?? []
+  const clusters = view.clusters ?? []
+  const jail = view.jail
+
+  return (
+    <section className="panel">
+      <h3>{t('차단 현황')}</h3>
+
+      {jail && (
+        <div className="security-tiles">
+          <Tile label={t('지금 차단 중')} value={jail.currentlyBanned} />
+          <Tile label={t('누적 차단')} value={jail.totalBanned} />
+          <Tile label={t('누적 실패')} value={jail.totalFailed} />
+          {/* No repeat rate here, deliberately. It is bans divided by the
+              *distinct addresses ever banned*, and `fail2ban-client status`
+              does not report that — it gives the total, and how many are
+              banned right now. Dividing by the second produced 143.5 on a
+              server whose real figure was about 4, which is worse than no
+              number: this tab's whole argument is that a wrong reading is
+              worse than a missing one. It needs the ban log, which is a
+              separate read. */}
+        </div>
+      )}
+
+      {counters.length > 0 && (
+        <div className="security-counters">
+          {counters.map((c, i) => (
+            <p key={i} className="small">
+              <span className="mono">{c.table}</span>
+              {c.fail2ban && <span className="security-profile">fail2ban</span>}{' '}
+              {t('{verdict} {n}개 패킷', { verdict: c.verdict, n: c.packets.toLocaleString() })}
+            </p>
+          ))}
+        </div>
+      )}
+
+      {sets.map((s) => (
+        <BlockedSet key={`${s.table}-${s.name}`} set={s} />
+      ))}
+
+      {/* Access before contents, always. An empty list where the journal could
+          not be read reads as "nobody is knocking", which is the one thing
+          this screen must never say by accident. */}
+      {view.attackersAccess !== 'ok' ? (
+        <p className="muted small">
+          {t('공격 시도를 읽으려면 저널 권한이 필요합니다 — 목록이 비어 있는 것과 다릅니다.')}
+        </p>
+      ) : attackers.length === 0 ? (
+        <p className="muted small">{t('최근 15분 동안 막히지 않은 시도는 없습니다.')}</p>
+      ) : (
+        <>
+          <p className="muted small">
+            {t('최근 15분, 아직 차단되지 않은 시도')}
+          </p>
+          {attackers.map((a) => (
+            <AttackerRow key={a.address} attacker={a} />
+          ))}
+          {clusters.map((c) => (
+            <p key={c.cidr} className="small security-cluster">
+              {t('{cidr} 에서 {hosts}대가 {n}회 — 대역째 막는 편이 낫습니다', {
+                cidr: c.cidr, hosts: c.hosts, n: c.count,
+              })}
+            </p>
+          ))}
+        </>
+      )}
+    </section>
+  )
+}
+
+function Tile({ label, value, hint }: { label: string; value: number | string; hint?: string }) {
+  return (
+    <div className="security-tile" title={hint}>
+      <div className="num">{value}</div>
+      <div className="muted small">{label}</div>
+    </div>
+  )
+}
+
+/** One block list. fail2ban's and a hand-made one are marked apart: its entries
+ *  come and go on their own as bans expire, and a hand-made table stays until
+ *  somebody takes it out. Mixing them loses the only question worth asking —
+ *  which of these did I put there. */
+function BlockedSet({ set }: { set: NftSet }) {
+  return (
+    <div className="security-set">
+      <p className="small">
+        <span className="mono">{set.table}</span>
+        <span className="security-profile">{set.fail2ban ? t('자동') : t('직접 추가')}</span>{' '}
+        <span className="muted">
+          {t('{n}개', { n: set.elements.length })}
+          {set.ranges > 0 && ` · ${t('대역 {n}개', { n: set.ranges })}`}
+        </span>
+      </p>
+      <div className="security-chips">
+        {set.elements.map((e) => (
+          <span key={e} className="mono security-chip" data-range={e.includes('/') || undefined}>
+            {e}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** One address still getting through, and the command that would stop it.
+ *
+ *  Text, not a button. A wrong firewall rule ends the session it was typed
+ *  from, and unlike every other write this app offers there is no copy to
+ *  restore from — see T-38. Copying is the same answer the command history
+ *  gives, for the same reason. */
+function AttackerRow({ attacker }: { attacker: Attacker }) {
+  const [copied, setCopied] = useState(false)
+  const cmd = `sudo nft add element inet blackhole banned { ${attacker.address} }`
+  return (
+    <button
+      className="security-attacker"
+      onClick={() => {
+        void navigator.clipboard?.writeText(cmd).catch(() => {})
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1200)
+      }}
+      title={`${cmd}\n\n${t('클릭하면 복사')}`}
+    >
+      <span className="mono">{attacker.address}</span>
+      <span className="muted small">{t('{n}회', { n: attacker.count })}</span>
+      {copied && <span className="small history-copied">{t('복사됨')}</span>}
+    </button>
   )
 }
 

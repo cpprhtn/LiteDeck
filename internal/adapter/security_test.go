@@ -295,3 +295,118 @@ func TestJailMismatchIsFoundOnlyByComparing(t *testing.T) {
 		t.Errorf("같은 값인데 %d건 불일치라고 했다: %+v", len(got), got)
 	}
 }
+
+// The sets a ruleset is blocking with, and who made each of them.
+//
+// fail2ban writes its own table and takes its entries out again when a ban
+// expires; a hand-made table is permanent until somebody removes it. Mixing the
+// two loses the only question worth asking about the list — "which of these did
+// I put there".
+func TestParseNftSetsSeparatesFail2banFromHandMade(t *testing.T) {
+	sets := ParseNftSets(golden(t, "ubuntu-24.04-nft-ruleset.txt"))
+	if len(sets) != 2 {
+		t.Fatalf("집합 %d개, 기대 2개: %+v", len(sets), sets)
+	}
+	by := map[string]NftSet{}
+	for _, s := range sets {
+		by[s.Table] = s
+	}
+
+	mine := by["blackhole"]
+	if mine.Fail2ban {
+		t.Error("사람이 만든 테이블을 fail2ban 것이라고 했다")
+	}
+	// Nine elements across four wrapped lines, two of them ranges.
+	if len(mine.Elements) != 9 {
+		t.Errorf("원소 %d개, 기대 9개: %v", len(mine.Elements), mine.Elements)
+	}
+	if mine.Ranges != 2 {
+		t.Errorf("대역 %d개, 기대 2개 — /24 는 개별 주소와 다르게 세야 한다", mine.Ranges)
+	}
+
+	f2b := by["f2b-table"]
+	if !f2b.Fail2ban {
+		t.Error("f2b-table 을 사람이 만든 것으로 봤다")
+	}
+	if len(f2b.Elements) != 2 {
+		t.Errorf("f2b 원소 %d개, 기대 2개", len(f2b.Elements))
+	}
+}
+
+// The drop counter is the only evidence that any of it is working.
+func TestParseNftCountersFindTheDropRule(t *testing.T) {
+	cs := ParseNftCounters(golden(t, "ubuntu-24.04-nft-ruleset.txt"))
+	if len(cs) != 2 {
+		t.Fatalf("카운터 %d개, 기대 2개: %+v", len(cs), cs)
+	}
+	if cs[0].Packets != 10274 || cs[0].Bytes != 616528 {
+		t.Errorf("%+v", cs[0])
+	}
+	if cs[0].Verdict != "drop" || cs[0].Table != "blackhole" {
+		t.Errorf("%+v", cs[0])
+	}
+	if cs[1].Verdict != "reject" || !cs[1].Fail2ban {
+		t.Errorf("%+v", cs[1])
+	}
+}
+
+// Empty is not the same as "could not read", and the screen must never show one
+// as the other — an empty block list reading as "safe" is the worst outcome
+// this feature can produce.
+func TestParseNftOnEmptyOutput(t *testing.T) {
+	if got := ParseNftSets(""); len(got) != 0 {
+		t.Errorf("빈 출력에서 집합이 나왔다: %v", got)
+	}
+	if got := ParseNftCounters(""); len(got) != 0 {
+		t.Errorf("빈 출력에서 카운터가 나왔다: %v", got)
+	}
+}
+
+// Attackers, minus the ones already handled.
+//
+// A list that includes addresses the firewall is already dropping is not a list
+// anybody can act on — and it misleads twice over, because a banned address
+// goes on appearing in the log for as long as the window reaches back before
+// the ban. Measured: an address topping a one-hour window with 931 lines whose
+// most recent line was fifty minutes old, already blocked and quiet since.
+func TestTopAttackersDropsWhatIsAlreadyBlocked(t *testing.T) {
+	counts := map[string]int{
+		"45.128.232.9":  931, // inside a banned /24
+		"92.118.39.85":  412, // banned individually by fail2ban
+		"203.0.113.77":  388, // not blocked
+		"203.0.113.78":  201, // not blocked, same /24
+		"198.51.100.31": 12,  // not blocked
+	}
+	blocked := []string{"45.128.232.0/24", "92.118.39.85"}
+
+	got := TopAttackers(counts, blocked, 10)
+	if len(got) != 3 {
+		t.Fatalf("남은 %d개, 기대 3개: %+v", len(got), got)
+	}
+	if got[0].Address != "203.0.113.77" || got[0].Count != 388 {
+		t.Errorf("가장 많은 것이 %+v", got[0])
+	}
+	for _, a := range got {
+		if a.Address == "45.128.232.9" {
+			t.Error("이미 대역째 막힌 주소가 남았다 — 대역 안에 있는지도 봐야 한다")
+		}
+	}
+}
+
+// Three or more from one /24 is a pattern that only shows when they are put
+// together. Measured: seven hosts from 109.160.32.0/24 on one server and eight
+// from 213.209.159.0/24 on another, each invisible one address at a time.
+func TestSubnetClustersAreFoundOnlyByGrouping(t *testing.T) {
+	got := SubnetClusters([]Attacker{
+		{Address: "109.160.32.11", Count: 90},
+		{Address: "109.160.32.12", Count: 80},
+		{Address: "109.160.32.13", Count: 70},
+		{Address: "203.0.113.77", Count: 400},
+	}, 3)
+	if len(got) != 1 {
+		t.Fatalf("군집 %d개, 기대 1개: %+v", len(got), got)
+	}
+	if got[0].CIDR != "109.160.32.0/24" || got[0].Hosts != 3 || got[0].Count != 240 {
+		t.Errorf("%+v", got[0])
+	}
+}

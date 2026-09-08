@@ -1,6 +1,9 @@
 package adapter
 
 import (
+	"fmt"
+	"net"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -508,7 +511,12 @@ type JailStatus struct {
 	Banned []string `json:"banned,omitempty"`
 }
 
-// Repeats is bans divided by the addresses they landed on.
+// Repeats is bans divided by the *distinct addresses ever banned*.
+//
+// Not the number banned right now — that divisor turned 287 bans into a repeat
+// rate of 143 on a server whose real figure was about four. The count it wants
+// comes from the ban log, and until a caller has that this is better left
+// uncalled than called with whatever is to hand.
 //
 // A high number means the ban expires before whoever it landed on gives up, so
 // they come back and are banned again — which is a `bantime` that is too short,
@@ -649,4 +657,294 @@ func ParseFail2banDuration(v string) int {
 		return 0
 	}
 	return n * mult
+}
+
+// Reading `nft list ruleset` for what is being blocked and whether it works.
+//
+// Two things are wanted out of it and neither is the ruleset itself. Who is
+// blocked — the sets — and whether the blocking is doing anything — the drop
+// counters. The rest is syntax.
+//
+// Deliberately not a full nft parser. The grammar is large and nobody here
+// needs it: a set with elements and a rule with a counter are the two shapes
+// that answer the question, and anything more elaborate is shown as text.
+
+// NftSet is one set a ruleset is blocking with.
+type NftSet struct {
+	Table string `json:"table"`
+	Name  string `json:"name"`
+	// Fail2ban marks a table fail2ban wrote. Its entries come and go on their
+	// own as bans expire; a hand-made table stays until somebody removes it.
+	// Mixing the two loses the only question worth asking about the list —
+	// which of these did I put there.
+	Fail2ban bool     `json:"fail2ban"`
+	Elements []string `json:"elements"`
+	// Ranges counts the entries that are a network rather than one address. A
+	// /24 and a single host are one line each and very different decisions.
+	Ranges int `json:"ranges"`
+}
+
+// NftCounter is a rule that counts what it acted on.
+//
+// The most useful number on the security screen. Everything else says a thing
+// is configured; this says it is doing something, and to how many packets.
+type NftCounter struct {
+	Table    string `json:"table"`
+	Chain    string `json:"chain"`
+	Fail2ban bool   `json:"fail2ban"`
+	Packets  int64  `json:"packets"`
+	Bytes    int64  `json:"bytes"`
+	// Verdict is what the rule does — drop, reject, accept.
+	Verdict string `json:"verdict"`
+}
+
+// fail2banTable reports whether a table name is one fail2ban made.
+func fail2banTable(name string) bool { return strings.HasPrefix(name, "f2b-") }
+
+// ParseNftSets pulls the sets and their elements out of a ruleset.
+//
+// Elements wrap across lines inside `{ ... }` and are comma separated, so the
+// body is gathered first and split afterwards — reading line by line would cut
+// an address list in half wherever nft chose to wrap it.
+func ParseNftSets(out string) []NftSet {
+	var sets []NftSet
+	table, setName := "", ""
+	inElements := false
+	var body strings.Builder
+
+	finish := func() {
+		if setName == "" {
+			return
+		}
+		s := NftSet{Table: table, Name: setName, Fail2ban: fail2banTable(table)}
+		for _, e := range strings.Split(body.String(), ",") {
+			e = strings.Trim(strings.TrimSpace(e), "{} ")
+			if e == "" {
+				continue
+			}
+			s.Elements = append(s.Elements, e)
+			if strings.Contains(e, "/") {
+				s.Ranges++
+			}
+		}
+		if len(s.Elements) > 0 {
+			sets = append(sets, s)
+		}
+		setName, inElements = "", false
+		body.Reset()
+	}
+
+	for _, line := range strings.Split(out, "\n") {
+		t := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(t, "table "):
+			finish()
+			f := strings.Fields(t)
+			// `table inet blackhole {` — the name is the last word before the brace.
+			if len(f) >= 3 {
+				table = strings.TrimSuffix(f[2], "{")
+				table = strings.TrimSpace(table)
+			}
+		case strings.HasPrefix(t, "set "):
+			finish()
+			setName = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(t, "set "), "{"))
+		case strings.HasPrefix(t, "elements = "):
+			inElements = true
+			body.WriteString(strings.TrimPrefix(t, "elements = "))
+			if strings.Contains(t, "}") {
+				finish()
+			}
+		case inElements:
+			body.WriteString(" " + t)
+			if strings.Contains(t, "}") {
+				finish()
+			}
+		}
+	}
+	finish()
+	return sets
+}
+
+// ParseNftCounters pulls out the rules that carry a counter.
+func ParseNftCounters(out string) []NftCounter {
+	var counters []NftCounter
+	table, chain := "", ""
+
+	for _, line := range strings.Split(out, "\n") {
+		t := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(t, "table "):
+			if f := strings.Fields(t); len(f) >= 3 {
+				table = strings.TrimSuffix(f[2], "{")
+			}
+			chain = ""
+		case strings.HasPrefix(t, "chain "):
+			chain = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(t, "chain "), "{"))
+		case strings.Contains(t, "counter packets "):
+			c := NftCounter{Table: table, Chain: chain, Fail2ban: fail2banTable(table)}
+			f := strings.Fields(t)
+			for i, w := range f {
+				switch w {
+				case "packets":
+					if i+1 < len(f) {
+						c.Packets = int64(jailInt(f[i+1]))
+					}
+				case "bytes":
+					if i+1 < len(f) {
+						c.Bytes = int64(jailInt(f[i+1]))
+					}
+				}
+			}
+			// The verdict is the last word, which is what the rule does with
+			// what it counted.
+			if len(f) > 0 {
+				c.Verdict = strings.TrimSuffix(f[len(f)-1], ";")
+			}
+			counters = append(counters, c)
+		}
+	}
+	return counters
+}
+
+// AttackersScript counts failed passwords per address over a short window.
+//
+// Short on purpose. A wide window includes the traffic from *before* a block
+// went on, so an address that has been silent for an hour still tops the list
+// and reads as "not handled yet" — which happened twice while this was being
+// worked out. Fifteen minutes is long enough to have numbers and short enough
+// that what it shows is still happening.
+//
+// journald filters by identifier so awk only sees sshd, and the counting is
+// done on the server: the point is a dozen rows, not twenty thousand lines.
+const AttackersScript = `journalctl -t sshd -t sshd-session --since '-15 min' --no-pager -q -o cat 2>/dev/null | awk '
+/Failed password|Invalid user/ {
+  for (i = 1; i <= NF; i++) if ($i == "from") { print $(i+1); break }
+}' | sort | uniq -c | sort -rn | head -40
+:`
+
+// ParseAttackerCounts reads `uniq -c` output into address → count.
+func ParseAttackerCounts(out string) map[string]int {
+	counts := map[string]int{}
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) != 2 {
+			continue
+		}
+		n := jailInt(f[0])
+		if n == 0 || net.ParseIP(f[1]) == nil {
+			continue
+		}
+		counts[f[1]] = n
+	}
+	return counts
+}
+
+// Attacker is one address and how many failures came from it.
+type Attacker struct {
+	Address string `json:"address"`
+	Count   int    `json:"count"`
+}
+
+// TopAttackers ranks the addresses that are still getting through.
+//
+// Addresses already blocked are removed, including the ones inside a blocked
+// network. Leaving them in gives a list nobody can act on, and it misleads
+// twice: a banned address goes on appearing in the log for as long as the
+// window reaches back past the ban. One measured example topped an hour's
+// window with 931 lines whose newest was fifty minutes old — blocked and quiet
+// the whole time since.
+func TopAttackers(counts map[string]int, blocked []string, limit int) []Attacker {
+	nets, hosts := parseBlocked(blocked)
+
+	var out []Attacker
+	for addr, n := range counts {
+		if hosts[addr] || inAnyNet(addr, nets) {
+			continue
+		}
+		out = append(out, Attacker{Address: addr, Count: n})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Count != out[j].Count {
+			return out[i].Count > out[j].Count
+		}
+		// Ties by address, so the list does not reshuffle between reads.
+		return out[i].Address < out[j].Address
+	})
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out
+}
+
+func parseBlocked(blocked []string) ([]*net.IPNet, map[string]bool) {
+	var nets []*net.IPNet
+	hosts := map[string]bool{}
+	for _, b := range blocked {
+		b = strings.TrimSpace(b)
+		if b == "" {
+			continue
+		}
+		if _, n, err := net.ParseCIDR(b); err == nil {
+			nets = append(nets, n)
+			continue
+		}
+		hosts[b] = true
+	}
+	return nets, hosts
+}
+
+func inAnyNet(addr string, nets []*net.IPNet) bool {
+	ip := net.ParseIP(addr)
+	if ip == nil {
+		return false
+	}
+	for _, n := range nets {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// SubnetCluster is several addresses from one /24.
+type SubnetCluster struct {
+	CIDR  string `json:"cidr"`
+	Hosts int    `json:"hosts"`
+	Count int    `json:"count"`
+}
+
+// SubnetClusters groups attackers by /24 and keeps the crowded ones.
+//
+// A pattern that only exists when they are put together: one address from a
+// range is noise, and seven of them is somebody working through it. Measured at
+// seven hosts from one network on one server and eight on another, each
+// invisible while the list was read one address at a time.
+func SubnetClusters(attackers []Attacker, min int) []SubnetCluster {
+	type acc struct{ hosts, count int }
+	by := map[string]*acc{}
+	for _, a := range attackers {
+		ip := net.ParseIP(a.Address).To4()
+		if ip == nil {
+			// v6 has no /24 worth speaking of, and grouping it by the same rule
+			// would say nothing true.
+			continue
+		}
+		cidr := fmt.Sprintf("%d.%d.%d.0/24", ip[0], ip[1], ip[2])
+		e := by[cidr]
+		if e == nil {
+			e = &acc{}
+			by[cidr] = e
+		}
+		e.hosts++
+		e.count += a.Count
+	}
+	var out []SubnetCluster
+	for cidr, e := range by {
+		if e.hosts < min {
+			continue
+		}
+		out = append(out, SubnetCluster{CIDR: cidr, Hosts: e.hosts, Count: e.count})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Count > out[j].Count })
+	return out
 }

@@ -595,6 +595,37 @@ export interface KernelFirewall {
   iptablesRefs: number
 }
 
+export interface NftSet {
+  table: string
+  name: string
+  /** fail2ban's own table. Its entries come and go as bans expire; a hand-made
+   *  one stays until somebody removes it. */
+  fail2ban: boolean
+  elements: string[]
+  /** Entries that are a network rather than one address. */
+  ranges: number
+}
+
+export interface NftCounter {
+  table: string
+  chain: string
+  fail2ban: boolean
+  packets: number
+  bytes: number
+  verdict: string
+}
+
+export interface Attacker {
+  address: string
+  count: number
+}
+
+export interface SubnetCluster {
+  cidr: string
+  hosts: number
+  count: number
+}
+
 export interface JailStatus {
   maxRetry: number
   findTime: number
@@ -634,6 +665,16 @@ export interface SecurityView {
    *  the file reports an intention as a state, forever. */
   jail?: JailStatus
   mismatches?: JailMismatch[]
+  /** What the ruleset blocks with, and whether the blocking does anything. */
+  sets?: NftSet[]
+  counters?: NftCounter[]
+  /** Who is still getting through — everything already blocked is removed,
+   *  because a list including handled addresses is one nobody can act on. */
+  attackers?: Attacker[]
+  clusters?: SubnetCluster[]
+  /** About the journal alone. "Could not read" and "nobody is knocking" must
+   *  never arrive as the same screen. */
+  attackersAccess: string
   /** Parsed where the tool was ufw. Absent for nft and iptables. */
   firewall?: FirewallStatus
   rules?: string

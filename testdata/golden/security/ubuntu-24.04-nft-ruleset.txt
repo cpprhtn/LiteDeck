@@ -1,0 +1,32 @@
+table inet blackhole {
+	set banned {
+		type ipv4_addr
+		flags interval
+		elements = { 45.128.232.0/24, 77.239.124.179,
+			     109.160.32.0/24, 176.53.159.197,
+			     185.220.101.42, 193.32.162.11,
+			     198.51.100.20, 203.0.113.10,
+			     213.209.159.88 }
+	}
+
+	chain input {
+		type filter hook input priority filter - 10; policy accept;
+		ip saddr @banned counter packets 10274 bytes 616528 drop
+	}
+}
+table ip filter {
+	chain INPUT {
+		type filter hook input priority filter; policy drop;
+	}
+}
+table inet f2b-table {
+	set addr-set-sshd {
+		type ipv4_addr
+		elements = { 92.118.39.85, 141.98.11.23 }
+	}
+
+	chain f2b-chain {
+		type filter hook input priority filter - 1; policy accept;
+		ip saddr @addr-set-sshd counter packets 512 bytes 30720 reject
+	}
+}

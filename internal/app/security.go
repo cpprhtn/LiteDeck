@@ -75,8 +75,27 @@ type SecurityView struct {
 	// and goes on doing it forever.
 	Jail       *adapter.JailStatus    `json:"jail,omitempty"`
 	Mismatches []adapter.JailMismatch `json:"mismatches,omitempty"`
+	// Sets and Counters are what the ruleset is blocking with, and whether the
+	// blocking is doing anything. The counter is the only number on this screen
+	// that says a thing is working rather than configured.
+	Sets     []adapter.NftSet     `json:"sets,omitempty"`
+	Counters []adapter.NftCounter `json:"counters,omitempty"`
+	// Attackers is who is still getting through, with everything already
+	// blocked removed — a list including handled addresses is one nobody can
+	// act on. Clusters groups them by /24, a pattern that only exists when they
+	// are put together.
+	Attackers []adapter.Attacker      `json:"attackers,omitempty"`
+	Clusters  []adapter.SubnetCluster `json:"clusters,omitempty"`
+	// AttackersAccess is about the journal alone. "Could not read" and "nobody
+	// is knocking" must never arrive as the same screen.
+	AttackersAccess EventAccess `json:"attackersAccess"`
 	// RulesError says why the elevated read did not happen, when it did not.
 	RulesError string `json:"rulesError,omitempty"`
+
+	// rawAttackers is the unfiltered count, kept so the list can be filtered
+	// again once the lock reveals what is already blocked. Not sent: a screen
+	// showing addresses the firewall already handles is what this avoids.
+	rawAttackers map[string]int
 }
 
 // Verdicts. Three, not two: "no firewall" is a strong claim and gets said only
@@ -200,6 +219,12 @@ func (a *App) HostSecurity(hostID string, elevate bool) (SecurityView, error) {
 	// The file is free to read; what it was supposed to configure is not.
 	jailDeclared := adapter.ParseJailDeclared(jails, "sshd")
 
+	// Free, and read whether or not the lock is open: it comes from the
+	// journal, which needs the same permission the event timeline needs and
+	// not root. Access is reported separately for the same reason it is there —
+	// "could not read" and "nobody is knocking" are opposite answers.
+	a.readAttackers(ctx, conn, hostID, &view, info, elevate)
+
 	if !elevate {
 		return view, nil
 	}
@@ -216,6 +241,12 @@ func (a *App) HostSecurity(hostID string, elevate bool) (SecurityView, error) {
 	view.Unlocked = true
 	view.Rules = rules
 	view.Bans = bans
+	// Blocked addresses only become known here, so the attacker list is
+	// filtered again now that there is something to filter with.
+	view.Sets = adapter.ParseNftSets(rules)
+	view.Counters = adapter.ParseNftCounters(rules)
+	view.Attackers = adapter.TopAttackers(view.rawAttackers, blockedFrom(view), 12)
+	view.Clusters = adapter.SubnetClusters(view.Attackers, 3)
 	// Parsed only for ufw. nft and iptables print something else entirely, and
 	// a half-understood ruleset is worse than a plain one because it looks like
 	// it was understood.
@@ -275,6 +306,50 @@ echo '#end'
 	// what found the boundary.
 	jail = strings.TrimSuffix(strings.TrimSpace("#get sshd maxretry"+jailPart), "#end")
 	return rules, bans, strings.TrimSpace(jail), nil
+}
+
+// readAttackers counts who is knocking, and filters out what is already
+// handled as far as this call can tell.
+func (a *App) readAttackers(
+	ctx context.Context, conn *sshcore.Conn, hostID string,
+	view *SecurityView, info ServerInfoView, elevate bool,
+) {
+	if !info.HasSystemd {
+		view.AttackersAccess = EventAccessNoJournal
+		return
+	}
+	if !info.CanReadJournal && !elevate {
+		if info.HasSudo {
+			view.AttackersAccess = EventAccessNeedsSudo
+		} else {
+			view.AttackersAccess = EventAccessDenied
+		}
+		return
+	}
+	res, err := a.execMaybeElevated(ctx, conn, hostID, elevate && !info.CanReadJournal,
+		"sh", "-c", adapter.AttackersScript)
+	if err != nil || (!res.OK() && len(res.Stdout) == 0) {
+		view.AttackersAccess = EventAccessDenied
+		return
+	}
+	view.AttackersAccess = EventAccessOK
+	view.rawAttackers = adapter.ParseAttackerCounts(string(res.Stdout))
+	// Without the lock the only blocked addresses known are fail2ban's, from
+	// its own status. That is better than nothing and less than the ruleset.
+	view.Attackers = adapter.TopAttackers(view.rawAttackers, blockedFrom(*view), 12)
+	view.Clusters = adapter.SubnetClusters(view.Attackers, 3)
+}
+
+// blockedFrom gathers every address this view knows to be blocked already.
+func blockedFrom(v SecurityView) []string {
+	var blocked []string
+	for _, s := range v.Sets {
+		blocked = append(blocked, s.Elements...)
+	}
+	if v.Jail != nil {
+		blocked = append(blocked, v.Jail.Banned...)
+	}
+	return blocked
 }
 
 // SecurityLogins is the successful logins, with the addresses this person has
