@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
@@ -232,4 +233,36 @@ func TestAttackerAccessIsReportedApartFromTheList(t *testing.T) {
 		}
 	}
 	t.Logf("fixture: access=%q attackers=%d", view.AttackersAccess, len(view.Attackers))
+}
+
+// ufw's status and the kernel ruleset are not alternatives.
+//
+// They were chained with `||`, so on a host that has ufw the ruleset never ran
+// — and the ruleset is where the blocked sets and the drop counters live. The
+// result was a security tab that showed everything on a server without ufw and
+// went half blank on one with it, which is the wrong way round: the box with a
+// firewall is the one whose blocking there is something to say about.
+//
+// ufw status is a friendly summary of ufw's own rules. `nft list ruleset` is
+// everything in the kernel, including the hand-made table and fail2ban's. A
+// host with ufw needs both read.
+func TestElevatedScriptReadsUfwAndTheRulesetBoth(t *testing.T) {
+	script := securityRulesScript
+	if !strings.Contains(script, "ufw status") {
+		t.Error("ufw status 를 안 읽는다")
+	}
+	if !strings.Contains(script, "nft list ruleset") {
+		t.Error("nft list ruleset 을 안 읽는다")
+	}
+	// The bug in one line: chaining them means only the first that works runs.
+	for _, line := range strings.Split(script, "\n") {
+		if strings.Contains(line, "ufw status") && strings.Contains(line, "nft list ruleset") {
+			t.Errorf("한 줄에 묶여 있다 — 둘 중 하나만 돈다: %q", line)
+		}
+	}
+	for _, marker := range []string{"#rules", "#ruleset", "#bans"} {
+		if !strings.Contains(script, marker) {
+			t.Errorf("%s 구역이 없다", marker)
+		}
+	}
 }

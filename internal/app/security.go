@@ -232,7 +232,7 @@ func (a *App) HostSecurity(hostID string, elevate bool) (SecurityView, error) {
 		view.RulesError = i18n.T("이 계정에는 sudo 가 없습니다")
 		return view, nil
 	}
-	rules, bans, jailOut, err := a.securityRules(ctx, conn, hostID, info)
+	rules, ruleset, bans, jailOut, err := a.securityRules(ctx, conn, hostID, info)
 	if err != nil {
 		// A refused password is a normal answer. The free half stands.
 		view.RulesError = err.Error()
@@ -243,8 +243,10 @@ func (a *App) HostSecurity(hostID string, elevate bool) (SecurityView, error) {
 	view.Bans = bans
 	// Blocked addresses only become known here, so the attacker list is
 	// filtered again now that there is something to filter with.
-	view.Sets = adapter.ParseNftSets(rules)
-	view.Counters = adapter.ParseNftCounters(rules)
+	// From the kernel ruleset, not from ufw's summary: ufw prints its own rules
+	// and knows nothing about the hand-made table or fail2ban's.
+	view.Sets = adapter.ParseNftSets(ruleset)
+	view.Counters = adapter.ParseNftCounters(ruleset)
 	view.Attackers = adapter.TopAttackers(view.rawAttackers, blockedFrom(view), 12)
 	view.Clusters = adapter.SubnetClusters(view.Attackers, 3)
 	// Parsed only for ufw. nft and iptables print something else entirely, and
@@ -254,6 +256,11 @@ func (a *App) HostSecurity(hostID string, elevate bool) (SecurityView, error) {
 		parsed := adapter.ParseUfwStatus(rules)
 		view.Firewall = &parsed
 	}
+	if rules == "" {
+		// No ufw on this host. The ruleset is all there is to show, and showing
+		// it is better than an empty pane.
+		view.Rules = ruleset
+	}
 	if strings.Contains(jailOut, "Status for the jail") {
 		jail := adapter.ParseJailStatus(jailOut)
 		view.Jail = &jail
@@ -262,16 +269,16 @@ func (a *App) HostSecurity(hostID string, elevate bool) (SecurityView, error) {
 	return view, nil
 }
 
-// securityRules reads the parts that need root, in one elevated round trip.
-func (a *App) securityRules(
-	ctx context.Context, conn *sshcore.Conn, hostID string, info ServerInfoView,
-) (rules, bans, jail string, err error) {
-	// Compile-time constant, like the free script. `2>&1` because these tools
-	// explain a refusal on stderr and that explanation is the useful part.
-	const script = `echo '#rules'
-ufw status verbose 2>&1 || nft list ruleset 2>&1 || iptables -S 2>&1
+// securityRulesScript is the elevated read. A compile-time constant, like the
+// free one, so passing it to `sh -c` stays inside the argv-only rule (§3.2b).
+const securityRulesScript = `echo '#rules'
+ufw status verbose 2>/dev/null
+echo '#ruleset'
+nft list ruleset 2>/dev/null
+echo '#iptables'
+iptables -S 2>/dev/null
 echo '#bans'
-fail2ban-client status 2>&1
+fail2ban-client status 2>/dev/null
 echo '#get sshd maxretry'
 fail2ban-client get sshd maxretry 2>/dev/null
 echo '#get sshd findtime'
@@ -282,30 +289,58 @@ echo '#status sshd'
 fail2ban-client status sshd 2>/dev/null
 echo '#end'
 :`
+
+// securityRules reads the parts that need root, in one elevated round trip.
+func (a *App) securityRules(
+	ctx context.Context, conn *sshcore.Conn, hostID string, info ServerInfoView,
+) (rules, ruleset, bans, jail string, err error) {
+	// Compile-time constant, like the free script. `2>&1` because these tools
+	// explain a refusal on stderr and that explanation is the useful part.
+	// ufw's own summary and the kernel ruleset are read separately, not chained.
+	//
+	// They answer different questions and a host can want both. `ufw status`
+	// lists what ufw was told; `nft list ruleset` is everything the kernel is
+	// actually doing, including a hand-made table and fail2ban's — which is
+	// where the blocked sets and the drop counters are. Chained with `||`, the
+	// ruleset never ran on a host that had ufw, so the tab went half blank on
+	// exactly the machines with a firewall to describe.
+	//
+	// stderr is dropped rather than shown. A missing tool is an answer, and
+	// `sh: 2: ufw: not found` in the middle of a rules pane is noise that reads
+	// as a fault.
+	const script = securityRulesScript
 	var res *sshcore.Result
 	if info.SudoNoPasswd {
 		res, err = conn.Exec(ctx, "sudo", "-n", "--", "sh", "-c", script)
 	} else {
 		password, ok := a.unlocked.get(hostID, a.mgr.Generation(hostID))
 		if !ok {
-			return "", "", "", i18n.Errorf("잠겨 있습니다")
+			return "", "", "", "", i18n.Errorf("잠겨 있습니다")
 		}
 		res, err = conn.ExecOpts(ctx,
 			sshcore.ExecOptions{Stdin: strings.NewReader(password + "\n")},
 			"sudo", "-S", "-p", "", "--", "sh", "-c", script)
 	}
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", "", err
 	}
 	out := string(res.Stdout)
-	rulesPart, rest, _ := strings.Cut(out, "#bans")
+	head, rest, _ := strings.Cut(out, "#bans")
 	bansPart, jailPart, _ := strings.Cut(rest, "#get sshd maxretry")
+	rulesPart, kernelPart, _ := strings.Cut(head, "#ruleset")
 	rules = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(rulesPart), "#rules"))
+	// The kernel side is nft where it answered and iptables where it did not.
+	// Whichever spoke is what the sets and counters are read from.
+	nftPart, iptPart, _ := strings.Cut(kernelPart, "#iptables")
+	ruleset = strings.TrimSpace(nftPart)
+	if ruleset == "" {
+		ruleset = strings.TrimSpace(iptPart)
+	}
 	bans = strings.TrimSpace(bansPart)
 	// Put the marker back: ParseJailStatus keys off it, and cutting on it is
 	// what found the boundary.
 	jail = strings.TrimSuffix(strings.TrimSpace("#get sshd maxretry"+jailPart), "#end")
-	return rules, bans, strings.TrimSpace(jail), nil
+	return rules, ruleset, bans, strings.TrimSpace(jail), nil
 }
 
 // readAttackers counts who is knocking, and filters out what is already
