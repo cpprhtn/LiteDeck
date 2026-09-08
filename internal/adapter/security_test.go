@@ -150,3 +150,51 @@ func TestSecurityScriptIsAConstantWithNoHoles(t *testing.T) {
 		}
 	}
 }
+
+// The rule list a real server produced, and the three things a reader has to
+// work out for themselves when it is printed raw.
+func TestParseUfwStatus(t *testing.T) {
+	s := ParseUfwStatus(golden(t, "ubuntu-24.04-ufw-status.txt"))
+	if !s.Active {
+		t.Error("Status: active 인데 비활성으로 읽었다")
+	}
+	if s.Incoming != "deny" || s.Outgoing != "allow" {
+		t.Errorf("기본 정책 in=%q out=%q, 기대 deny/allow", s.Incoming, s.Outgoing)
+	}
+	// Fourteen printed lines, seven rules: v4 and v6 say the same thing twice.
+	if len(s.Rules) != 7 {
+		t.Fatalf("규칙 %d개, 기대 7개 — v6 중복이 합쳐지지 않았다: %+v", len(s.Rules), s.Rules)
+	}
+	first := s.Rules[0]
+	if first.To != "22/tcp" || first.Action != "ALLOW IN" || first.From != "Anywhere" {
+		t.Errorf("첫 규칙 %+v", first)
+	}
+	if !first.V4 || !first.V6 {
+		t.Error("22/tcp 는 v4·v6 둘 다인데 한쪽만으로 읽었다")
+	}
+	// A rule can open several ports at once, and the cross-reference below
+	// needs each of them, not the string.
+	var nginx FirewallRule
+	for _, r := range s.Rules {
+		if strings.Contains(r.To, ",") {
+			nginx = r
+		}
+	}
+	if len(nginx.Ports) != 2 || nginx.Ports[0] != "80" || nginx.Ports[1] != "443" {
+		t.Errorf("80,443 을 포트 목록으로 못 갈랐다: %+v", nginx)
+	}
+	if nginx.Comment != "Nginx Full" {
+		t.Errorf("프로필 이름 %q, 기대 %q", nginx.Comment, "Nginx Full")
+	}
+}
+
+// An inactive firewall prints one line and no table.
+func TestParseUfwStatusInactive(t *testing.T) {
+	s := ParseUfwStatus("Status: inactive\n")
+	if s.Active {
+		t.Error("inactive 를 활성으로 읽었다")
+	}
+	if len(s.Rules) != 0 {
+		t.Errorf("규칙이 없는데 %d개 나왔다", len(s.Rules))
+	}
+}

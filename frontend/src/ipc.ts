@@ -559,6 +559,28 @@ export interface SecurityUnit {
   subState?: string
 }
 
+/** One rule of `ufw status`, with the v4 and v6 copies folded together. */
+export interface FirewallRule {
+  to: string
+  action: string
+  from: string
+  /** The numbers in `to`, split out for cross-referencing against listeners. */
+  ports?: string[]
+  comment?: string
+  v4: boolean
+  v6: boolean
+}
+
+export interface FirewallStatus {
+  active: boolean
+  /** The default incoming policy is the sentence that decides whether this
+   *  firewall does anything. A rule list under `allow` is decoration. */
+  incoming?: string
+  outgoing?: string
+  routed?: string
+  rules: FirewallRule[]
+}
+
 export interface SecurityView {
   units: SecurityUnit[]
   /** What /etc/ufw/ufw.conf says, and whether the file was there to say it.
@@ -571,6 +593,8 @@ export interface SecurityView {
   /** `sudo -n` works, so unlocking costs no password. */
   freeElevation: boolean
   unlocked: boolean
+  /** Parsed where the tool was ufw. Absent for nft and iptables. */
+  firewall?: FirewallStatus
   rules?: string
   bans?: string
   rulesError?: string
@@ -788,6 +812,9 @@ export interface SecretPrompt {
   kind: string
   label: string
   canRemember: boolean
+  /** Held only until this connection ends, whatever the keychain could do.
+   *  The dialog says so instead of offering a checkbox that would be a lie. */
+  sessionOnly?: boolean
   echo: boolean
 }
 

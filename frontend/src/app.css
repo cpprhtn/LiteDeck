@@ -3230,3 +3230,43 @@ button.events-unit {
   max-height: 40vh;
   white-space: pre;
 }
+.security-policy {
+  margin: 0 0 var(--sp-2);
+}
+/* The default that actually decides things. `deny` is the safe one, so it is
+   the one drawn in the safe colour — the opposite of every other state in this
+   tab, where red means off. */
+.security-policy b[data-deny] {
+  color: var(--ok);
+}
+.security-rules {
+  display: flex;
+  flex-direction: column;
+}
+.security-rule {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 90px 110px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+.security-rule-to {
+  font-weight: 600;
+}
+/* Allowed with nothing behind it. Muted rather than warned about: it is not
+   wrong today, and colouring it red would cry wolf on a server whose owner
+   opened a port for something they have not started yet. */
+.security-rule[data-idle] {
+  color: var(--fg-muted);
+}
+.security-heard {
+  color: var(--fg-faint);
+  white-space: nowrap;
+}
+.security-profile {
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  padding: 0 3px;
+  margin-right: 4px;
+}

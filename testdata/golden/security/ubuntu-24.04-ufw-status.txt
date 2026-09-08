@@ -1,0 +1,21 @@
+Status: active
+Logging: on (low)
+Default: deny (incoming), allow (outgoing), deny (routed)
+New profiles: skip
+
+To                         Action      From
+--                         ------      ----
+22/tcp                     ALLOW IN    Anywhere
+80,443/tcp (Nginx Full)    ALLOW IN    Anywhere
+9090/tcp                   ALLOW IN    Anywhere
+8080/tcp                   ALLOW IN    Anywhere
+25565/tcp                  ALLOW IN    Anywhere
+80/tcp                     ALLOW IN    Anywhere
+443/tcp                    ALLOW IN    Anywhere
+22/tcp (v6)                ALLOW IN    Anywhere (v6)
+80,443/tcp (Nginx Full (v6)) ALLOW IN  Anywhere (v6)
+9090/tcp (v6)              ALLOW IN    Anywhere (v6)
+8080/tcp (v6)              ALLOW IN    Anywhere (v6)
+25565/tcp (v6)             ALLOW IN    Anywhere (v6)
+80/tcp (v6)                ALLOW IN    Anywhere (v6)
+443/tcp (v6)               ALLOW IN    Anywhere (v6)

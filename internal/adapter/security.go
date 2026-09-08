@@ -222,3 +222,159 @@ func isTruthy(v string) bool {
 	}
 	return false
 }
+
+// FirewallRule is one line of `ufw status`, with the v4 and v6 copies folded
+// into one.
+//
+// ufw prints every rule twice — once for each address family — so a list of
+// seven rules arrives as fourteen lines. Showing them as fourteen makes the
+// reader do the folding, and the fold is not interesting: nobody opens a port
+// for v4 and means to leave it shut for v6.
+type FirewallRule struct {
+	To     string `json:"to"`
+	Action string `json:"action"`
+	From   string `json:"from"`
+	// Ports are the numbers in To, split out. A rule can open several at once
+	// (`80,443/tcp`), and the screen cross-references each against what is
+	// actually listening.
+	Ports []string `json:"ports,omitempty"`
+	// Comment is ufw's application profile, where one named the rule.
+	Comment string `json:"comment,omitempty"`
+	V4      bool   `json:"v4"`
+	V6      bool   `json:"v6"`
+}
+
+// FirewallStatus is what `ufw status verbose` says.
+type FirewallStatus struct {
+	Active bool `json:"active"`
+	// Incoming is the default policy, which is the sentence that actually
+	// decides whether this firewall does anything. A rule list under
+	// `Default: allow (incoming)` is decoration.
+	Incoming string         `json:"incoming,omitempty"`
+	Outgoing string         `json:"outgoing,omitempty"`
+	Routed   string         `json:"routed,omitempty"`
+	Rules    []FirewallRule `json:"rules"`
+}
+
+// ParseUfwStatus reads `ufw status verbose`.
+//
+// Only ufw's format. nft and iptables print something else entirely and their
+// output is shown as it came — a half-parsed ruleset is worse than a plain one,
+// because it looks like it was understood.
+func ParseUfwStatus(out string) FirewallStatus {
+	s := FirewallStatus{Rules: []FirewallRule{}}
+	// Folded by the rule's identity rather than its printed line: the v6 copy
+	// carries "(v6)" in two of its three columns.
+	seen := map[string]int{}
+	inTable := false
+
+	for _, line := range strings.Split(out, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if rest, ok := strings.CutPrefix(trimmed, "Status:"); ok {
+			s.Active = strings.TrimSpace(rest) == "active"
+			continue
+		}
+		if rest, ok := strings.CutPrefix(trimmed, "Default:"); ok {
+			s.Incoming, s.Outgoing, s.Routed = parseUfwDefaults(rest)
+			continue
+		}
+		if strings.HasPrefix(trimmed, "To ") || strings.HasPrefix(trimmed, "--") {
+			inTable = true
+			continue
+		}
+		if !inTable {
+			continue
+		}
+		r, ok := parseUfwRule(trimmed)
+		if !ok {
+			continue
+		}
+		key := r.To + "|" + r.Action + "|" + r.From
+		if at, dup := seen[key]; dup {
+			s.Rules[at].V4 = s.Rules[at].V4 || r.V4
+			s.Rules[at].V6 = s.Rules[at].V6 || r.V6
+			continue
+		}
+		seen[key] = len(s.Rules)
+		s.Rules = append(s.Rules, r)
+	}
+	return s
+}
+
+// parseUfwDefaults reads "deny (incoming), allow (outgoing), deny (routed)".
+func parseUfwDefaults(rest string) (in, out, routed string) {
+	for _, part := range strings.Split(rest, ",") {
+		part = strings.TrimSpace(part)
+		verb, where, ok := strings.Cut(part, " ")
+		if !ok {
+			continue
+		}
+		switch strings.Trim(where, "()") {
+		case "incoming":
+			in = verb
+		case "outgoing":
+			out = verb
+		case "routed":
+			routed = verb
+		}
+	}
+	return in, out, routed
+}
+
+// parseUfwRule reads one row of the table.
+//
+// Columns are separated by runs of spaces, and every one of them can contain a
+// single space of its own — "ALLOW IN", "Anywhere (v6)", "80,443/tcp (Nginx
+// Full)". Splitting on whitespace would cut all three in the wrong place, so
+// the split is on two-or-more spaces.
+func parseUfwRule(line string) (FirewallRule, bool) {
+	cols := splitColumns(line)
+	if len(cols) < 2 {
+		return FirewallRule{}, false
+	}
+	to, action := cols[0], cols[1]
+	from := ""
+	if len(cols) > 2 {
+		from = cols[2]
+	}
+	if !strings.Contains(action, "ALLOW") && !strings.Contains(action, "DENY") &&
+		!strings.Contains(action, "REJECT") && !strings.Contains(action, "LIMIT") {
+		return FirewallRule{}, false
+	}
+
+	r := FirewallRule{Action: action}
+	// "(v6)" marks the family and is not part of the rule's identity.
+	v6 := strings.Contains(to, "(v6)") || strings.Contains(from, "(v6)")
+	to = strings.TrimSpace(strings.ReplaceAll(to, "(v6)", ""))
+	r.From = strings.TrimSpace(strings.ReplaceAll(from, "(v6)", ""))
+	r.V6, r.V4 = v6, !v6
+
+	// What is left of a parenthesis is ufw's application profile name.
+	if open := strings.Index(to, "("); open >= 0 {
+		r.Comment = strings.TrimSpace(strings.Trim(to[open:], "() "))
+		to = strings.TrimSpace(to[:open])
+	}
+	r.To = to
+	spec, _, _ := strings.Cut(to, "/")
+	for _, p := range strings.Split(spec, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			r.Ports = append(r.Ports, p)
+		}
+	}
+	return r, true
+}
+
+// splitColumns cuts on two or more spaces, which is how ufw lines up a table
+// whose cells contain single spaces.
+func splitColumns(line string) []string {
+	var cols []string
+	for _, part := range strings.Split(line, "  ") {
+		if part = strings.TrimSpace(part); part != "" {
+			cols = append(cols, part)
+		}
+	}
+	return cols
+}

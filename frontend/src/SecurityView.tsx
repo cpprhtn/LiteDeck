@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
+  HostNetwork,
   HostSecurity,
   LockSecurity,
   UnlockSecurity,
+  type FirewallRule,
+  type Listener,
   type SecurityUnit,
   type SecurityView as View,
 } from './ipc'
@@ -54,13 +57,23 @@ export function SecurityView({
   onError: (msg: string) => void
 }) {
   const [view, setView] = useState<View | null>(null)
+  const [listening, setListening] = useState<Listener[]>([])
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(
     async (elevate: boolean) => {
       setBusy(true)
       try {
-        setView(await HostSecurity(hostID, elevate))
+        // The same listener list the network tab shows, rather than a second
+        // read of `ss` from inside the security script: two reads of the same
+        // thing can disagree, and a security screen disagreeing with the
+        // network screen about which ports are open is worse than a round trip.
+        const [sec, net] = await Promise.all([
+          HostSecurity(hostID, elevate),
+          HostNetwork(hostID).catch(() => null),
+        ])
+        setView(sec)
+        setListening(net?.listeners ?? [])
       } catch (e) {
         onError(String(e))
       } finally {
@@ -172,7 +185,11 @@ export function SecurityView({
           <h3>{t('규칙')}</h3>
           {view.unlocked ? (
             <>
-              {view.rules && <pre className="mono small security-pre">{view.rules}</pre>}
+              {view.firewall ? (
+                <RuleTable status={view.firewall} listening={listening} raw={view.rules} />
+              ) : (
+                view.rules && <pre className="mono small security-pre">{view.rules}</pre>
+              )}
               {view.bans && <pre className="mono small security-pre">{view.bans}</pre>}
             </>
           ) : (
@@ -185,6 +202,74 @@ export function SecurityView({
         </section>
       </div>
     </div>
+  )
+}
+
+/** The rules, folded and checked against what is actually listening.
+ *
+ *  ufw prints every rule twice, once per address family, so seven rules arrive
+ *  as fourteen lines — the adapter folds those. What is left is a list of open
+ *  ports, and the question a reader actually has about it is which of them lead
+ *  anywhere. A port allowed with nothing behind it is not dangerous today; it
+ *  is a door that opens the moment something binds to that number. */
+function RuleTable({
+  status,
+  listening,
+  raw,
+}: {
+  status: NonNullable<View['firewall']>
+  listening: Listener[]
+  raw?: string
+}) {
+  const open = new Set(listening.filter((l) => l.exposed).map((l) => l.port))
+  const heard = (r: FirewallRule) => (r.ports ?? []).some((p) => open.has(p))
+  const idle = status.rules.filter((r) => r.action.includes('ALLOW') && !heard(r))
+
+  return (
+    <>
+      {/* The default policy first: a rule list under `allow (incoming)` is
+          decoration, and reading the rules without it tells you nothing. */}
+      <p className="security-policy small">
+        {t('들어오는 것')} <b data-deny={status.incoming === 'deny' || undefined}>{status.incoming}</b>
+        {' · '}
+        {t('나가는 것')} <b>{status.outgoing}</b>
+        {status.routed ? ` · ${t('경유')} ${status.routed}` : ''}
+      </p>
+
+      <div className="security-rules">
+        {status.rules.map((r, i) => (
+          <div className="security-rule" key={`${r.to}-${i}`} data-idle={!heard(r) || undefined}>
+            <span className="mono security-rule-to">{r.to}</span>
+            <span className="small">{r.action}</span>
+            <span className="muted small">{r.from}</span>
+            <span className="muted small">
+              {r.comment && <span className="security-profile">{r.comment}</span>}
+              {r.v4 && r.v6 ? ' v4·v6' : r.v6 ? ' v6' : ' v4'}
+            </span>
+            <span className="small security-heard">
+              {heard(r) ? t('듣는 중') : t('아무것도 안 듣는 중')}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {idle.length > 0 && (
+        <p className="muted small">
+          {t('허용은 됐지만 지금 아무것도 듣지 않는 규칙 {n}개 — 지금 위험하지는 않지만, 무엇이든 그 포트를 잡는 순간 열립니다.', {
+            n: idle.length,
+          })}
+        </p>
+      )}
+
+      {/* The text it was parsed from, so a reader who doubts the table above
+          can check it rather than take it on faith. */}
+      {raw && (
+        <details>
+          <summary className="muted small">{t('원본 보기')}</summary>
+          <pre className="mono small security-pre">{raw}</pre>
+        </details>
+      )}
+    </>
   )
 }
 

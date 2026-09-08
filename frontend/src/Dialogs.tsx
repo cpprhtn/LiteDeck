@@ -126,7 +126,11 @@ export function SecretDialog({
           spellCheck={false}
         />
 
-        {prompt.canRemember ? (
+        {prompt.sessionOnly ? (
+          <p className="muted small">
+            {t('이 비밀번호는 저장하지 않습니다 — 연결이 끊기면 잊습니다.')}
+          </p>
+        ) : prompt.canRemember ? (
           <label className="checkbox">
             <input
               type="checkbox"

@@ -45,6 +45,10 @@ type SecretPrompt struct {
 	HostID string `json:"hostId"`
 	Kind   string `json:"kind"`  // password, passphrase, sudo
 	Label  string `json:"label"` // what to show above the field
+	// SessionOnly marks a secret this app will not keep past the connection,
+	// whatever the keychain could do. The dialog then explains that rather than
+	// offering a checkbox that would be a lie — see askSessionSecret.
+	SessionOnly bool `json:"sessionOnly,omitempty"`
 	// CanRemember is false where no OS credential store exists, so the UI does
 	// not offer to remember something it cannot keep (§6).
 	CanRemember bool `json:"canRemember"`
@@ -154,7 +158,25 @@ func (a *App) AnswerHostKey(id, decision string) error {
 }
 
 // askSecret shows a secret dialog and blocks until it is answered.
+// askSessionSecret asks for a secret this app will hold only until the
+// connection ends.
+//
+// No keychain, in either direction: it is not read and it is not offered. The
+// security tab's lock means "I typed this, for this session", and a checkbox
+// that writes it to disk is a different promise wearing the same word. Anything
+// that wants the durable behaviour uses secretFunc instead.
+func (b *promptBridge) askSessionSecret(hostID string, kind secret.Kind, label string) (string, error) {
+	value, _, err := b.ask(hostID, kind, label, false, true)
+	return value, err
+}
+
 func (b *promptBridge) askSecret(hostID string, kind secret.Kind, label string, echo bool) (string, bool, error) {
+	return b.ask(hostID, kind, label, echo, false)
+}
+
+func (b *promptBridge) ask(
+	hostID string, kind secret.Kind, label string, echo, sessionOnly bool,
+) (string, bool, error) {
 	id := b.nextID()
 	ch := make(chan secretAnswer, 1)
 
@@ -172,7 +194,8 @@ func (b *promptBridge) askSecret(hostID string, kind secret.Kind, label string, 
 		HostID:      hostID,
 		Kind:        string(kind),
 		Label:       label,
-		CanRemember: b.app.secrets.Available(),
+		SessionOnly: sessionOnly,
+		CanRemember: !sessionOnly && b.app.secrets.Available(),
 		Echo:        echo,
 	})
 

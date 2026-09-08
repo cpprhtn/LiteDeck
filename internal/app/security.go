@@ -53,10 +53,12 @@ type SecurityView struct {
 	FreeElevation bool `json:"freeElevation"`
 	// Unlocked reports whether the fields below were actually read.
 	Unlocked bool `json:"unlocked"`
-	// Rules is the firewall's own account of itself, and Bans fail2ban's.
-	// Empty unless Unlocked.
-	Rules string `json:"rules,omitempty"`
-	Bans  string `json:"bans,omitempty"`
+	// Firewall is the rule list, parsed where the tool was ufw. Rules keeps the
+	// raw text — for nft and iptables it is all there is, and even for ufw it
+	// is what somebody checks the parse against.
+	Firewall *adapter.FirewallStatus `json:"firewall,omitempty"`
+	Rules    string                  `json:"rules,omitempty"`
+	Bans     string                  `json:"bans,omitempty"`
 	// RulesError says why the elevated read did not happen, when it did not.
 	RulesError string `json:"rulesError,omitempty"`
 }
@@ -160,6 +162,13 @@ func (a *App) HostSecurity(hostID string, elevate bool) (SecurityView, error) {
 	view.Unlocked = true
 	view.Rules = rules
 	view.Bans = bans
+	// Parsed only for ufw. nft and iptables print something else entirely, and
+	// a half-understood ruleset is worse than a plain one because it looks like
+	// it was understood.
+	if strings.Contains(rules, "Status:") {
+		parsed := adapter.ParseUfwStatus(rules)
+		view.Firewall = &parsed
+	}
 	return view, nil
 }
 
@@ -219,7 +228,10 @@ func (a *App) UnlockSecurity(hostID string) (bool, error) {
 		// type their password at any dialog that appears.
 		return true, nil
 	}
-	password, err := a.prompts.secretFunc(hostID, secret.KindSudo, i18n.S("sudo 비밀번호"))()
+	// Deliberately not secretFunc: that one reads the keychain and offers to
+	// write to it. This lock is a session, not a saved credential — asked every
+	// connection, kept nowhere.
+	password, err := a.prompts.askSessionSecret(hostID, secret.KindSudo, i18n.S("sudo 비밀번호"))
 	if errors.Is(err, ErrPromptCancelled) {
 		return false, nil
 	}
