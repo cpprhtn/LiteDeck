@@ -707,4 +707,5 @@ export const en: Record<string, string> = {
   '레일 펼치기': 'Show sidebar',
   '{n}개 선택': '{n} selected',
   '하나만 선택하세요': 'Select exactly one',
+  '호스트 바꾸기': 'Switch host',
 }

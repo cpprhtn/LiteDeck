@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from 'react'
+import { Icon, type IconName } from './icons'
 import { type ConnState, type HostView } from './ipc'
 import { ShellControls } from './ShellControls'
 import { k, t } from './i18n'
@@ -17,6 +19,14 @@ import { shortcutLabel } from './platform'
 // 보안, and room for a view to report something about itself before you go
 // there. It also gives the window a row back, which the file list and the
 // editor both wanted.
+//
+// # Collapsed, it is still a rail
+//
+// Folding it to nothing meant the only way back to another host or another
+// section was to unfold it again — so "give me the window" and "let me move
+// around" became opposites. Collapsed it keeps a 52px strip: the sections as
+// icons, and the current host as a button that drops the list. That is the
+// whole reason the icons above exist.
 //
 // # Why the host list folds and the sections do not
 //
@@ -59,6 +69,8 @@ export function Rail({
   onNavigate,
   selfMode,
   onHide,
+  onShow,
+  collapsed,
 }: {
   hosts: HostView[]
   activeID: string | null
@@ -83,10 +95,21 @@ export function Rail({
   onNavigate: (id: string) => void
   /** "This server" mode shows one machine and has no host list to give. */
   selfMode?: boolean
-  /** Folds the whole rail away, sections included. */
+  /** Folds the rail down to the icon strip. */
   onHide: () => void
+  onShow: () => void
+  /** Showing the icon strip rather than the full column. */
+  collapsed: boolean
 }) {
   const active = hosts.find((h) => h.id === activeID)
+
+  if (collapsed) {
+    return (
+      <CollapsedRail
+        {...{ hosts, activeID, active, onSelect, onConnect, groups, current, onNavigate, onShow, selfMode }}
+      />
+    )
+  }
 
   return (
     <aside className="rail">
@@ -173,6 +196,7 @@ export function Rail({
                   aria-current={s.id === current ? 'page' : undefined}
                   onClick={() => onNavigate(s.id)}
                 >
+                  <Icon name={s.id as IconName} />
                   {t(s.label)}
                 </button>
               ))}
@@ -266,5 +290,128 @@ function HostList({
         </div>
       ))}
     </div>
+  )
+}
+
+/**
+ * The rail folded down to 52px.
+ *
+ * Everything here is one of two things: where am I, and where can I go. No
+ * import, no add, no version — those are errands, and somebody who folded the
+ * rail away to read code is not running errands.
+ */
+function CollapsedRail({
+  hosts,
+  activeID,
+  active,
+  onSelect,
+  onConnect,
+  groups,
+  current,
+  onNavigate,
+  onShow,
+  selfMode,
+}: {
+  hosts: HostView[]
+  activeID: string | null
+  active?: HostView
+  onSelect: (id: string) => void
+  onConnect: (id: string) => void
+  groups: SectionGroup[]
+  current: string | null
+  onNavigate: (id: string) => void
+  onShow: () => void
+  selfMode?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const pop = useRef<HTMLDivElement>(null)
+
+  // Closing on an outside click and on Escape, because a menu that only closes
+  // by picking something is a menu you cannot back out of.
+  useEffect(() => {
+    if (!open) return
+    const away = (e: MouseEvent) => {
+      if (!pop.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    document.addEventListener('mousedown', away)
+    document.addEventListener('keydown', esc)
+    return () => {
+      document.removeEventListener('mousedown', away)
+      document.removeEventListener('keydown', esc)
+    }
+  }, [open])
+
+  return (
+    <aside className="rail rail-mini">
+      <button
+        className="ghost icon-btn"
+        onClick={onShow}
+        title={`${t('레일 펼치기')} (${shortcutLabel('toggleRail')})`}
+        aria-label={t('레일 펼치기')}
+      >
+        »
+      </button>
+
+      {!selfMode && (
+        <div className="rail-mini-host" ref={pop}>
+          <button
+            className="rail-mini-btn"
+            data-on={open || undefined}
+            onClick={() => setOpen((v) => !v)}
+            aria-haspopup="menu"
+            aria-expanded={open}
+            title={active ? `${active.name || active.hostname} — ${t('호스트 바꾸기')}` : t('호스트 바꾸기')}
+          >
+            {active ? <StateDot state={active.state} /> : <Icon name="server" />}
+          </button>
+          {open && (
+            <div className="rail-pop" role="menu">
+              {hosts.map((h) => (
+                <button
+                  key={h.id}
+                  role="menuitem"
+                  className="rail-pop-item"
+                  data-on={h.id === activeID || undefined}
+                  onClick={() => {
+                    onSelect(h.id)
+                    // Switching to a host nobody has connected yet is almost
+                    // always a request to connect to it. The list in the open
+                    // rail keeps the two apart because it has room for two
+                    // buttons; here there is room for one.
+                    if (h.state === 'disconnected') onConnect(h.id)
+                    setOpen(false)
+                  }}
+                >
+                  <StateDot state={h.state} />
+                  <span className="ellipsis">{h.name || h.hostname}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <nav className="rail-mini-nav" aria-label={t('화면')}>
+        {groups.map((g, i) => (
+          <div className="rail-mini-group" key={g.label} data-first={i === 0 || undefined}>
+            {g.items.map((s) => (
+              <button
+                key={s.id}
+                className="rail-mini-btn"
+                data-on={s.id === current || undefined}
+                data-unsupported={s.unsupported || undefined}
+                aria-current={s.id === current ? 'page' : undefined}
+                onClick={() => onNavigate(s.id)}
+                title={t(s.label)}
+                aria-label={t(s.label)}
+              >
+                <Icon name={s.id as IconName} />
+              </button>
+            ))}
+          </div>
+        ))}
+      </nav>
+    </aside>
   )
 }

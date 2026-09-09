@@ -48,7 +48,7 @@ import { getLanguage, initLanguage, k, t, useT } from './i18n'
 import { McpPanel } from './McpPanel'
 import { McpHostBadge } from './McpHostBadge'
 import { closeHost } from './openFiles'
-import { initPlatform, matches, shortcutLabel } from './platform'
+import { initPlatform, matches } from './platform'
 
 // The application shell (§8): the rail on the left — hosts and sections in
 // one column — and the selected host's
@@ -376,7 +376,6 @@ export default function App() {
       data-self={selfMode || undefined}
       data-rail={railOpen ? undefined : 'off'}
     >
-      {railOpen && (
       <Rail
         hosts={hosts}
         activeID={activeID}
@@ -396,8 +395,9 @@ export default function App() {
         onNavigate={(id) => setTab(id as Tab)}
         selfMode={selfMode}
         onHide={() => setPref('railOpen', false)}
+        onShow={() => setPref('railOpen', true)}
+        collapsed={!railOpen}
       />
-      )}
 
       {mcpOpen && (
         <McpPanel hosts={hosts} onClose={() => setMcpOpen(false)} onError={setError} />
@@ -405,16 +405,6 @@ export default function App() {
 
       <main className="main">
         <header className="main-head">
-          {!railOpen && (
-            <button
-              className="ghost icon-btn"
-              onClick={() => setPref('railOpen', true)}
-              title={`${t('레일 펼치기')} (${shortcutLabel('toggleRail')})`}
-              aria-label={t('레일 펼치기')}
-            >
-              »
-            </button>
-          )}
           {active ? (
             <>
               <div className="host-id">
