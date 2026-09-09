@@ -7,7 +7,7 @@ import { HostKeyDialog, McpWriteDialog, SecretDialog } from './Dialogs'
 import { ContainerView } from './ContainerView'
 import { FileExplorer } from './FileExplorer'
 import { HostEditor, emptyHost } from './HostEditor'
-import { HostSidebar } from './HostSidebar'
+import { Rail, type SectionGroup } from './Rail'
 import { SecurityView } from './SecurityView'
 import { setPref, usePref } from './prefs'
 import { ShellControls } from './ShellControls'
@@ -50,7 +50,8 @@ import { McpHostBadge } from './McpHostBadge'
 import { closeHost } from './openFiles'
 import { initPlatform } from './platform'
 
-// The application shell (§8): host sidebar on the left, the selected host's
+// The application shell (§8): the rail on the left — hosts and sections in
+// one column — and the selected host's
 // tabs in the middle, the Command Log along the bottom.
 //
 // Scoped to what §1.6 fixed — a handful of servers, opened when something needs
@@ -83,6 +84,18 @@ const TABS: { id: Tab; label: string; capability?: string }[] = [
   { id: 'security', label: k('보안'), capability: 'services' },
   { id: 'monitor', label: k('모니터링'), capability: 'metrics' },
   { id: 'terminal', label: k('터미널') },
+]
+
+// How the sections are grouped in the rail.
+//
+// Three groups, by what you came to do rather than by which subsystem answers:
+// 작업 is where you change something, 시스템 is what the box is running right
+// now, 관측 is what it has been doing. Nine flat buttons made every view look
+// equally likely, which none of them are — 파일 and 터미널 carry most sessions.
+const SECTION_GROUPS: { label: string; items: Tab[] }[] = [
+  { label: k('작업'), items: ['files', 'terminal'] },
+  { label: k('시스템'), items: ['services', 'processes', 'containers', 'network', 'sessions'] },
+  { label: k('관측'), items: ['security', 'monitor'] },
 ]
 
 const PLATFORM_LABEL: Record<string, string> = {
@@ -279,6 +292,9 @@ export default function App() {
   // Above the bench short-circuits: everything below them is unreachable on a
   // bench render, and a hook that only sometimes runs is a hook React counts
   // wrong on the next pass.
+  // Stored under its old name: it used to fold the whole sidebar and now folds
+  // only the host list inside the rail. Renaming the key would silently reset
+  // the preference for everybody who had already set it.
   const sidebarOpen = usePref('sidebarOpen')
 
   if (benchMode === null) return <div className="boot">{t('시작 중…')}</div>
@@ -317,31 +333,31 @@ export default function App() {
 
   const selfMode = boot?.selfMode
 
+  // Empty until there is a connected host: the rail has nowhere to send anyone
+  // before that, and a nav full of dead buttons is worse than no nav.
+  const navGroups: SectionGroup[] =
+    active && connected
+      ? SECTION_GROUPS.map((g) => ({
+          label: g.label,
+          items: g.items.map((id) => {
+            const entry = TABS.find((x) => x.id === id)!
+            return {
+              id,
+              label: entry.label,
+              unsupported: !!(
+                entry.capability && activeInfo?.capabilities?.[entry.capability] === false
+              ),
+            }
+          }),
+        }))
+      : []
+
   return (
     <div
       className="app"
       data-self={selfMode || undefined}
-      data-sidebar={!selfMode && !sidebarOpen ? 'off' : undefined}
     >
-      {/* Collapsed to a rail rather than removed. The button has to stay where
-          the list was — that is where somebody who folded it away will look for
-          it — and a control that vanishes with the thing it controls is a
-          setting people cannot find their way out of. */}
-      {!selfMode && !sidebarOpen && (
-        <aside className="sidebar-rail">
-          <button
-            className="ghost icon-btn"
-            onClick={() => setPref('sidebarOpen', true)}
-            title={t('호스트 목록 펼치기')}
-            aria-label={t('호스트 목록 펼치기')}
-          >
-            »
-          </button>
-        </aside>
-      )}
-
-      {!selfMode && sidebarOpen && (
-      <HostSidebar
+      <Rail
         hosts={hosts}
         activeID={activeID}
         onSelect={setActiveID}
@@ -353,9 +369,13 @@ export default function App() {
         busy={busy}
         version={boot?.version}
         onOpenMCP={() => setMcpOpen(true)}
-        onCollapse={() => setPref('sidebarOpen', false)}
+        listOpen={sidebarOpen}
+        onToggleList={() => setPref('sidebarOpen', !sidebarOpen)}
+        groups={navGroups}
+        current={tab}
+        onNavigate={(id) => setTab(id as Tab)}
+        selfMode={selfMode}
       />
-      )}
 
       {mcpOpen && (
         <McpPanel hosts={hosts} onClose={() => setMcpOpen(false)} onError={setError} />
@@ -441,26 +461,6 @@ export default function App() {
                 <DigestStrip hostID={active.id} />
               </ErrorBoundary>
             )}
-
-            {/* Tabs stay clickable even when the server cannot serve them.
-                Greying one out tells the user nothing about why, and a tooltip
-                is not an answer — the view explains itself instead. */}
-            <nav className="tabs">
-              {TABS.map((entry) => {
-                const unsupported =
-                  entry.capability && activeInfo?.capabilities?.[entry.capability] === false
-                return (
-                  <button
-                    key={entry.id}
-                    data-on={tab === entry.id || undefined}
-                    data-unsupported={unsupported || undefined}
-                    onClick={() => setTab(entry.id)}
-                  >
-                    {t(entry.label)}
-                  </button>
-                )
-              })}
-            </nav>
 
             {/* Hidden rather than unmounted, so coming back to a tab finds it
                 as it was left. Every polling view stops the moment `visible`

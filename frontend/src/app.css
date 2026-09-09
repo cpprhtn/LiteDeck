@@ -20,7 +20,7 @@
   grid-template-columns: 248px 1fr;
   grid-template-rows: 1fr auto;
   grid-template-areas:
-    'sidebar main'
+    'rail main'
     'cmdlog cmdlog';
   height: 100%;
   background: var(--bg);
@@ -29,8 +29,8 @@
 /* Flex for the same reason .main is: the empty-state block and the version
    footer make the child count vary, and a fixed track list would hand 1fr to
    whichever child happens to land in the second row. */
-.sidebar {
-  grid-area: sidebar;
+.rail {
+  grid-area: rail;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -38,14 +38,14 @@
   background: var(--bg-sunken);
 }
 
-.sidebar-head {
+.rail-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: var(--sp-3) var(--sp-3) var(--sp-2);
 }
 
-.sidebar-title {
+.rail-title {
   font-size: var(--text-xs);
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -54,15 +54,123 @@
 }
 
 .host-list {
+  /* Was flex:1. The nav below it owns the leftover space now — the list grows
+     with its contents and stops, so eight hosts do not push the sections off
+     the bottom of the window. */
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid var(--border);
+}
+
+/* The fold control doubles as the list's heading, so the word and the twisty
+   are one target instead of a 10px triangle beside a label. */
+.rail-fold {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  /* Not .ghost. That rule paints its text with --accent, which made the word
+     "호스트" look like a link to somewhere rather than the heading of the list
+     under it — and it won on specificity, so the colour set here never
+     applied. */
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.rail-fold .twisty {
+  display: inline-block;
+  width: 10px;
+  color: var(--fg-faint);
+}
+
+/* Folded, this is all that is left of the list — and it has to keep saying
+   which machine the sections below are about. */
+.rail-current {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: calc(100% - var(--sp-3) * 2);
+  margin: 0 var(--sp-3) var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  font: inherit;
+  color: var(--fg);
+  cursor: pointer;
+  text-align: left;
+}
+.rail-current:hover {
+  background: var(--bg-hover);
+}
+
+/* The sections. Takes the space the host list gives up, and scrolls on its own
+   so a long list never pushes navigation off the bottom. */
+.rail-nav {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding-bottom: var(--sp-3);
+  padding: var(--sp-2) var(--sp-2) var(--sp-3);
+}
+.rail-group + .rail-group {
+  margin-top: var(--sp-3);
+}
+.rail-group-label {
+  padding: var(--sp-1) var(--sp-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+.rail-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  height: var(--nav-item-h);
+  padding: 0 var(--sp-2);
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.rail-item:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+/* Selected is a filled row, not an underline: a vertical list has no edge for
+   an underline to sit on, and the fill is what tells you where you are from the
+   corner of your eye. */
+.rail-item[data-on] {
+  background: var(--bg-selected);
+  color: var(--fg);
+  font-weight: 600;
+}
+/* The server cannot serve this one. Marked, not disabled — the view itself
+   explains why, and a dead button explains nothing. */
+.rail-item[data-unsupported]::after {
+  content: '';
+  width: 5px;
+  height: 5px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--warn);
 }
 
 /* Where the running version lives. Pushed to the bottom edge so it is always
    visible without competing with the host list for attention. */
-.sidebar-foot {
+.rail-foot {
   flex: none;
   display: flex;
   align-items: center;
@@ -74,7 +182,7 @@
   padding: var(--sp-2) var(--sp-3);
   border-top: 1px solid var(--border);
 }
-.sidebar-foot .checkbox {
+.rail-foot .checkbox {
   white-space: nowrap;
 }
 
@@ -108,7 +216,7 @@
     animation-duration: 2.4s;
   }
 }
-.sidebar-foot .spacer {
+.rail-foot .spacer {
   flex: 1;
 }
 
@@ -228,17 +336,6 @@
 /* Folded away: the list drops to a rail holding only the way back. Editing a
    file is what this is for — the host list earns its width while choosing a
    server and none of it while reading code on one. */
-.app[data-sidebar='off'] {
-  grid-template-columns: 36px 1fr;
-}
-.sidebar-rail {
-  grid-area: sidebar;
-  display: flex;
-  justify-content: center;
-  padding-top: var(--sp-3);
-  border-right: 1px solid var(--border);
-  background: var(--bg-sunken);
-}
 
 /* Server "this server" mode: no host sidebar (one auto-connected host), so the
    grid drops to a single column and the shell controls move into the header. */
@@ -258,35 +355,6 @@
   display: none;
 }
 
-.tabs {
-  display: flex;
-  gap: var(--sp-1);
-  padding: var(--sp-2) var(--sp-4) 0;
-  border-bottom: 1px solid var(--border);
-}
-.tabs button {
-  border: none;
-  /* Square at the bottom, and that is not decoration. The global button rule
-     rounds every corner by 6px, which clipped the 2px underline below into a
-     taper at each end — the "crescent" somebody quite reasonably complained
-     about. The indicator has to reach the edges to read as an underline. */
-  border-radius: var(--radius) var(--radius) 0 0;
-  background: transparent;
-  color: var(--fg-muted);
-  font: inherit;
-  padding: var(--sp-2) var(--sp-4);
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-}
-.tabs button[data-on] {
-  color: var(--fg);
-  border-bottom-color: var(--accent);
-  font-weight: 600;
-}
-.tabs button:disabled {
-  color: var(--fg-faint);
-  cursor: not-allowed;
-}
 
 /* Views ----------------------------------------------------------------- */
 
@@ -1599,13 +1667,6 @@ button.danger {
 }
 
 /* A tab the server cannot serve is still reachable; the panel says why. */
-.tabs button[data-unsupported] {
-  color: var(--fg-faint);
-}
-.tabs button[data-unsupported]::after {
-  content: ' ·';
-  color: var(--warn);
-}
 
 .unavailable {
   flex: 1;
