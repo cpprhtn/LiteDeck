@@ -222,16 +222,21 @@
 
 .tabs {
   display: flex;
-  gap: 2px;
+  gap: var(--sp-1);
   padding: var(--sp-2) var(--sp-4) 0;
   border-bottom: 1px solid var(--border);
 }
 .tabs button {
   border: none;
+  /* Square at the bottom, and that is not decoration. The global button rule
+     rounds every corner by 6px, which clipped the 2px underline below into a
+     taper at each end — the "crescent" somebody quite reasonably complained
+     about. The indicator has to reach the edges to read as an underline. */
+  border-radius: var(--radius) var(--radius) 0 0;
   background: transparent;
   color: var(--fg-muted);
   font: inherit;
-  padding: var(--sp-2) var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
   border-bottom: 2px solid transparent;
   cursor: pointer;
 }
