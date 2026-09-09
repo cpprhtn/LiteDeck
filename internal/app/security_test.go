@@ -341,3 +341,29 @@ func countSecurityReads(a *App) int {
 	}
 	return runs
 }
+
+// The lock belongs to the connection, not to the app.
+//
+// It is keyed by generation so a reconnect closes it without anybody having to
+// remember to. That is what makes "연결 끊기면 잠긴다" true even when the drop was
+// not a deliberate disconnect — a dropped Wi-Fi link reconnects with a new
+// generation and the held password stops answering for it.
+func TestSudoUnlockIsPerConnection(t *testing.T) {
+	u := newSudoUnlock()
+	u.put("h", 1, "hunter2")
+
+	if pw, ok := u.get("h", 1); !ok || pw != "hunter2" {
+		t.Fatalf("같은 연결에서 못 읽었다: %q %v", pw, ok)
+	}
+	if _, ok := u.get("h", 2); ok {
+		t.Error("다시 연결한 뒤에도 열려 있었다")
+	}
+	if _, ok := u.get("other", 1); ok {
+		t.Error("다른 호스트의 잠금이 열렸다")
+	}
+
+	u.forget("h")
+	if _, ok := u.get("h", 1); ok {
+		t.Error("잠갔는데 그대로였다")
+	}
+}

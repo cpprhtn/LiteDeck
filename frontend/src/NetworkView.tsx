@@ -8,6 +8,7 @@ import {
   type SSHDNote,
   type SSHDReport,
 } from './ipc'
+import { LockButton, useSudoState } from './LockButton'
 import { t } from './i18n'
 
 // The network view (v1.x). Answers the two questions people actually open a
@@ -51,6 +52,14 @@ export function NetworkView({
 
   usePoll(refresh, POLL_MS, visible)
 
+  // The same lock the security tab shows. `ss` hands over other users' process
+  // names only to root, and this tab used to say so with nothing on it to act
+  // on — the permission existed one tab away and this one could not reach it.
+  //
+  // Above the loading early-return, with the other hooks. Below it the hook
+  // count changes between renders and React tears the tab down.
+  const sudo = useSudoState(hostID)
+
   if (loading && !net) {
     return <div className="placeholder">{t('네트워크 상태를 읽는 중…')}</div>
   }
@@ -71,6 +80,7 @@ export function NetworkView({
           </button>
         </div>
         <span className="spacer" />
+        <LockButton hostID={hostID} state={sudo} onChange={() => void refresh(true)} />
         <button className="ghost" onClick={() => void refresh(true)}>
           {t('새로고침')}
         </button>

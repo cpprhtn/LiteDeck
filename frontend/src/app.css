@@ -328,6 +328,21 @@
   border-top-color: transparent;
 }
 
+/* The lock. Same control in the security tab and the network tab, because it
+   is the same lock. */
+.lock-btn,
+.lock-none {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  white-space: nowrap;
+}
+.lock-btn .icon,
+.lock-none .icon {
+  width: 16px;
+  height: 16px;
+}
+
 .spin-slot {
   display: inline-block;
   width: 17px;

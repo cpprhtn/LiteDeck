@@ -3,10 +3,8 @@ import { clock, stamp } from './datetime'
 import {
   HostNetwork,
   HostSecurity,
-  LockSecurity,
   RememberSecurityLogins,
   SecurityLogins,
-  UnlockSecurity,
   type Attacker,
   type FirewallRule,
   type Listener,
@@ -18,6 +16,7 @@ import {
   type SecurityView as View,
 } from './ipc'
 import { Panel } from './ResourceView'
+import { LockButton, useSudoState } from './LockButton'
 import { k, t } from './i18n'
 
 // What is guarding this server (T-35).
@@ -59,6 +58,10 @@ export function SecurityView({
   const [logins, setLogins] = useState<Login[]>([])
   const [fresh, setFresh] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
+  // The lock is the connection's, not this tab's. Unlocking in the network tab
+  // has to land here too, which is why the state comes from Go rather than from
+  // whatever this screen last read.
+  const sudo = useSudoState(hostID)
 
   const load = useCallback(
     async (elevate: boolean, force = false) => {
@@ -93,9 +96,14 @@ export function SecurityView({
 
   // Read once, not polled. A firewall does not change between two ticks of a
   // timer, and the tab is one round trip.
+  //
+  // Elevated from the start when the connection is already unlocked — which it
+  // may be because somebody turned the lock in the network tab. Re-reads when
+  // that changes, so this screen never sits on the locked answer while the
+  // permission is already in hand.
   useEffect(() => {
-    if (visible) void load(false)
-  }, [visible, load])
+    if (visible) void load(sudo.unlocked)
+  }, [visible, load, sudo.unlocked])
 
   if (!view) {
     return <div className="placeholder">{busy ? t('읽는 중…') : t('보안 상태를 읽는 중…')}</div>
@@ -128,28 +136,6 @@ export function SecurityView({
   const lastLogin = logins.find((l) => !l.boot)
   const news = logins.filter((l) => !l.boot && l.from && fresh.has(l.from))
 
-  const unlock = async () => {
-    setBusy(true)
-    try {
-      // Closing the dialog answers false. Told apart by the return value rather
-      // than by reading the text of an error, which would break the first time
-      // somebody switched the app to English.
-      if (await UnlockSecurity(hostID)) {
-        await load(true, true)
-      } else {
-        setBusy(false)
-      }
-    } catch (e) {
-      onError(String(e))
-      setBusy(false)
-    }
-  }
-
-  const lock = async () => {
-    await LockSecurity(hostID).catch(() => {})
-    void load(false)
-  }
-
   return (
     <div className="view security-view">
       <div className="view-toolbar">
@@ -169,7 +155,7 @@ export function SecurityView({
         </span>
         <span className="spacer" />
         {busy && <span className="muted small">{t('읽는 중…')}</span>}
-        <LockButton view={view} onUnlock={() => void unlock()} onLock={() => void lock()} />
+        <LockButton hostID={hostID} state={sudo} onChange={() => void load(true, true)} />
         {/* "Ask again" means past the cache. Everything else — a tab switch, a
             re-render — takes what is there, because the day of journal the
             chart reads is three seconds of somebody's time. */}
@@ -672,42 +658,4 @@ function ToolRow({
 }
 
 /** Three states, because "cannot" and "have not" are different answers. */
-function LockButton({
-  view,
-  onUnlock,
-  onLock,
-}: {
-  view: View
-  onUnlock: () => void
-  onLock: () => void
-}) {
-  if (!view.canElevate) {
-    return (
-      <span className="muted small" title={t('이 계정에는 sudo 가 없습니다')}>
-        🚫 {t('잠김')}
-      </span>
-    )
-  }
-  if (view.unlocked) {
-    return (
-      <button className="ghost small-btn" onClick={onLock} title={t('연결이 끊기면 자동으로 잠깁니다')}>
-        🔓 {t('잠그기')}
-      </button>
-    )
-  }
-  return (
-    <button
-      className="ghost small-btn"
-      onClick={onUnlock}
-      title={
-        view.freeElevation
-          ? t('이 서버는 비밀번호 없이 열립니다')
-          : t('sudo 비밀번호를 한 번 묻고, 연결이 끊길 때까지 유지합니다')
-      }
-    >
-      🔒 {t('잠금 해제')}
-    </button>
-  )
-}
-
 export const SECURITY_TAB_LABEL = k('보안')

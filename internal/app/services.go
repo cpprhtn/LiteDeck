@@ -137,6 +137,11 @@ func (a *App) DetectHost(hostID string) (ServerInfoView, error) {
 		return ServerInfoView{}, err
 	}
 	a.detected.put(hostID, info)
+	// Whether this account has sudo at all is part of what detection just
+	// learned, and the lock control renders before this finishes. Without this
+	// a view that mounted first would sit on "no sudo here" until something
+	// else happened to turn the lock.
+	a.emitSudoState(hostID)
 	return newServerInfoView(info), nil
 }
 

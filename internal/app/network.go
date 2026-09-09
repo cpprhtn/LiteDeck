@@ -84,6 +84,9 @@ type NetworkView struct {
 	// on minimal images, and a half-empty tab with no explanation reads as a
 	// bug rather than a missing package.
 	Warnings []string `json:"warnings"`
+	// Elevated reports that the socket list was read as root, which is the
+	// difference between seeing every process name and seeing only your own.
+	Elevated bool `json:"elevated"`
 }
 
 // HostNetwork collects interfaces and listening sockets.
@@ -148,7 +151,13 @@ func (a *App) HostNetwork(hostID string) (NetworkView, error) {
 		a.ifaces.put(hostID, gen, ifaces)
 	}
 
-	if res, err := conn.Poll(ctx, "ss", adapter.SSArgs()...); err != nil {
+	// Elevated where the connection is already unlocked, plain where it is not.
+	// `ss` shows other users' process names only to root, and the lock the
+	// security tab offers is the same lock — turning it there means this tab
+	// stops hiding names too, without asking a second time.
+	res, elevated, err := a.execUnlocked(ctx, conn, hostID, "ss", adapter.SSArgs()...)
+	out.Elevated = elevated
+	if err != nil {
 		out.Warnings = append(out.Warnings, "ss: "+err.Error())
 	} else if !res.OK() && len(res.Stdout) == 0 {
 		out.Warnings = append(out.Warnings,
@@ -165,9 +174,9 @@ func (a *App) HostNetwork(hostID string) (NetworkView, error) {
 				named++
 			}
 		}
-		if len(ls) > 0 && named == 0 {
+		if len(ls) > 0 && named == 0 && !elevated {
 			out.Warnings = append(out.Warnings,
-				i18n.S("프로세스 이름을 볼 수 없습니다 — 다른 사용자의 소켓은 관리자 권한이 필요합니다"))
+				i18n.S("프로세스 이름을 볼 수 없습니다 — 오른쪽 자물쇠를 열면 보입니다"))
 		}
 	}
 

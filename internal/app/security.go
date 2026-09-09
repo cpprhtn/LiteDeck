@@ -631,6 +631,12 @@ func (a *App) UnlockSecurity(hostID string) (bool, error) {
 		// type their password at any dialog that appears.
 		return true, nil
 	}
+	// Already open on this connection. Turning the lock in one tab and then
+	// turning it in another asked for the password twice for the same
+	// permission, which is exactly the thing this lock exists to avoid.
+	if _, ok := a.unlocked.get(hostID, a.mgr.Generation(hostID)); ok {
+		return true, nil
+	}
 	// Deliberately not secretFunc: that one reads the keychain and offers to
 	// write to it. This lock is a session, not a saved credential — asked every
 	// connection, kept nowhere.
@@ -642,10 +648,62 @@ func (a *App) UnlockSecurity(hostID string) (bool, error) {
 		return false, err
 	}
 	a.unlocked.put(hostID, a.mgr.Generation(hostID), password)
+	a.emitSudoState(hostID)
 	return true, nil
 }
 
 // LockSecurity drops a held sudo password without waiting for a disconnect.
 func (a *App) LockSecurity(hostID string) {
 	a.unlocked.forget(hostID)
+	a.emitSudoState(hostID)
+}
+
+// SudoUnlocked reports whether privileged reads will work on this connection
+// without asking anybody anything.
+//
+// The lock is one thing per connection, not one per tab: the security tab and
+// the network tab both need the same permission for the same reason, and
+// somebody who has already proved they may have it should not be asked again to
+// see process names.
+func (a *App) SudoUnlocked(hostID string) bool {
+	if _, ok := a.unlocked.get(hostID, a.mgr.Generation(hostID)); ok {
+		return true
+	}
+	// Only what detection already found. Calling DetectHost here would probe —
+	// and this runs on the disconnect path, where it repopulated the cache that
+	// had just been dropped and sent commands down a connection being torn
+	// down. A host that has not been detected yet simply reads as locked.
+	info, ok := a.detected.get(hostID)
+	return ok && info.SudoNoPasswd
+}
+
+// SudoState is what the lock looks like right now, for any view that shows one.
+type SudoState struct {
+	HostID   string `json:"hostID"`
+	Unlocked bool   `json:"unlocked"`
+	// Available is false where this account has no sudo at all — then the lock
+	// is not a thing to offer, it is a fact to state.
+	Available bool `json:"available"`
+}
+
+// HostSudoState answers for a view that has just mounted.
+//
+// Reads the detection cache rather than detecting: a view mounting is not a
+// reason to probe a server, and the tab that shows this lock has already caused
+// a detection by the time it renders.
+func (a *App) HostSudoState(hostID string) SudoState {
+	st := SudoState{HostID: hostID, Unlocked: a.SudoUnlocked(hostID)}
+	if info, ok := a.detected.get(hostID); ok {
+		st.Available = info.HasSudo
+	}
+	return st
+}
+
+// emitSudoState tells every open view that the lock turned. Without it the
+// network tab would keep saying "administrator rights are needed" after the
+// security tab had just obtained them.
+func (a *App) emitSudoState(hostID string) {
+	if a.emit != nil {
+		a.emit("sudo:state", a.HostSudoState(hostID))
+	}
 }

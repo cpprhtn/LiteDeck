@@ -47,6 +47,8 @@ export type IconName =
   | 'security'
   | 'monitor'
   | 'server'
+  | 'lock'
+  | 'unlock'
 
 export function Icon({ name }: { name: IconName }) {
   switch (name) {
@@ -117,6 +119,23 @@ export function Icon({ name }: { name: IconName }) {
         <svg {...box}>
           <path d="M1.75 13.25V2.75M1.75 13.25h12.5" />
           <path d="m4.25 10.5 2.5-3 2.25 2 3.25-4.5" />
+        </svg>
+      )
+    case 'lock':
+      return (
+        <svg {...box}>
+          <rect x="3.25" y="7" width="9.5" height="7" rx="1.5" />
+          <path d="M5.5 7V5.25a2.5 2.5 0 0 1 5 0V7" />
+        </svg>
+      )
+    case 'unlock':
+      // The shackle is open and leaning: at this size a closed and an open
+      // padlock differ by two pixels of arc, and the tilt is what makes them
+      // tell apart at a glance.
+      return (
+        <svg {...box}>
+          <rect x="3.25" y="7" width="9.5" height="7" rx="1.5" />
+          <path d="M5.5 7V5.25a2.5 2.5 0 0 1 4.9-.65" />
         </svg>
       )
     case 'server':
