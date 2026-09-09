@@ -247,6 +247,7 @@ export function MetricsBar({ hostID }: { hostID: string }) {
         unit={m.cpu < 0 ? undefined : '%'}
         samples={samples}
         pick={(s) => s.cpu}
+        note={m.cores.length > 0 ? t('{n}코어', { n: m.cores.length }) : undefined}
         warn={m.cpu >= 85}
         title={m.cpu < 0 ? t('두 번째 샘플을 기다리는 중 — 누적 카운터라 한 번만으로는 알 수 없습니다') : undefined}
       />
@@ -256,6 +257,10 @@ export function MetricsBar({ hostID }: { hostID: string }) {
         unit="%"
         samples={samples}
         pick={(s) => s.mem}
+        // The figure people asked for: 62G is what the machine has, and a
+        // percentage alone never says it. It was in the tooltip, which is where
+        // things go to be found by nobody.
+        note={`${fmtBytes(m.memUsed)} / ${fmtBytes(m.memTotal)}`}
         warn={m.memPercent >= 90}
         title={`${fmtBytes(m.memUsed)} / ${fmtBytes(m.memTotal)}`}
       />
@@ -266,7 +271,16 @@ export function MetricsBar({ hostID }: { hostID: string }) {
           label="GPU"
           value={fmtPct(gpus[0].utilization)}
           unit={gpus[0].utilization < 0 ? undefined : '%'}
-          note={gpus[0].fan < 0 ? fmtTemp(gpus[0].tempC) : t('팬 {f}%', { f: fmtPct(gpus[0].fan) })}
+          // VRAM rather than the fan. A card's memory is what fills up and
+          // stops a job; the fan is what you check after. Both are still in the
+          // tooltip.
+          note={
+            gpus[0].memTotal > 0
+              ? `${fmtBytes(gpus[0].memUsed)} / ${fmtBytes(gpus[0].memTotal)}`
+              : gpus[0].fan < 0
+                ? fmtTemp(gpus[0].tempC)
+                : t('팬 {f}%', { f: fmtPct(gpus[0].fan) })
+          }
           samples={samples}
           pick={(s) => s.gpu[0] ?? -1}
           warn={gpuWarn(gpus[0])}
@@ -333,6 +347,7 @@ export function MetricsBar({ hostID }: { hostID: string }) {
           label={t('디스크 {mount}', { mount: disk.mountPoint })}
           value={disk.percent.toFixed(0)}
           unit="%"
+          note={`${fmtBytes(disk.used)} / ${fmtBytes(disk.size)}`}
           warn={disk.percent >= 90}
           title={t('{used} / {size} · 여유 {free}', {
             used: fmtBytes(disk.used),
@@ -355,6 +370,7 @@ export function MetricsBar({ hostID }: { hostID: string }) {
         <Stat
           label={t('스왑')}
           value={fmtBytes(m.swapUsed)}
+          note={`/ ${fmtBytes(m.swapTotal)}`}
           warn={m.swapUsed > m.swapTotal * 0.5}
           title={`${fmtBytes(m.swapUsed)} / ${fmtBytes(m.swapTotal)}`}
         />

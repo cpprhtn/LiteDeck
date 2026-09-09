@@ -1689,6 +1689,16 @@ button.danger {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+/* The absolute figures go first when the bar runs out of room.
+   The summary bar's job is the glance, and a percentage answers that on its
+   own — 62G is the number you read, 7% is the one you see. Anybody who wants
+   the bytes on a narrow window has the monitoring tab, which has had them all
+   along. */
+@media (max-width: 1180px) {
+  .metric-note {
+    display: none;
+  }
+}
 .metric[data-warn] .metric-value {
   color: var(--danger);
   font-weight: 600;

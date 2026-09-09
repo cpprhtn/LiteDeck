@@ -189,6 +189,7 @@ export const en: Record<string, string> = {
   '리로드': 'Reload',
   '마지막 실행': 'Last run',
   '메모리': 'Memory',
+  '{n}코어': '{n} cores',
   '명령': 'Command',
   '명령 · 사용자 · PID 검색': 'Search command · user · PID',
   '목록 {n}': 'List {n}',
