@@ -703,4 +703,6 @@ export const en: Record<string, string> = {
   '자동 시작': 'Enabled',
   '프로토콜': 'Proto',
   '항목': 'Keyword',
+  '레일 접기': 'Hide sidebar',
+  '레일 펼치기': 'Show sidebar',
 }

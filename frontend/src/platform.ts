@@ -30,6 +30,7 @@ export type Action =
   | 'newFolder'
   | 'copyPath'
   | 'save'
+  | 'toggleRail'
 
 interface Binding {
   /** KeyboardEvent.key */
@@ -51,6 +52,7 @@ const MAC: Record<Action, Binding> = {
   newFolder: { key: 'n', mod: true, shift: true, label: '⇧⌘N' },
   copyPath: { key: 'c', mod: true, alt: true, label: '⌥⌘C' },
   save: { key: 's', mod: true, label: '⌘S' },
+  toggleRail: { key: 'b', mod: true, label: '⌘B' },
 }
 
 const PC: Record<Action, Binding> = {
@@ -63,6 +65,7 @@ const PC: Record<Action, Binding> = {
   newFolder: { key: 'n', mod: true, shift: true, label: 'Ctrl+Shift+N' },
   copyPath: { key: 'c', mod: true, shift: true, label: 'Ctrl+Shift+C' },
   save: { key: 's', mod: true, label: 'Ctrl+S' },
+  toggleRail: { key: 'b', mod: true, label: 'Ctrl+B' },
 }
 
 let platform: Platform = {

@@ -25,6 +25,11 @@
   height: 100%;
   background: var(--bg);
 }
+/* Folded away entirely — sections and all. The reason to collapse this column
+   was never to hide hosts, it was to give the content the window. */
+.app[data-rail='off'] {
+  grid-template-columns: 0 1fr;
+}
 
 /* Flex for the same reason .main is: the empty-state block and the version
    footer make the child count vary, and a fixed track list would hand 1fr to
@@ -322,10 +327,21 @@
 .main-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-4);
+  padding: var(--sp-2) var(--sp-3);
   border-bottom: 1px solid var(--border);
+  background: var(--bg-sunken);
+  min-height: 40px;
+  container-type: inline-size;
+  container-name: head;
+}
+/* The host's identity. Shrinks first — the numbers to its right are fixed
+   width and the address is the part that can afford an ellipsis. */
+.main-head > .host-id {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
 }
 
 .host-title {
@@ -1746,21 +1762,51 @@ button.danger {
 
 /* Monitoring summary bar ------------------------------------------------- */
 
+/* Lives inside .main-head now, so it brings no band of its own. Pushed right:
+   the host is the subject on the left, the numbers are the predicate. */
 .metrics-bar {
   display: flex;
   align-items: center;
   gap: var(--sp-4);
-  padding: var(--sp-2) var(--sp-4);
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-sunken);
-  min-height: 44px;
+  margin-left: auto;
+  padding-left: var(--sp-3);
+  min-width: 0;
 }
 
+/* One line, not two. Stacked label-over-value needed 44px of window for four
+   numbers; on a row it needs the height it was going to take anyway. */
 .metric {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
+  align-items: baseline;
+  gap: var(--sp-1);
+  /* Numbers never wrap and never squeeze. Letting them shrink made "디스크 62%"
+     run into "로드" — the box got smaller, the text did not, and the gap between
+     tiles went with it. When the row runs out of window, whole tiles leave
+     instead (below); half a number is worse than no number. */
+  flex: none;
+  white-space: nowrap;
+}
+.metric-uptime {
+  margin-left: var(--sp-3);
+  white-space: nowrap;
+}
+/* What goes first as the row runs out of room. The three that stay are the
+   three somebody actually scans for: is it busy, is it out of memory, is it
+   full.
+
+   Keyed on the header's own width, not the window's. A media query got this
+   wrong in a way that only showed on screenshots: with the rail open the header
+   is 248px narrower than the window, so at 1440px the breakpoints all said
+   "plenty of room" while 스왑 was being cut in half at the right edge. */
+@container head (max-width: 1250px) {
+  [data-p='3'] {
+    display: none;
+  }
+}
+@container head (max-width: 1100px) {
+  [data-p='2'] {
+    display: none;
+  }
 }
 .metric-label {
   font-size: var(--text-xs);

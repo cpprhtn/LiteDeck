@@ -1,6 +1,7 @@
 import { type ConnState, type HostView } from './ipc'
 import { ShellControls } from './ShellControls'
 import { k, t } from './i18n'
+import { shortcutLabel } from './platform'
 
 // The left rail (§4.1) — hosts and sections in one column.
 //
@@ -57,6 +58,7 @@ export function Rail({
   current,
   onNavigate,
   selfMode,
+  onHide,
 }: {
   hosts: HostView[]
   activeID: string | null
@@ -81,42 +83,58 @@ export function Rail({
   onNavigate: (id: string) => void
   /** "This server" mode shows one machine and has no host list to give. */
   selfMode?: boolean
+  /** Folds the whole rail away, sections included. */
+  onHide: () => void
 }) {
   const active = hosts.find((h) => h.id === activeID)
 
   return (
     <aside className="rail">
+      {/* Always rendered, self mode included: it carries the control that folds
+          the rail away, and a control that vanishes with the thing it controls
+          is a setting people cannot find their way out of. */}
+      <div className="rail-head">
+        {!selfMode && (
+          <button
+            className="rail-fold"
+            onClick={onToggleList}
+            aria-expanded={listOpen}
+            title={listOpen ? t('호스트 목록 접기') : t('호스트 목록 펼치기')}
+          >
+            <span className="twisty" aria-hidden="true">
+              {listOpen ? '▾' : '▸'}
+            </span>
+            {t('호스트')}
+          </button>
+        )}
+        <span className="spacer" />
+        {!selfMode && listOpen && (
+          <>
+            <button
+              className="ghost small-btn"
+              onClick={onImport}
+              disabled={busy}
+              title={t('~/.ssh/config 가져오기')}
+            >
+              {t('가져오기')}
+            </button>
+            <button className="ghost small-btn" onClick={onAdd} disabled={busy} title={t('호스트 추가')}>
+              {t('+ 추가')}
+            </button>
+          </>
+        )}
+        <button
+          className="ghost icon-btn"
+          onClick={onHide}
+          title={`${t('레일 접기')} (${shortcutLabel('toggleRail')})`}
+          aria-label={t('레일 접기')}
+        >
+          «
+        </button>
+      </div>
+
       {!selfMode && (
         <>
-          <div className="rail-head">
-            <button
-              className="rail-fold"
-              onClick={onToggleList}
-              aria-expanded={listOpen}
-              title={listOpen ? t('호스트 목록 접기') : t('호스트 목록 펼치기')}
-            >
-              <span className="twisty" aria-hidden="true">
-                {listOpen ? '▾' : '▸'}
-              </span>
-              {t('호스트')}
-            </button>
-            <span className="spacer" />
-            {listOpen && (
-              <>
-                <button
-                  className="ghost small-btn"
-                  onClick={onImport}
-                  disabled={busy}
-                  title={t('~/.ssh/config 가져오기')}
-                >
-                  {t('가져오기')}
-                </button>
-                <button className="ghost small-btn" onClick={onAdd} disabled={busy} title={t('호스트 추가')}>
-                  {t('+ 추가')}
-                </button>
-              </>
-            )}
-          </div>
 
           {/* Folded, the rail still says which machine every section below is
               about. Losing that was the one thing the old full-width collapse

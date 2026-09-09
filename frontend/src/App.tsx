@@ -9,7 +9,7 @@ import { FileExplorer } from './FileExplorer'
 import { HostEditor, emptyHost } from './HostEditor'
 import { Rail, type SectionGroup } from './Rail'
 import { SecurityView } from './SecurityView'
-import { setPref, usePref } from './prefs'
+import { getPref, setPref, usePref } from './prefs'
 import { ShellControls } from './ShellControls'
 import { MetricsBar } from './MetricsBar'
 import { NetworkView } from './NetworkView'
@@ -48,7 +48,7 @@ import { getLanguage, initLanguage, k, t, useT } from './i18n'
 import { McpPanel } from './McpPanel'
 import { McpHostBadge } from './McpHostBadge'
 import { closeHost } from './openFiles'
-import { initPlatform } from './platform'
+import { initPlatform, matches, shortcutLabel } from './platform'
 
 // The application shell (§8): the rail on the left — hosts and sections in
 // one column — and the selected host's
@@ -296,6 +296,23 @@ export default function App() {
   // only the host list inside the rail. Renaming the key would silently reset
   // the preference for everybody who had already set it.
   const sidebarOpen = usePref('sidebarOpen')
+  // Folding the rail away is the whole point of the control the user asked for:
+  // the reason to collapse the left column was never to hide hosts, it was to
+  // give the editor the window. So this takes the sections with it, and ⌘B/Ctrl+B
+  // brings it back — the binding every editor already uses for exactly this.
+  const railOpen = usePref('railOpen')
+
+  // Above the bench-mode early returns, with the other hooks. Putting it below
+  // them meant the hook count changed between renders — the same trap T-34 hit.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!matches(e, 'toggleRail')) return
+      e.preventDefault()
+      setPref('railOpen', !getPref('railOpen'))
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   if (benchMode === null) return <div className="boot">{t('시작 중…')}</div>
   if (benchMode) return <Bench />
@@ -333,6 +350,7 @@ export default function App() {
 
   const selfMode = boot?.selfMode
 
+
   // Empty until there is a connected host: the rail has nowhere to send anyone
   // before that, and a nav full of dead buttons is worse than no nav.
   const navGroups: SectionGroup[] =
@@ -356,7 +374,9 @@ export default function App() {
     <div
       className="app"
       data-self={selfMode || undefined}
+      data-rail={railOpen ? undefined : 'off'}
     >
+      {railOpen && (
       <Rail
         hosts={hosts}
         activeID={activeID}
@@ -375,7 +395,9 @@ export default function App() {
         current={tab}
         onNavigate={(id) => setTab(id as Tab)}
         selfMode={selfMode}
+        onHide={() => setPref('railOpen', false)}
       />
+      )}
 
       {mcpOpen && (
         <McpPanel hosts={hosts} onClose={() => setMcpOpen(false)} onError={setError} />
@@ -383,11 +405,21 @@ export default function App() {
 
       <main className="main">
         <header className="main-head">
+          {!railOpen && (
+            <button
+              className="ghost icon-btn"
+              onClick={() => setPref('railOpen', true)}
+              title={`${t('레일 펼치기')} (${shortcutLabel('toggleRail')})`}
+              aria-label={t('레일 펼치기')}
+            >
+              »
+            </button>
+          )}
           {active ? (
             <>
-              <div>
-                <div className="host-title">{active.name || active.hostname}</div>
-                <div className="muted small">
+              <div className="host-id">
+                <span className="host-title">{active.name || active.hostname}</span>
+                <span className="muted small ellipsis">
                   {active.user}@{active.hostname}
                   {activeInfo && ` · ${activeInfo.prettyName}`}
                   {/* Only when the server named itself and WMI did not give a
@@ -404,7 +436,7 @@ export default function App() {
                   {activeInfo && !activeInfo.systemdJson && activeInfo.hasSystemd && (
                     <span title={t('systemd 246 미만 — 표 파싱으로 폴백')}> {t('(표 폴백)')}</span>
                   )}
-                </div>
+                </span>
               </div>
               <McpHostBadge hostID={active.id} />
               {unsupported && (
@@ -419,6 +451,17 @@ export default function App() {
                 <span className="badge warn" title={t('OS 키체인을 사용할 수 없어 비밀번호를 저장하지 않습니다')}>
                   {t('키체인 없음')}
                 </span>
+              )}
+              {/* On the same row as the host it describes. It used to sit in a
+                  band of its own under the header, which meant two full-width
+                  strips — 106px of window — saying things about the same
+                  machine before any view got a pixel. Omitted on a host with no
+                  adapter: it reads /proc, so leaving it mounted meant a failing
+                  command every two seconds for as long as the app was open. */}
+              {connected && !unsupported && (
+                <ErrorBoundary key={`metrics:${active.id}`} label={t('상태 표시줄')}>
+                  <MetricsBar hostID={active.id} />
+                </ErrorBoundary>
               )}
               {selfMode && (
                 <div className="self-controls">
@@ -442,16 +485,6 @@ export default function App() {
 
         {active && connected && (
           <>
-            {/* Above the tabs, so "is this box healthy" is answered wherever
-                the user happens to be (§4.7). Omitted entirely on a host with no
-                adapter: it reads /proc, so leaving it mounted meant a failing
-                command every two seconds for as long as the app was open. */}
-            {!unsupported && (
-              <ErrorBoundary key={`metrics:${active.id}`} label={t('상태 표시줄')}>
-                <MetricsBar hostID={active.id} />
-              </ErrorBoundary>
-            )}
-
             {/* Above the tabs because it is about the host rather than about
                 any one view of it, and because it is the one thing here worth
                 seeing before choosing where to look. It renders nothing most of

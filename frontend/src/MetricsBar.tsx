@@ -128,6 +128,7 @@ function Stat({
   pick,
   warn,
   title,
+  p,
 }: {
   label: string
   value: string
@@ -140,9 +141,11 @@ function Stat({
   pick?: (s: Sample) => number
   warn?: boolean
   title?: string
+  /** What to drop first when the row runs out of window. 1 never goes. */
+  p?: 1 | 2 | 3
 }) {
   return (
-    <div className="metric" data-warn={warn || undefined} title={title}>
+    <div className="metric" data-p={p ?? 1} data-warn={warn || undefined} title={title}>
       <div className="metric-label">{label}</div>
       <div className="metric-row">
         <span className="metric-value">
@@ -269,6 +272,7 @@ export function MetricsBar({ hostID }: { hostID: string }) {
       {gpus.length === 1 && (
         <Stat
           label="GPU"
+          p={2}
           value={fmtPct(gpus[0].utilization)}
           unit={gpus[0].utilization < 0 ? undefined : '%'}
           // VRAM rather than the fan. A card's memory is what fills up and
@@ -300,6 +304,7 @@ export function MetricsBar({ hostID }: { hostID: string }) {
           >
             <Stat
               label={t('GPU ×{n}', { n: gpus.length })}
+          p={2}
               value={fmtPct(gpuBusy)}
               unit={gpuBusy < 0 ? undefined : '%'}
               note={gpuFan < 0 ? undefined : t('팬 {f}%', { f: fmtPct(gpuFan) })}
@@ -362,6 +367,7 @@ export function MetricsBar({ hostID }: { hostID: string }) {
       {m.hasLoad && (
         <Stat
           label={t('로드')}
+          p={3}
           value={`${m.load1.toFixed(2)}`}
           title={t('1분 {a} · 5분 {b} · 15분 {c}', { a: m.load1, b: m.load5, c: m.load15 })}
         />
@@ -369,6 +375,7 @@ export function MetricsBar({ hostID }: { hostID: string }) {
       {m.swapTotal > 0 && (
         <Stat
           label={t('스왑')}
+          p={3}
           value={fmtBytes(m.swapUsed)}
           note={`/ ${fmtBytes(m.swapTotal)}`}
           warn={m.swapUsed > m.swapTotal * 0.5}
@@ -376,7 +383,7 @@ export function MetricsBar({ hostID }: { hostID: string }) {
         />
       )}
       <span className="spacer" />
-      <span className="muted small" title={t('서버 가동 시간')}>
+      <span className="muted small metric-uptime" data-p={3} title={t('서버 가동 시간')}>
         {t('가동 {up}', { up: fmtUptime(m.uptimeSeconds) })}
       </span>
       {failed && (
