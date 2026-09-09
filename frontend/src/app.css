@@ -66,9 +66,16 @@
   flex: none;
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
+  /* Wraps because the sidebar is 248px and the footer now carries four things.
+     Without it the update switch's label broke one letter to a line. In "this
+     server" mode the same controls sit in a wide header and stay on one row. */
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-2);
   padding: var(--sp-2) var(--sp-3);
   border-top: 1px solid var(--border);
+}
+.sidebar-foot .checkbox {
+  white-space: nowrap;
 }
 .sidebar-foot .spacer {
   flex: 1;
@@ -3434,4 +3441,15 @@ button.events-unit {
 }
 .security-ban:last-of-type {
   border-bottom: 0;
+}
+
+/* A newer release exists. A link, not a button: what it opens is a page in the
+   browser, and nothing about the update happens inside this app. */
+.update-link {
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.update-link:hover {
+  text-decoration: underline;
 }

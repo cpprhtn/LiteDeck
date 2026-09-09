@@ -626,6 +626,15 @@ export interface SubnetCluster {
   count: number
 }
 
+export interface UpdateInfo {
+  /** False where the check is off or nothing has been asked yet. The UI then
+   *  shows nothing at all — "up to date" would be a claim nobody made. */
+  checked: boolean
+  latest?: string
+  newer?: boolean
+  url?: string
+}
+
 export interface SecurityLoginsView {
   logins: Login[]
   /** Addresses not seen succeeding on this host before. */
@@ -1014,6 +1023,9 @@ interface Bindings {
   HostUpdates(id: string): Promise<UpdateStatus>
   HostDigest(id: string): Promise<DigestView>
   HostSecurity(id: string, elevate: boolean, force: boolean): Promise<SecurityView>
+  CheckForUpdate(): Promise<UpdateInfo>
+  CheckUpdatesEnabled(): Promise<boolean>
+  SetCheckUpdates(on: boolean): Promise<void>
   SecurityLogins(id: string): Promise<SecurityLoginsView>
   RememberSecurityLogins(id: string, addrs: string[]): Promise<string[]>
   UnlockSecurity(id: string): Promise<boolean>
@@ -1259,6 +1271,9 @@ export const HostCommandHistory = (id: string, range: string, elevate: boolean) 
   api().HostCommandHistory(id, range, elevate)
 export const HostUpdates = (id: string) => api().HostUpdates(id)
 export const HostDigest = (id: string) => api().HostDigest(id)
+export const CheckForUpdate = () => api().CheckForUpdate()
+export const CheckUpdatesEnabled = () => api().CheckUpdatesEnabled()
+export const SetCheckUpdates = (on: boolean) => api().SetCheckUpdates(on)
 export const HostSecurity = (id: string, elevate: boolean, force = false) =>
   api().HostSecurity(id, elevate, force)
 export const SecurityLogins = (id: string) => api().SecurityLogins(id)

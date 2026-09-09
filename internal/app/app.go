@@ -39,6 +39,7 @@ type App struct {
 	unlocked  *sudoUnlock
 	dropped   *dropCounts
 	security  *securityCache
+	updates   updateChecker
 	gens      *genCache
 	transfers *transferQueue
 	terminals *terminalRegistry

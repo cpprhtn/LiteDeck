@@ -59,6 +59,15 @@ type Settings struct {
 	// about this person — the colleague who logs in from another country is not
 	// a surprise to themselves — and one shared list would be wrong for both.
 	KnownLogins map[string][]string `json:"knownLogins,omitempty"`
+
+	// CheckUpdates allows one request to github.com a day, to see whether a
+	// newer release has been published.
+	//
+	// Off until asked for. It is the only outward request this app makes —
+	// everything else goes to servers the user named — and "no account, no
+	// telemetry" is a stated principle. A version check says something about
+	// when somebody is at their desk, which is small and still theirs to allow.
+	CheckUpdates bool `json:"checkUpdates,omitempty"`
 }
 
 // MCPSettings is the AI integration (§4 of the MCP design note).
@@ -213,6 +222,14 @@ func (s *SettingsStore) KnownLogins(hostID string) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]string(nil), s.settings.KnownLogins[hostID]...)
+}
+
+// SetCheckUpdates turns the daily release check on or off.
+func (s *SettingsStore) SetCheckUpdates(on bool) error {
+	s.mu.Lock()
+	s.settings.CheckUpdates = on
+	s.mu.Unlock()
+	return s.save()
 }
 
 // SetShellHistory turns the shell history on or off for one host.
