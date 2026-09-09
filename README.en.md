@@ -63,111 +63,35 @@
 > success nothing is left behind. If the `rename` fails, the temp file's path is shown on screen and
 > the file is deliberately not deleted, which beats losing the edit.
 
-## The monitoring tab <sub>v1.5.0</sub>
+## What changed in 2.0.0
 
 <p align="center">
-  <img src="docs/media/06-monitoring.png" width="880" alt="Monitoring tab: CPU breakdown, per-core, memory, GPU, network, disk I/O, system facts, filesystems">
+  <img src="docs/media/07-focus.png" width="880" alt="The rail folded: a 52px icon strip on the left and an editor taking the rest">
 </p>
 
-When the summary bar says **CPU 40%**, this tab says **what the 40% is**.
+**⌘B folds the left column down to a 52px icon strip** — and you can still switch
+server and section from it. The two bands that used to sit across the top are one
+row now, so at 1440×900 the editor went from 823×691 to 1071×748: 41% more area.
 
-- **CPU split into user, kernel, IO wait and steal.** 90% that is all IO wait is not short of CPU, it is waiting for a disk; all steal is not busy at all, its hypervisor is handing the time to somebody else. Before they are separated, all three read as "busy"
-- **A core die.** Thirty-two cores at "40%" is either every core half busy or **one pinned and the rest idle**, and the second is what a single-threaded bottleneck looks like
-- **Inodes.** A disk with room that cannot create a file — and every tool then says `no space left on device`, the same words as running out of bytes
-- **Network errors and drops**, **disk I/O**, **PSI** (how long things waited, rather than how much was used), runnable and blocked counts, open descriptors
-- **NVIDIA cards** add utilisation, fan, temperature and VRAM
-
-Trends are drawn over real time for as long as the app was watching, and **stretches it did not see are drawn as breaks.** It does not join up a reading nobody took.
-
-All of it read from `/proc` and `df`. **There is still nothing installed on the server.**
-
-> The screenshot is a demo container ([`testdata/demo`](testdata/demo)). The GPU in it is a stand-in; every other figure came out of that container.
-
-## Command history <sub>v1.7.0</sub>
-
-**"I worked on that server three months ago. What did I do?"**
-
-A collapsible panel beside the terminal tab. The question is always two questions —
-*which directory was I working in*, and *what did I run there* — so **recently worked
-folders stack up as cards**, each holding the commands run there, newest first.
-**Go here** types a `cd` into the terminal rather than running one behind your back,
-so you can read it, edit it or cancel it. A **Raw** tab holds the file as it stands.
-
-Three sources, **kept apart and labelled** rather than merged:
-
-| | |
-|---|---|
-| **sudo's journal** | What was run with elevated rights. sudo **records the working directory** at the moment the command runs, so the path here is a fact rather than a guess |
-| **This app's terminal** | What you typed here. Kept on this machine, not the server, so nothing is appended to anybody's history file |
-| **The shell's history file** | `~/.bash_history`, `~/.zsh_history`. Most of it is here |
-
-A history file knows **what** was typed and not **where**. Replaying `cd` recovers the
-path, and every card says whether that path is **exact** or **inferred**. bash also
-writes no timestamps at all unless `HISTTIMEFORMAT` is set, so entries keep the order
-the file gave them — **an absent time is not invented**.
-
-The replay has one trap in it. bash appends a session's lines when that shell *exits*,
-so the file is several shells concatenated with nothing marking the seams. Walked as
-one shell, a new session's `cd project` lands inside the last one's directory and
-produces `project/project/project` — **a path nobody ever stood in**. So a relative
-move is checked against the server, and when it lands somewhere that is not there the
-same move is tried from home. If neither is there the path stays put and stops
-claiming to be right.
-
-> **Reading the shell history is enabled per server, and off by default.** It is the
-> densest credential file on most machines, and a feature that reads it every time a tab
-> opens changes what that means. Anything that looks like a password is **masked in Go**
-> before it crosses, and the panel says how many it masked. `/root/.bash_history` is read
-> **only when you elevate on purpose**.
-
-**Also new, for the time you were not looking:** a digest of what changed since you last
-looked, successful and failed logins (thousands a day, so a summary rather than a list),
-and whether security updates or a reboot are pending. → [Features in detail](docs/features.en.md)
-
-## Security tab <sub>v1.8.0</sub>
-
-**"What is guarding this server right now?"**
-
-Not whether a firewall is installed — **what it is blocking and whether that is
-working**. Open ports were in the network tab, failed logins in sessions, pending
-updates in monitoring, and no tab could say all three at once.
-
-```
-Firewall  ufw     fail2ban  active   Banned now  3    Packets dropped  11,316
-nftables in use   jail: sshd         10 total          +1,042 since you looked
-```
-
-**Packets dropped is what this screen is for.** Everything else says a thing is
-*configured*; that one says it is *working*. It shows the rise since you last
-looked rather than the total — a total says it worked at some point, which a
-switched-off rule can also say.
-
-**The unit state is not the answer.** On a real server `ufw.service` was
-`enabled` and `active` while `/etc/ufw/ufw.conf` said `ENABLED=no` — **the unit
-was up and the firewall was off.** The opposite trap is there too:
-`nftables.service` is a oneshot that runs at boot and exits, so Ubuntu ships it
-disabled, and reading that as "no firewall" lights a red lamp on **nearly every
-Ubuntu server**. So the unit, the config file and the kernel are all read, and a
-disagreement between them is shown rather than resolved.
-
-**"No firewall" is only said where the evidence supports it.** With no front end
-on but something using the kernel packet filter, the answer is "unclear" —
-Docker looks exactly like that, and calling it a firewall would be the opposite
-mistake.
-
-**The config file is compared against what is running.** `apt install` starts
-the service, so editing the file afterwards changes nothing the daemon is doing.
-Measured: the file said twenty retries and the jail was doing five — **a screen
-that reads only the file never notices.**
-
-> **Rules and the block list need root, so they sit behind a lock.** The tab
-> itself opens: a view that demands a password before showing anything is a view
-> nobody opens. That password is **not stored** — the keychain is neither read
-> nor written, and it is forgotten when the connection ends.
-
-**Commands that block an address are text to copy, not buttons.** One firewall
-rule can end the session it was typed from, and unlike every other change this
-app makes there is no copy to restore from.
+- **Nine horizontal tabs became a grouped vertical rail** — Work, System, Observe.
+  A view the server cannot serve is marked with a dot rather than greyed out; grey
+  tells nobody why, and the view itself explains
+- **Automatic updates.** One check ten seconds after launch. When there is a newer
+  release the same button becomes *Update to 2.1.0*; pressing it downloads the
+  release, checks it against `SHA256SUMS.txt`, and turns into *Install update* —
+  **which only ever runs when somebody presses it.** Silently replacing an unsigned
+  binary is the shape of a supply-chain attack. Passwords in the OS keychain are kept
+- **The file tab from the keyboard.** `↑` `↓` to move, `Enter` to open (into a folder,
+  or into the editor), `F2` to rename, `⌘←` `⌘→` back and forward, `⌘↑` for the parent.
+  `Alt` on Windows
+- **One lock per connection, not per tab.** Unlock in the security tab and the network
+  tab shows process names too — the same permission is not asked for twice
+- **`Escape` closes every dialog.** Anything irreversible ignores a click outside:
+  a stray click is not an answer
+- **Text that was invisible in light mode.** Chart ticks were 9px at 2.36:1 contrast.
+  The palette was redrawn, and **a test now holds it there**
+- **One timestamp shape** — `2026-09-09 12:23`, the same one the server's own logs
+  print, so there is nothing to translate between them
 
 ## Claude works your servers through this app
 

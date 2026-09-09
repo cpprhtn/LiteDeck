@@ -25,6 +25,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       systemd systemd-sysv dbus openssh-server sudo iproute2 \
       nginx docker.io ca-certificates curl vim less \
+      ufw fail2ban nftables \
  && rm -rf /var/lib/apt/lists/*
 
 # Units that assume real hardware have nothing to manage in a container.
@@ -306,6 +307,129 @@ RUN printf '%s\n' \
       '  server_name _;' \
       '  location / { return 200 "ok\n"; }' \
       '}' > /etc/nginx/sites-enabled/admin.conf
+
+# ── A shell history that reads like somebody's afternoon ──────────────────
+#
+# The command-history panel groups by the directory each command ran in, which
+# it works out by replaying the `cd`s. A history with no movement in it collapses
+# to one card and shows nothing about what the panel does.
+RUN set -eux; \
+    printf '%s\n' \
+      'cd /srv/api' \
+      'git status' \
+      'npm ci' \
+      'npm run build' \
+      'cd src' \
+      'grep -rn TODO .' \
+      'vim routes/orders.ts' \
+      'cd ../test' \
+      'npm test -- --watch=false' \
+      'cd /srv/api/logs' \
+      'tail -f app.log' \
+      'grep ECONNREFUSED error.log' \
+      'cd /etc/nginx' \
+      'nginx -t' \
+      'sudo systemctl reload nginx' \
+      'cd ~' \
+      'df -h' \
+      'free -m' \
+      'docker ps' \
+      'systemctl --failed' \
+      > /home/deploy/.bash_history; \
+    chown deploy:deploy /home/deploy/.bash_history; \
+    chmod 600 /home/deploy/.bash_history
+
+# ── A firewall and a bouncer, so the security tab has something to say ────
+#
+# Every address here is from RFC 5737's documentation ranges. The golden files
+# under testdata/golden/security carry the real ones this was modelled on; a
+# screen recording that goes in a README does not get to publish somebody's
+# address, however badly they behaved.
+RUN set -eux; \
+    ufw allow OpenSSH; \
+    ufw allow 80/tcp; \
+    ufw allow 443/tcp; \
+    ufw allow 8443/tcp; \
+    printf '%s\n' \
+      '[DEFAULT]' \
+      'ignoreip = 127.0.0.1/8 ::1' \
+      'findtime = 10m' \
+      'maxretry = 5' \
+      'bantime  = 30m' \
+      'bantime.increment = true' \
+      'backend  = polling' \
+      '' \
+      '[sshd]' \
+      'enabled  = true' \
+      'logpath  = /var/log/auth.log' \
+      > /etc/fail2ban/jail.local; \
+    touch /var/log/auth.log; \
+    systemctl enable fail2ban
+
+# ── Everything that needs a running daemon happens on the first boot ──────
+#
+# ufw wants the kernel, fail2ban wants its socket, and docker cannot pull an
+# image while this image is being built. So they are done once, at boot, and
+# the marker file keeps the second boot fast.
+RUN printf '%s\n' \
+      '#!/bin/bash' \
+      '# Demo fixture first boot. See testdata/demo/Dockerfile.' \
+      'set -u' \
+      'marker=/var/lib/litedeck-demo-seeded' \
+      '' \
+      'ufw --force enable >/dev/null 2>&1 || true' \
+      '' \
+      '# Ban history, dated relative to now so the seven-day window catches it.' \
+      'if [ ! -f "$marker" ]; then' \
+      '  log=/var/log/fail2ban.log' \
+      '  for spec in "5 08:41:12 192.0.2.44" "5 11:02:55 198.51.100.7" \' \
+      '              "4 02:17:09 192.0.2.91" "3 19:48:30 203.0.113.66" \' \
+      '              "3 19:52:41 192.0.2.44" "2 06:11:58 198.51.100.7" \' \
+      '              "2 06:33:20 203.0.113.66" "1 14:05:02 192.0.2.91"; do' \
+      '    set -- $spec' \
+      '    d=$(date -d "$1 days ago" +%Y-%m-%d)' \
+      '    echo "$d $2,004 fail2ban.actions        [1]: NOTICE  [sshd] Ban $3" >> "$log"' \
+      '  done' \
+      'fi' \
+      '' \
+      'systemctl start fail2ban >/dev/null 2>&1 || true' \
+      'for i in $(seq 1 30); do fail2ban-client ping >/dev/null 2>&1 && break; sleep 1; done' \
+      'for ip in 192.0.2.44 198.51.100.7 203.0.113.66; do' \
+      '  fail2ban-client set sshd banip "$ip" >/dev/null 2>&1 || true' \
+      'done' \
+      '' \
+      '# The container tab is about projects, not about containers. Compose is' \
+      '# only labels on the wire, so the labels are what this sets.' \
+      'if [ ! -f "$marker" ]; then' \
+      '  for i in $(seq 1 60); do docker info >/dev/null 2>&1 && break; sleep 2; done' \
+      '  docker pull -q redis:7-alpine  >/dev/null 2>&1' \
+      '  docker pull -q nginx:alpine    >/dev/null 2>&1' \
+      '  docker pull -q postgres:16-alpine >/dev/null 2>&1' \
+      '  run() { # $1 project  $2 service  $3 image  $4.. args' \
+      '    p=$1; s=$2; img=$3; shift 3' \
+      '    docker run -d --name "${p}-${s}-1" --restart unless-stopped \' \
+      '      --label com.docker.compose.project="$p" \' \
+      '      --label com.docker.compose.service="$s" \' \
+      '      --label com.docker.compose.container-number=1 \' \
+      '      --label com.docker.compose.project.working_dir=/srv/api \' \
+      '      "$@" "$img" >/dev/null 2>&1' \
+      '  }' \
+      '  run orders redis    redis:7-alpine' \
+      '  run orders cache    nginx:alpine' \
+      '  run orders db       postgres:16-alpine -e POSTGRES_PASSWORD=demo-fixture-pw' \
+      '  run storefront web  nginx:alpine' \
+      '  run storefront edge nginx:alpine' \
+      '  touch "$marker"' \
+      'fi' > /usr/local/bin/litedeck-demo-seed \
+ && chmod +x /usr/local/bin/litedeck-demo-seed \
+ && printf '%s\n' \
+      '[Unit]' 'Description=LiteDeck demo fixture seed' \
+      'After=docker.service network-online.target' 'Wants=docker.service' \
+      '[Service]' 'Type=oneshot' 'RemainAfterExit=yes' \
+      'ExecStart=/usr/local/bin/litedeck-demo-seed' \
+      '[Install]' 'WantedBy=multi-user.target' \
+      > /etc/systemd/system/litedeck-demo-seed.service \
+ && systemctl enable litedeck-demo-seed
 
 EXPOSE 22
 STOPSIGNAL SIGRTMIN+3
