@@ -627,9 +627,11 @@ export interface SubnetCluster {
 }
 
 export interface UpdateInfo {
-  /** False where the check is off or nothing has been asked yet. The UI then
-   *  shows nothing at all — "up to date" would be a claim nobody made. */
+  /** False until somebody presses the button. */
   checked: boolean
+  /** False where github could not be asked at all — which is not the same
+   *  answer as "nothing newer", and must not be shown as one. */
+  reached: boolean
   latest?: string
   newer?: boolean
   url?: string
@@ -1024,8 +1026,6 @@ interface Bindings {
   HostDigest(id: string): Promise<DigestView>
   HostSecurity(id: string, elevate: boolean, force: boolean): Promise<SecurityView>
   CheckForUpdate(): Promise<UpdateInfo>
-  CheckUpdatesEnabled(): Promise<boolean>
-  SetCheckUpdates(on: boolean): Promise<void>
   SecurityLogins(id: string): Promise<SecurityLoginsView>
   RememberSecurityLogins(id: string, addrs: string[]): Promise<string[]>
   UnlockSecurity(id: string): Promise<boolean>
@@ -1272,8 +1272,6 @@ export const HostCommandHistory = (id: string, range: string, elevate: boolean) 
 export const HostUpdates = (id: string) => api().HostUpdates(id)
 export const HostDigest = (id: string) => api().HostDigest(id)
 export const CheckForUpdate = () => api().CheckForUpdate()
-export const CheckUpdatesEnabled = () => api().CheckUpdatesEnabled()
-export const SetCheckUpdates = (on: boolean) => api().SetCheckUpdates(on)
 export const HostSecurity = (id: string, elevate: boolean, force = false) =>
   api().HostSecurity(id, elevate, force)
 export const SecurityLogins = (id: string) => api().SecurityLogins(id)

@@ -25,20 +25,29 @@ import (
 // So this reads a version number and draws a link. The download and the install
 // stay a thing a person does, having looked at where it came from.
 //
-// # Why it is off by default
+// # Why nothing happens on its own
 //
-// This is the only outward request the app makes. Everything else it does goes
-// to servers the user named. "No account, no telemetry" is a stated principle,
-// and a version check is a request to a third party that says something about
-// when this person is at their desk — small, but theirs to allow rather than
-// ours to assume.
+// This is the only outward request the app makes; everything else goes to
+// servers the user named. It used to run daily behind a switch, which meant a
+// preference to explain and a checkbox in the footer that said neither "allow"
+// nor "check now" clearly enough for anybody to know which it was.
+//
+// A button removes the question. Nothing is sent until somebody presses it, so
+// there is no background request to permit and no setting to keep — "no
+// account, no telemetry" holds without anything being configured. The cost is
+// that nobody is told automatically, which is a real cost and the honest one to
+// pay while the releases are unsigned anyway.
 
 // UpdateInfo is what the sidebar shows.
 type UpdateInfo struct {
-	// Checked is false where the user has not turned this on, or nothing has
-	// been asked yet. The UI then shows nothing at all rather than "up to date",
-	// which would be a claim nobody made.
+	// Checked is false where nothing has been asked yet. The button then reads
+	// as an invitation rather than a verdict — "up to date" would be a claim
+	// nobody made.
 	Checked bool `json:"checked"`
+	// Reached is false where github could not be asked. Told apart from "no
+	// newer version": one of them is an answer and the other is a failure to
+	// get one.
+	Reached bool `json:"reached"`
 	// Latest is the newest published tag, without the leading v.
 	Latest string `json:"latest,omitempty"`
 	// Newer reports that Latest is ahead of this build.
@@ -47,11 +56,12 @@ type UpdateInfo struct {
 	URL string `json:"url,omitempty"`
 }
 
-// updateCheckInterval bounds how often the release list is asked for.
+// updateCheckInterval is how long an answer is reused.
 //
-// Once a day. A release is not a thing that happens hourly, and this is
-// somebody else's server being polled by every copy of this app that is open.
-const updateCheckInterval = 24 * time.Hour
+// Short, because the only thing that triggers a check now is somebody pressing
+// the button — and pressing it again usually means they want a fresh answer.
+// Long enough that a double press does not ask twice.
+const updateCheckInterval = 30 * time.Second
 
 // updateEndpoint is GitHub's own API for the newest release.
 const updateEndpoint = "https://api.github.com/repos/cpprhtn/LiteDeck/releases/latest"
@@ -64,13 +74,13 @@ type updateChecker struct {
 
 // CheckForUpdate reports whether a newer release has been published.
 //
-// Returns the last answer where one is recent enough, so opening the app twice
-// in a day asks once. Never returns an error to the caller: a version check
-// that cannot reach the internet is not something to interrupt anybody about.
+// Called when somebody presses the button, and only then. The recent answer is
+// reused so a double press asks once — that window is short because the person
+// asking again means it.
+//
+// Never returns an error: a version check that cannot reach the internet is not
+// something to interrupt anybody about, and the button says it could not tell.
 func (a *App) CheckForUpdate() UpdateInfo {
-	if a.settings == nil || !a.settings.Get().CheckUpdates {
-		return UpdateInfo{}
-	}
 	a.updates.mu.Lock()
 	if time.Since(a.updates.at) < updateCheckInterval && a.updates.cached.Checked {
 		cached := a.updates.cached
@@ -81,6 +91,7 @@ func (a *App) CheckForUpdate() UpdateInfo {
 
 	info := UpdateInfo{Checked: true, URL: "https://github.com/cpprhtn/LiteDeck/releases/latest"}
 	if tag, err := latestTag(); err == nil {
+		info.Reached = true
 		info.Latest = tag
 		info.Newer = isNewer(tag, Version)
 	}
@@ -89,19 +100,6 @@ func (a *App) CheckForUpdate() UpdateInfo {
 	a.updates.at, a.updates.cached = time.Now(), info
 	a.updates.mu.Unlock()
 	return info
-}
-
-// SetCheckUpdates turns the version check on or off.
-func (a *App) SetCheckUpdates(on bool) error {
-	if a.settings == nil {
-		return nil
-	}
-	return a.settings.SetCheckUpdates(on)
-}
-
-// CheckUpdatesEnabled reports the current setting, for the switch that sets it.
-func (a *App) CheckUpdatesEnabled() bool {
-	return a.settings != nil && a.settings.Get().CheckUpdates
 }
 
 func latestTag() (string, error) {

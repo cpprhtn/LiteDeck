@@ -1,11 +1,5 @@
 import { useEffect, useState } from 'react'
-import {
-  CheckForUpdate,
-  CheckUpdatesEnabled,
-  SetCheckUpdates,
-  SetLanguage,
-  type UpdateInfo,
-} from './ipc'
+import { CheckForUpdate, SetLanguage, type UpdateInfo } from './ipc'
 import { LANGUAGES, getLanguage, setLanguage, t, type Language } from './i18n'
 
 // The version, the MCP button, and the language picker — the three shell
@@ -22,24 +16,25 @@ export function ShellControls({
   const [update, setUpdate] = useState<UpdateInfo | null>(null)
   const [checking, setChecking] = useState(false)
 
-  // Asked once when the shell mounts. The Go side answers from a day-old cache
-  // where it has one, so opening the app twice in a day asks github once —
-  // see updates_check.go for why this stops at asking.
-  useEffect(() => {
-    void CheckUpdatesEnabled().then(setChecking).catch(() => {})
+  // Nothing goes out until this is pressed. That is the whole privacy story —
+  // no background request means no preference to explain, which is what the
+  // checkbox that used to sit here was failing to do.
+  const check = () => {
+    setChecking(true)
     void CheckForUpdate()
       .then(setUpdate)
-      // Silent. A version check that cannot reach the internet is not something
-      // to interrupt anybody about.
-      .catch(() => {})
-  }, [])
+      .catch(() => setUpdate({ checked: true, reached: false }))
+      .finally(() => setChecking(false))
+  }
 
   return (
     <>
       <span className="muted small mono" title={t('버그 리포트에 이 버전을 함께 적어주세요')}>
         LiteDeck {version ?? '—'}
       </span>
-      {update?.newer && update.latest && (
+      {/* A new release is the one state that becomes a link — everything else
+          this button says is about the button. */}
+      {update?.newer && update.latest ? (
         <a
           className="small update-link"
           href={update.url}
@@ -49,34 +44,32 @@ export function ShellControls({
         >
           {t('{v} 나왔습니다', { v: update.latest })}
         </a>
+      ) : (
+        <button
+          className="ghost small-btn"
+          disabled={checking}
+          aria-busy={checking}
+          onClick={check}
+          title={t('github.com 에 새 릴리스가 있는지 묻습니다. 이 앱이 사용자가 지정하지 않은 곳에 보내는 유일한 요청입니다.')}
+        >
+          {/* The slot is always there, spinning or not, and the label does not
+              change while it turns. Both together are what keeps the width
+              fixed: swapping the label for a circle — or even for a shorter
+              word — narrowed the button mid-check, which moved the language
+              picker up onto the line above and back again a second later.
+              The width does change when a *result* arrives, which is fine:
+              that one is a real change of content, and it happens once. */}
+          <span className="spin-slot">
+            {checking && <span className="spin" aria-label={t('확인 중')} />}
+          </span>
+          {update?.checked && !checking
+            ? update.reached
+              ? t('최신 버전')
+              : t('확인 실패')
+            : t('새 버전 확인')}
+        </button>
       )}
       <span className="spacer" />
-      {/* The switch for the check above. In the footer beside it rather than
-          buried in a settings panel: the request it allows is the only one this
-          app makes to anywhere the user did not name, so the control belongs
-          where its effect is visible. */}
-      <label className="checkbox small" title={t('하루 한 번 github.com 에 새 릴리스가 있는지 묻습니다. 이 앱이 사용자가 지정하지 않은 곳에 보내는 유일한 요청입니다.')}>
-        <input
-          type="checkbox"
-          checked={checking}
-          onChange={(e) => {
-            const on = e.target.checked
-            setChecking(on)
-            void SetCheckUpdates(on)
-              .then(() => {
-                // Turning it off clears the notice too: leaving it up would be
-                // showing the result of a check the user just declined.
-                if (!on) {
-                  setUpdate(null)
-                  return
-                }
-                void CheckForUpdate().then(setUpdate).catch(() => {})
-              })
-              .catch(() => {})
-          }}
-        />
-        {t('새 버전 확인')}
-      </label>
       <button className="ghost small-btn" onClick={onOpenMCP} title={t('MCP 연동 설정')}>
         MCP
       </button>

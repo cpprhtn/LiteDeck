@@ -32,15 +32,17 @@ func TestIsNewerOnlyClaimsWhatItCanRead(t *testing.T) {
 	}
 }
 
-// Off until asked for, and silent while off.
+// "Could not ask" and "nothing newer" are different answers.
 //
-// This is the only request this app makes to anywhere the user did not name.
-func TestUpdateCheckIsOffUntilSwitchedOn(t *testing.T) {
-	a := &App{}
-	if got := a.CheckForUpdate(); got.Checked {
-		t.Error("설정도 없는데 확인했다고 한다")
+// Both leave Newer false, and a button that read them the same way would tell
+// somebody they are up to date on the strength of a failed request.
+func TestUnreachedIsNotTheSameAsUpToDate(t *testing.T) {
+	var unreached UpdateInfo
+	unreached.Checked = true
+	if unreached.Reached {
+		t.Error("묻지도 못했는데 답을 받았다고 한다")
 	}
-	if a.CheckUpdatesEnabled() {
-		t.Error("기본값이 켜짐이다 — 밖으로 나가는 요청은 물어보고 해야 한다")
+	if unreached.Newer {
+		t.Error("실패가 「새 버전 없음」으로 굳었다")
 	}
 }

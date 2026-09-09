@@ -77,6 +77,37 @@
 .sidebar-foot .checkbox {
   white-space: nowrap;
 }
+
+/* The one spinner in the app. Everywhere else a wait is a word — "읽는 중…"
+   beside the thing being read — and this keeps the word too; the circle is
+   what makes it read as *happening* rather than as a state. */
+.spin-slot {
+  display: inline-block;
+  width: 17px;
+  text-align: center;
+}
+.spin {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  vertical-align: -1px;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* Somebody who asked not to see motion did not ask to lose the fact that
+   something is happening. */
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation-duration: 2.4s;
+  }
+}
 .sidebar-foot .spacer {
   flex: 1;
 }
