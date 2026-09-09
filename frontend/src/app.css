@@ -311,6 +311,23 @@
 /* The one spinner in the app. Everywhere else a wait is a word — "읽는 중…"
    beside the thing being read — and this keeps the word too; the circle is
    what makes it read as *happening* rather than as a state. */
+/* The one button in the footer that is not a ghost. An update waiting to be
+   applied is the only thing down here that is worth a filled button — every
+   other control is somewhere to go, and this one is something to do. */
+.update-ready {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--fg-on-accent);
+  font-weight: 600;
+}
+.update-ready:hover {
+  filter: brightness(1.08);
+}
+.update-ready .spin {
+  border-color: currentColor;
+  border-top-color: transparent;
+}
+
 .spin-slot {
   display: inline-block;
   width: 17px;
@@ -3722,11 +3739,3 @@ button.events-unit {
 
 /* A newer release exists. A link, not a button: what it opens is a page in the
    browser, and nothing about the update happens inside this app. */
-.update-link {
-  color: var(--accent);
-  text-decoration: none;
-  white-space: nowrap;
-}
-.update-link:hover {
-  text-decoration: underline;
-}

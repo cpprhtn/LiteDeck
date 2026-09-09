@@ -626,6 +626,15 @@ export interface SubnetCluster {
   count: number
 }
 
+/** Where the installer got to. Mirrors app.UpdateState. */
+export interface UpdateState {
+  stage: 'idle' | 'downloading' | 'ready' | 'failed'
+  /** 0-100, or -1 where the server sent no content length. */
+  percent: number
+  error?: string
+  version?: string
+}
+
 export interface UpdateInfo {
   /** False until somebody presses the button. */
   checked: boolean
@@ -1026,6 +1035,9 @@ interface Bindings {
   HostDigest(id: string): Promise<DigestView>
   HostSecurity(id: string, elevate: boolean, force: boolean): Promise<SecurityView>
   CheckForUpdate(): Promise<UpdateInfo>
+  DownloadUpdate(): Promise<void>
+  ApplyUpdate(): Promise<void>
+  UpdateStatus(): Promise<UpdateState>
   SecurityLogins(id: string): Promise<SecurityLoginsView>
   RememberSecurityLogins(id: string, addrs: string[]): Promise<string[]>
   UnlockSecurity(id: string): Promise<boolean>
@@ -1272,6 +1284,9 @@ export const HostCommandHistory = (id: string, range: string, elevate: boolean) 
 export const HostUpdates = (id: string) => api().HostUpdates(id)
 export const HostDigest = (id: string) => api().HostDigest(id)
 export const CheckForUpdate = () => api().CheckForUpdate()
+export const DownloadUpdate = () => api().DownloadUpdate()
+export const ApplyUpdate = () => api().ApplyUpdate()
+export const UpdateStatus = () => api().UpdateStatus()
 export const HostSecurity = (id: string, elevate: boolean, force = false) =>
   api().HostSecurity(id, elevate, force)
 export const SecurityLogins = (id: string) => api().SecurityLogins(id)
