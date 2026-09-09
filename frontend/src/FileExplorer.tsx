@@ -961,10 +961,10 @@ export function FileExplorer({
 
           <div className="table" ref={tableRef}>
             <div className="thead" style={{ gridTemplateColumns: layout.columns }}>
-              <div>NAME</div>
-              <div className="num">SIZE</div>
-              {layout.mode && <div>MODE</div>}
-              {layout.modified && <div>MODIFIED</div>}
+              <div>{t('이름')}</div>
+              <div className="num">{t('크기')}</div>
+              {layout.mode && <div>{t('권한')}</div>}
+              {layout.modified && <div>{t('수정')}</div>}
             </div>
             <div className="tbody" ref={scrollRef}>
               {busy && !listing && <div className="placeholder">{t('읽는 중…')}</div>}

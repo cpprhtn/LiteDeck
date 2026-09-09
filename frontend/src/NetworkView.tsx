@@ -137,10 +137,10 @@ export function NetworkView({
           {listeners.length > 0 && (
             <div className="table net-table">
               <div className="thead" style={{ gridTemplateColumns: '64px 80px 1fr 1fr' }}>
-                <div>PROTO</div>
-                <div className="num">PORT</div>
-                <div>BIND</div>
-                <div>PROCESS</div>
+                <div>{t('프로토콜')}</div>
+                <div className="num">{t('포트')}</div>
+                <div>{t('주소')}</div>
+                <div>{t('프로세스')}</div>
               </div>
               {listeners.map((l, i) => (
                 <div
@@ -287,9 +287,9 @@ function SSHDSection({ hostID, visible }: { hostID: string; visible: boolean }) 
           {showAll && (
             <div className="table net-table">
               <div className="thead" style={{ gridTemplateColumns: '1fr 1fr 220px' }}>
-                <div>KEYWORD</div>
-                <div>VALUE</div>
-                <div>FILE</div>
+                <div>{t('항목')}</div>
+                <div>{t('값')}</div>
+                <div>{t('파일')}</div>
               </div>
               {report.declared.map((d) => (
                 <div

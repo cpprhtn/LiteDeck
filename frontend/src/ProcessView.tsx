@@ -212,7 +212,7 @@ export function ProcessView({
           {header('cpu', 'CPU%', true)}
           {header('mem', 'MEM%', true)}
           {header('rss', 'RSS', true)}
-          <div>STATE</div>
+          <div>{t('상태')}</div>
           {header('elapsed', 'TIME', true)}
           {header('command', 'COMMAND')}
         </div>

@@ -381,15 +381,19 @@ function FailureChart({ buckets, bans }: { buckets: FailureBucket[]; bans: Ban[]
  *  Reboots are left out. `last` puts the kernel version where the address goes
  *  on those rows, and marking them would flag every restart as a stranger. */
 function Logins({ logins, fresh }: { logins: Login[]; fresh: Set<string> }) {
-  const rows = logins.filter((l) => !l.boot).slice(0, 8)
-  const news = rows.filter((l) => l.from && fresh.has(l.from))
+  const recent = logins.filter((l) => !l.boot)
+  const rows = recent.slice(0, 8)
+  // Addresses, not logins. It counted rows before, so eight logins from one
+  // machine read as "처음 보는 주소 8곳" — and since the list is cut at eight,
+  // the number could never have gone past eight however many there really were.
+  const news = new Set(recent.filter((l) => l.from && fresh.has(l.from)).map((l) => l.from))
 
   return (
     <section className="panel">
       <h3>{t('최근 접속 성공')}</h3>
-      {news.length > 0 && (
+      {news.size > 0 && (
         <p className="security-warn small">
-          {t('처음 보는 주소 {n}곳에서 접속했습니다.', { n: news.length })}
+          {t('처음 보는 주소 {n}곳에서 접속했습니다.', { n: news.size })}
         </p>
       )}
       {rows.length === 0 && <p className="muted small">{t('기록이 없습니다.')}</p>}
