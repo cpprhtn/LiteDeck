@@ -280,6 +280,7 @@ export const en: Record<string, string> = {
   '직접 추가': 'added by hand',
   '대역 {n}개': '{n} ranges',
   '공격 시도를 읽으려면 저널 권한이 필요합니다 — 목록이 비어 있는 것과 다릅니다.': 'Reading attempts needs journal access — that is not the same as an empty list.',
+  '잠금을 열면 이미 막힌 것을 빼고 보여줍니다.': 'Open the lock to see this with the already-blocked removed.',
   '최근 15분 동안 막히지 않은 시도는 없습니다.': 'Nothing got through unblocked in the last 15 minutes.',
   '최근 15분, 아직 차단되지 않은 시도': 'Last 15 minutes, not yet blocked',
   '처음 보는 주소': 'first seen',

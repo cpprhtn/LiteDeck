@@ -87,9 +87,14 @@ type SecurityView struct {
 	// are put together.
 	Attackers []adapter.Attacker      `json:"attackers,omitempty"`
 	Clusters  []adapter.SubnetCluster `json:"clusters,omitempty"`
-	// Bans is the recent ban history, and the only place the distinct-address
+	// BanHistory is seven days of bans, and the only place the distinct-address
 	// count lives — the denominator a repeat rate needs and `fail2ban-client
 	// status` does not report.
+	//
+	// Seven days rather than the last N lines. A line cap made the window
+	// shorter on the busier server, so three machines all reported "200 bans"
+	// and their repeat rates were not comparable with each other — which is the
+	// one thing somebody does with that number.
 	BanHistory *adapter.BanHistory `json:"banHistory,omitempty"`
 	// Failures is failed logins per hour over a day. A shape, not a total: the
 	// question is whether a block worked, and that is only visible as a line
@@ -430,7 +435,8 @@ fail2ban-client get sshd bantime 2>/dev/null
 echo '#status sshd'
 fail2ban-client status sshd 2>/dev/null
 echo '#banlog'
-grep '] Ban ' /var/log/fail2ban.log 2>/dev/null | tail -200
+awk -v since="$(date -d '7 days ago' '+%Y-%m-%d' 2>/dev/null || date -v-7d '+%Y-%m-%d')" '
+  /] Ban / && ($1 "") >= (since "")' /var/log/fail2ban.log 2>/dev/null | tail -500
 echo '#end'
 :`
 

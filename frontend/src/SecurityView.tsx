@@ -483,6 +483,14 @@ function Blocking({ view }: { view: View }) {
         <p className="muted small">
           {t('공격 시도를 읽으려면 저널 권한이 필요합니다 — 목록이 비어 있는 것과 다릅니다.')}
         </p>
+      ) : !view.unlocked ? (
+        // What is already blocked is only known once the lock is open: the
+        // sets and the jail both arrive with it. Showing the list before then
+        // means showing addresses the firewall already handles, which is the
+        // "list nobody can act on" this whole panel exists to avoid.
+        <p className="muted small">
+          {t('잠금을 열면 이미 막힌 것을 빼고 보여줍니다.')}
+        </p>
       ) : attackers.length === 0 ? (
         <p className="muted small">{t('최근 15분 동안 막히지 않은 시도는 없습니다.')}</p>
       ) : (
