@@ -253,7 +253,36 @@ function TerminalPane({
     if (focused) termRef.current?.focus()
   }, [focused])
 
-  return <div className="term-pane" ref={hostRef} />
+  return (
+    <div
+      className="term-pane"
+      ref={hostRef}
+      onContextMenu={(e) => {
+        // The convention two Windows users reported missing. PuTTY, PowerShell
+        // and Windows Terminal all do this: a right click copies when there is
+        // a selection and pastes when there is not, so one button covers both
+        // without a menu.
+        //
+        // Not on macOS. Right click is the context menu there, and taking it
+        // over would break the platform's own habit to fix somebody else's.
+        if (getPlatform().isMac) return
+        const term = termRef.current
+        if (!term) return
+        e.preventDefault()
+        const sel = term.getSelection()
+        if (sel) {
+          void navigator.clipboard.writeText(sel).catch(() => {})
+          term.clearSelection()
+          return
+        }
+        // The same detour the keyboard paste takes: WebKit refuses
+        // navigator.clipboard.readText(), so the read goes through Go.
+        ReadClipboard()
+          .then((text) => text && term.paste(text))
+          .catch(() => failed.current(t('클립보드를 읽지 못했습니다.')))
+      }}
+    />
+  )
 }
 
 export function TerminalView({
@@ -414,6 +443,16 @@ export function TerminalView({
     void WriteTerminal(termID, b64encode(`cd ${quoted}\n`)).catch((e) => onError(String(e)))
   }
 
+  // A-2: the keys nobody found. Two Windows users reported that copy and paste
+  // did not work when both were bound all along — the combination is simply not
+  // discoverable, and a line of prose in the toolbar was removed once already
+  // for being noise. The tab's tooltip is where somebody hunting for it looks.
+  const mod = getPlatform().isMac ? '⌘' : 'Ctrl+Shift+'
+  const copyHint = t('복사 {c} · 붙여넣기 {v} · 우클릭으로도 붙여넣기', {
+    c: `${mod}C`,
+    v: `${mod}V`,
+  })
+
   return (
     <div className="view term-view">
       <div className="view-toolbar">
@@ -424,7 +463,13 @@ export function TerminalView({
               className="term-tab"
               data-on={t.id === active || undefined}
               data-dead={dead.has(t.id) || undefined}
+              title={copyHint}
               onClick={() => setActive(t.id)}
+              onAuxClick={(e) => {
+                // Middle click closes, as it does on the file tabs and in every
+                // other terminal people have used.
+                if (e.button === 1) void close(t.id)
+              }}
             >
               <span className="ellipsis">{t.title}</span>
               <span

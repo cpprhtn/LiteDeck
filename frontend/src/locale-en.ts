@@ -236,6 +236,7 @@ export const en: Record<string, string> = {
   '상태를 읽는 중…': 'Reading status…',
   '상태를 읽지 못했습니다 — {err}': 'Could not read status — {err}',
   '새 터미널': 'New terminal',
+  '복사 {c} · 붙여넣기 {v} · 우클릭으로도 붙여넣기': 'Copy {c} · Paste {v} · right click also pastes',
   '새 토큰을 만들고 이전 토큰을 무효화합니다': 'Issues a new token and invalidates the old one',
   '새 폴더': 'New folder',
   '새로 만듦': 'created',
