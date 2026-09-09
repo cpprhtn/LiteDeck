@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Scrim } from './Scrim'
 import { usePoll } from './usePoll'
 import { ImagesVolumes } from './ImagesVolumes'
 import { LogPanel } from './LogPanel'
@@ -443,7 +444,7 @@ export function ContainerView({
           screen — so it is shown rather than described. No extra command: the
           names come from the poll that drew the cards. */}
       {confirmProject && (
-        <div className="scrim">
+        <Scrim onClose={() => setConfirmProject(null)} clickAway={false}>
           <div className="dialog">
             <h2>
               {confirmProject.action === 'start' && t('프로젝트 전체를 시작하시겠습니까?')}
@@ -474,11 +475,11 @@ export function ContainerView({
               </button>
             </div>
           </div>
-        </div>
+        </Scrim>
       )}
 
       {confirmRemove && (
-        <div className="scrim">
+        <Scrim onClose={() => setConfirmRemove(null)} clickAway={false}>
           <div className="dialog">
             <h2>{t('컨테이너를 삭제하시겠습니까?')}</h2>
             <p className="muted">
@@ -513,7 +514,7 @@ export function ContainerView({
               </button>
             </div>
           </div>
-        </div>
+        </Scrim>
       )}
     </div>
   )

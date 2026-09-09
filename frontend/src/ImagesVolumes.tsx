@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Scrim } from './Scrim'
 import {
   ListImages,
   ListVolumes,
@@ -260,7 +261,7 @@ export function ImagesVolumes({
       </div>
 
       {confirm && (
-        <div className="scrim">
+        <Scrim onClose={() => setConfirm(null)} clickAway={false}>
           <div className="dialog">
             {confirm.kind === 'image' && (
               <>
@@ -344,7 +345,7 @@ export function ImagesVolumes({
               </>
             )}
           </div>
-        </div>
+        </Scrim>
       )}
     </div>
   )

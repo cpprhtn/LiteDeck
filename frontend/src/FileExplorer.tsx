@@ -1,4 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Scrim } from './Scrim'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { TransferPanel } from './TransferPanel'
 import {
@@ -1170,7 +1171,7 @@ export function FileExplorer({
       )}
 
       {dialog?.kind === 'perms' && (
-        <div className="scrim">
+        <Scrim onClose={() => setDialog(null)}>
           <div className="dialog">
             <h2>{t('권한')}</h2>
             <p className="mono muted ellipsis">{dialog.entry.path}</p>
@@ -1186,11 +1187,11 @@ export function FileExplorer({
               </button>
             </div>
           </div>
-        </div>
+        </Scrim>
       )}
 
       {dialog?.kind === 'delete' && (
-        <div className="scrim">
+        <Scrim onClose={() => setDialog(null)} clickAway={false}>
           <div className="dialog">
             <h2>{t('삭제하시겠습니까?')}</h2>
             <p className="muted">{t('{n}개 항목이 영구히 삭제됩니다.', { n: dialog.entries.length })}</p>
@@ -1242,7 +1243,7 @@ export function FileExplorer({
               </button>
             </div>
           </div>
-        </div>
+        </Scrim>
       )}
 
     </div>
@@ -1267,7 +1268,7 @@ function Prompt({
   const ref = useRef<HTMLInputElement>(null)
   useEffect(() => ref.current?.select(), [])
   return (
-    <div className="scrim">
+    <Scrim onClose={onCancel}>
       <form
         className="dialog"
         onSubmit={(e) => {
@@ -1291,7 +1292,7 @@ function Prompt({
           </button>
         </div>
       </form>
-    </div>
+    </Scrim>
   )
 }
 
