@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   HostUpdates,
   type CPUSplit,
@@ -88,6 +88,14 @@ export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFact
   // answer.
   const m = useMetrics(hostID)
   const history = useMetricsHistory(hostID)
+  // Errors and drops are lifetime totals, and the rule for them is written on
+  // IfaceList below: they only matter when they climb. Alarming on the total
+  // meant any host that had ever dropped a packet sat red forever — which is
+  // every host running Docker, from its first minute.
+  const netRise = useCounterRise(
+    hostID,
+    (m?.net ?? []).reduce((a, n) => a + n.rxErrs + n.txErrs + n.rxDrop + n.txDrop, 0),
+  )
 
   if (!m) return <div className="placeholder">{t('읽는 중…')}</div>
 
@@ -98,7 +106,6 @@ export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFact
   const netTx = sumRate(m.net?.map((n) => n.txRate))
   const diskR = sumRate(m.diskIO?.map((d) => d.readRate))
   const diskW = sumRate(m.diskIO?.map((d) => d.writeRate))
-  const netBad = (m.net ?? []).reduce((a, n) => a + n.rxErrs + n.txErrs + n.rxDrop + n.txDrop, 0)
   // The panel's headline is the fullest of them: that is the one that stops the
   // machine, and it is the number somebody scanning the grid needs to see
   // without opening the table.
@@ -156,7 +163,7 @@ export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFact
             samples={history}
             pick={(x) => x.netRx}
             scale="auto"
-            warn={netBad > 0}
+            warn={netRise > 0}
           />
         )}
         {m.hasLoad && (
@@ -287,7 +294,7 @@ export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFact
             label={t('네트워크')}
             value={fmtRate(netRx)}
             sub={[t('보냄 {v}', { v: fmtRate(netTx) })]}
-            warn={netBad > 0}
+            warn={netRise > 0}
           >
             <TimeChart
               samples={history}
@@ -592,6 +599,27 @@ function PressureLine({ kind, p }: { kind: 'cpu' | 'memory' | 'io'; p: Pressure 
   )
 }
 
+/** How much a monotonic counter rose between the last two readings.
+ *
+ *  0 on the first reading, when the host changes, and when the counter goes
+ *  backwards — a counter that rewound means the machine rebooted, not that it
+ *  healed. Same shape as dropCounts.since() on the Go side, and for the same
+ *  reason: a total says what has ever happened, and an alarm is about now. */
+function useCounterRise(key: string, total: number): number {
+  const prev = useRef<{ key: string; total: number } | null>(null)
+  const [rise, setRise] = useState(0)
+  useEffect(() => {
+    const last = prev.current
+    prev.current = { key, total }
+    if (!last || last.key !== key || total < last.total) {
+      setRise(0)
+      return
+    }
+    setRise(total - last.total)
+  }, [key, total])
+  return rise
+}
+
 /** Interfaces, with the counters that only matter when they climb: a card that
  *  dropped four hundred packets last March is not a problem, one dropping four
  *  a second is. */
@@ -607,14 +635,14 @@ function IfaceList({ ifaces }: { ifaces: NetIface[] }) {
               {fmtRate(n.rxRate)} / {fmtRate(n.txRate)}
               {bad > 0 && (
                 <span
-                  className="res-bad"
-                  title={t('오류 {e} · 버림 {d}', {
+                  className="res-lifetime"
+                  title={t('부팅 이후 누적 — 오류 {e} · 버림 {d}', {
                     e: n.rxErrs + n.txErrs,
                     d: n.rxDrop + n.txDrop,
                   })}
                 >
                   {' '}
-                  ⚠ {bad.toLocaleString()}
+                  {t('누적 {n}', { n: bad.toLocaleString() })}
                 </span>
               )}
             </dd>

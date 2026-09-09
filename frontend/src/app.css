@@ -3157,8 +3157,12 @@ button.events-unit {
 
 /* 오류·버림 카운터. 지난 3월에 400개 버린 카드는 문제가 아니고,
    초당 4개씩 버리는 카드가 문제다 — 그래서 값이 아니라 존재를 알린다. */
-.res-bad {
-  color: var(--warn);
+/* A lifetime counter is a fact, not an alarm. It used to wear the warning
+   colour, which is how two packets dropped since boot turned a whole panel
+   red. The alarm now lives on the rise between readings; this is just the
+   number. */
+.res-lifetime {
+  color: var(--fg-faint);
   font-variant-numeric: tabular-nums;
 }
 .res-table td[data-warn] {
