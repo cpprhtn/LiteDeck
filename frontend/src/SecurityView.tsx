@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { clock, stamp } from './datetime'
 import {
   HostNetwork,
   HostSecurity,
@@ -225,7 +226,7 @@ export function SecurityView({
             name
             sub={
               lastLogin
-                ? [`${lastLogin.user} · ${new Date(lastLogin.at).toLocaleString()}`]
+                ? [`${lastLogin.user} · ${stamp(lastLogin.at)}`]
                 : undefined
             }
           />
@@ -281,7 +282,7 @@ export function SecurityView({
             {bans.bans.slice(0, 10).map((b, i) => (
               <div className="security-ban" key={`${b.at}-${i}`}>
                 <span className="mono">{b.address}</span>
-                <span className="muted small">{new Date(b.at).toLocaleString()}</span>
+                <span className="muted small">{stamp(b.at)}</span>
               </div>
             ))}
           </section>
@@ -344,7 +345,7 @@ function FailureChart({ buckets, bans }: { buckets: FailureBucket[]; bans: Ban[]
             key={b.at}
             className="security-bar"
             style={{ height: `${Math.max((b.count / peak) * 100, 2)}%` }}
-            title={`${new Date(b.at).toLocaleString()} · ${b.count}`}
+            title={`${stamp(b.at)} · ${b.count}`}
           />
         ))}
         {bans.map((b, i) => {
@@ -355,13 +356,13 @@ function FailureChart({ buckets, bans }: { buckets: FailureBucket[]; bans: Ban[]
               key={`${b.at}-${i}`}
               className="security-banmark"
               style={{ left: `${((at - from) / span) * 100}%` }}
-              title={`${t('차단')} ${b.address} · ${new Date(b.at).toLocaleString()}`}
+              title={`${t('차단')} ${b.address} · ${stamp(b.at)}`}
             />
           )
         })}
       </div>
       <div className="security-axis muted small">
-        <span>{new Date(buckets[0].at).toLocaleTimeString()}</span>
+        <span>{clock(buckets[0].at)}</span>
         <span>{t('최대 {n}', { n: peak.toLocaleString() })}</span>
         <span>{t('지금')}</span>
       </div>
@@ -396,7 +397,7 @@ function Logins({ logins, fresh }: { logins: Login[]; fresh: Set<string> }) {
         <div className="security-login" key={`${l.at}-${i}`} data-new={l.from && fresh.has(l.from) ? true : undefined}>
           <span className="mono security-login-user">{l.user}</span>
           <span className="mono small">{l.from || t('콘솔')}</span>
-          <span className="muted small">{new Date(l.at).toLocaleString()}</span>
+          <span className="muted small">{stamp(l.at)}</span>
           <span className="small">
             {l.from && fresh.has(l.from) ? (
               <span className="security-warn">{t('처음 보는 주소')}</span>

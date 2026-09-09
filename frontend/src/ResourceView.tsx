@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { stamp } from './datetime'
 import {
   HostUpdates,
   type CPUSplit,
@@ -555,14 +556,7 @@ export interface SysFacts {
 /** The wall-clock moment the machine came up, from how long it has been up.
  *  Shown in the reader's own timezone: they are reading it here. */
 function since(uptimeSeconds: number): string {
-  const d = new Date(Date.now() - uptimeSeconds * 1000)
-  return d.toLocaleString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  return stamp(Date.now() - uptimeSeconds * 1000)
 }
 
 /** PSI as one line.

@@ -1,4 +1,5 @@
 import { GAP_MS, type Sample } from './metricsStore'
+import { clock as hhmm } from './datetime'
 import { t } from './i18n'
 
 // A line over real time (§4.7, arch/07).
@@ -221,10 +222,5 @@ export function TimeChart({
  * reading "16:50" tell the reader nothing about which end is which.
  */
 function clock(ms: number, spanMs: number): string {
-  return new Date(ms).toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-    ...(spanMs < 10 * 60_000 ? { second: '2-digit' } : {}),
-    hour12: false,
-  })
+  return hhmm(ms, spanMs < 10 * 60_000)
 }
