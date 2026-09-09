@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Scrim } from './Scrim'
 import {
   MCPChanges,
   MCPState,
@@ -104,8 +105,8 @@ export function McpPanel({
   const shared = hosts.filter((h) => state?.hosts?.[h.id])
 
   return (
-    <div className="scrim" onClick={onClose}>
-      <div className="dialog mcp-dialog" onClick={(e) => e.stopPropagation()}>
+    <Scrim onClose={onClose}>
+      <div className="dialog mcp-dialog">
         <h2>{t('MCP 연동')}</h2>
         <p className="muted small">
           {t(
@@ -404,6 +405,6 @@ export function McpPanel({
           </button>
         </div>
       </div>
-    </div>
+    </Scrim>
   )
 }

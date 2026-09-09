@@ -1,4 +1,5 @@
 import { Suspense, lazy, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Scrim } from './Scrim'
 import { CodeEditor } from './CodeEditor'
 import { FilePreviewPane } from './FilePreviewPane'
 import { detectLanguage } from './editorLanguage'
@@ -312,7 +313,7 @@ export function EditorPane({
       )}
 
       {confirm?.kind === 'close' && (
-        <div className="scrim">
+        <Scrim onClose={() => setConfirm(null)} clickAway={false}>
           <div className="dialog">
             <h2>{t('저장하지 않고 닫으시겠습니까?')}</h2>
             <p className="mono muted ellipsis">{confirm.file.path}</p>
@@ -339,7 +340,7 @@ export function EditorPane({
               </button>
             </div>
           </div>
-        </div>
+        </Scrim>
       )}
     </div>
   )
@@ -376,7 +377,7 @@ function DiffDialog({
   useEffect(() => ok.current?.focus(), [])
 
   return (
-    <div className="scrim">
+    <Scrim onClose={onCancel}>
       <div
         className="dialog diff-dialog"
         onKeyDown={(e) => {
@@ -402,6 +403,6 @@ function DiffDialog({
           </button>
         </div>
       </div>
-    </div>
+    </Scrim>
   )
 }

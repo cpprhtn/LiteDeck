@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Scrim } from './Scrim'
 import { usePoll } from './usePoll'
 import { LoginHistory } from './LoginHistory'
 import { EndSSHSession, ListSSHSessions, type ActionResult, type SSHSession } from './ipc'
@@ -174,7 +175,7 @@ export function SessionView({
       <LoginHistory hostID={hostID} />
 
       {confirm && (
-        <div className="scrim">
+        <Scrim onClose={() => setConfirm(null)}>
           <div className="dialog">
             <h2>{t('이 세션을 끊으시겠습니까?')}</h2>
             <p className="muted">
@@ -201,7 +202,7 @@ export function SessionView({
               </button>
             </div>
           </div>
-        </div>
+        </Scrim>
       )}
     </div>
   )

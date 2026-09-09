@@ -90,10 +90,10 @@ export function TimersView({
 
       <div className="table">
         <div className="thead" style={{ gridTemplateColumns: '1fr 120px 120px 1.4fr' }}>
-          <div>TIMER</div>
+          <div>{tr('타이머')}</div>
           <div>{tr('다음 실행')}</div>
           <div>{tr('마지막 실행')}</div>
-          <div>ACTIVATES</div>
+          <div>{tr('실행 대상')}</div>
         </div>
         <div className="tbody" style={{ overflowY: 'auto' }}>
           {timers.map((t) => {

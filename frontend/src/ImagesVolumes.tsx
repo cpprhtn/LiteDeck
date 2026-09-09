@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Scrim } from './Scrim'
 import {
   ListImages,
   ListVolumes,
@@ -158,7 +159,7 @@ export function ImagesVolumes({
             <div className="table net-table">
               <div className="thead" style={{ gridTemplateColumns: '1fr 120px 100px 90px 80px' }}>
                 <div>REPOSITORY:TAG</div>
-                <div className="num">SIZE</div>
+                <div className="num">{t('크기')}</div>
                 <div className="num">{t('사용 중')}</div>
                 <div>{t('상태')}</div>
                 <div />
@@ -218,9 +219,9 @@ export function ImagesVolumes({
           {volumes.length > 0 && (
             <div className="table net-table">
               <div className="thead" style={{ gridTemplateColumns: '1fr 90px 2fr 80px' }}>
-                <div>NAME</div>
-                <div>DRIVER</div>
-                <div>MOUNTPOINT</div>
+                <div>{t('이름')}</div>
+                <div>{t('드라이버')}</div>
+                <div>{t('마운트')}</div>
                 <div />
               </div>
               {volumes.map((v) => (
@@ -260,7 +261,7 @@ export function ImagesVolumes({
       </div>
 
       {confirm && (
-        <div className="scrim">
+        <Scrim onClose={() => setConfirm(null)} clickAway={false}>
           <div className="dialog">
             {confirm.kind === 'image' && (
               <>
@@ -344,7 +345,7 @@ export function ImagesVolumes({
               </>
             )}
           </div>
-        </div>
+        </Scrim>
       )}
     </div>
   )

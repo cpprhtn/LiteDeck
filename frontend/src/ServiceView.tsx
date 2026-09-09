@@ -213,10 +213,10 @@ export function ServiceView({
       <div className="table">
         <div className="thead" style={{ gridTemplateColumns: COLUMNS }}>
           <div />
-          <div>UNIT</div>
-          <div>ACTIVE</div>
-          <div>ENABLED</div>
-          <div>DESCRIPTION</div>
+          <div>{t('유닛')}</div>
+          <div>{t('활성')}</div>
+          <div>{t('자동 시작')}</div>
+          <div>{t('설명')}</div>
         </div>
 
         <div className="tbody" ref={scrollRef}>

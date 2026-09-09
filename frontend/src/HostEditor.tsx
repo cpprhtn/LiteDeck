@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Scrim } from './Scrim'
 import { DeleteHost, ForgetSecrets, SaveHost, type AuthMethod, type Host } from './ipc'
 import { t, k } from './i18n'
 
@@ -101,7 +102,7 @@ export function HostEditor({
     !draft.hostname.trim() || !draft.user.trim() || draft.auth.length === 0 || needsKeyFile
 
   return (
-    <div className="scrim">
+    <Scrim onClose={onClose}>
       <form
         className="dialog"
         onSubmit={(e) => {
@@ -229,7 +230,7 @@ export function HostEditor({
         </div>
 
         {confirmDelete && (
-          <div className="scrim">
+          <Scrim onClose={() => setConfirmDelete(false)} clickAway={false}>
             <div className="dialog">
               <h2>{t('호스트를 삭제하시겠습니까?')}</h2>
               <p className="muted">
@@ -243,9 +244,9 @@ export function HostEditor({
                 </button>
               </div>
             </div>
-          </div>
+          </Scrim>
         )}
       </form>
-    </div>
+    </Scrim>
   )
 }

@@ -1,4 +1,5 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react'
+import { Scrim } from './Scrim'
 import {
   AnswerHostKey,
   AnswerMCPWrite,
@@ -39,7 +40,7 @@ export function HostKeyDialog({
   }
 
   return (
-    <div className="scrim">
+    <Scrim clickAway={false}>
       <div className="dialog" role="dialog" aria-modal="true">
         <h2>{t('처음 접속하는 호스트입니다')}</h2>
         <p className="muted">
@@ -68,7 +69,7 @@ export function HostKeyDialog({
           </button>
         </div>
       </div>
-    </div>
+    </Scrim>
   )
 }
 
@@ -112,7 +113,7 @@ export function SecretDialog({
   }
 
   return (
-    <div className="scrim">
+    <Scrim onClose={cancel} clickAway={false}>
       <form className="dialog" onSubmit={submit} role="dialog" aria-modal="true">
         <h2>{t('인증이 필요합니다')}</h2>
         <p className="prompt-label">{prompt.label}</p>
@@ -154,7 +155,7 @@ export function SecretDialog({
           </button>
         </div>
       </form>
-    </div>
+    </Scrim>
   )
 }
 
@@ -204,7 +205,7 @@ export function McpWriteDialog({
   const isExec = prompt.tool === 'run_command'
 
   return (
-    <div className="scrim">
+    <Scrim clickAway={false}>
       <div
         className="dialog mcp-approve"
         onKeyDown={(e) => {
@@ -268,6 +269,6 @@ export function McpWriteDialog({
             : t('안 묻기는 이 호스트에만 적용되고 시간이 지나면 스스로 돌아옵니다. 파일 변경은 MCP 패널의 바뀐 파일 탭에서 되돌릴 수 있습니다.')}
         </p>
       </div>
-    </div>
+    </Scrim>
   )
 }

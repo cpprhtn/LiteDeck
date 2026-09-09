@@ -21,9 +21,12 @@ export interface Prefs {
   editorFontSize: number
   /** Width of the history panel beside the terminal, in px. */
   historyWidth: number
-  /** Whether the host list is showing. Collapsed, the shell drops to one
-   *  column and the editor gets the width back. */
+  /** Whether the host list inside the rail is unfolded. */
   sidebarOpen: boolean
+  /** Whether the rail is showing at all. Folded away, the content takes the
+   *  whole window — which is the only thing somebody reading code on a server
+   *  wants from this app's chrome. */
+  railOpen: boolean
 }
 
 /** The preferences that are a size. The rest are switches, and clamping a
@@ -36,6 +39,7 @@ export const DEFAULTS: Prefs = {
   editorFontSize: 13,
   historyWidth: 320,
   sidebarOpen: true,
+  railOpen: true,
 }
 
 const LIMITS: Record<NumericPref, [number, number]> = {

@@ -1,4 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Scrim } from './Scrim'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { TransferPanel } from './TransferPanel'
 import {
@@ -230,9 +231,15 @@ type Dialog =
 
 export function FileExplorer({
   hostID,
+  visible,
   onError,
 }: {
   hostID: string
+  /** This tab is the one on screen. The keyboard handler is on the window, and
+   *  the pane stays mounted when another tab is showing — without this, an
+   *  arrow key in the terminal moved the selection in a file list nobody could
+   *  see, and F5 on the monitoring tab reloaded a directory. */
+  visible: boolean
   onError: (msg: string) => void
 }) {
   const [listing, setListing] = useState<DirListing | null>(null)
@@ -645,6 +652,29 @@ export function FileExplorer({
     }
   }
 
+  /**
+   * Moves the selection by one row, the way a file list is expected to.
+   *
+   * The anchor is the far end in the direction of travel, so ↓ after a
+   * multi-select continues from the bottom of it rather than from the top —
+   * which is what every file manager does and what nobody notices until it is
+   * wrong. Shift extends instead of replacing.
+   */
+  const step = (delta: number, extend: boolean) => {
+    if (rows.length === 0) return
+    const hit = rows.map((r, i) => (selected.has(r.entry.path) ? i : -1)).filter((i) => i >= 0)
+    const from = hit.length === 0 ? -1 : delta > 0 ? Math.max(...hit) : Math.min(...hit)
+    const next =
+      from < 0
+        ? delta > 0
+          ? 0
+          : rows.length - 1
+        : Math.max(0, Math.min(rows.length - 1, from + delta))
+    const path = rows[next].entry.path
+    setSelected((prev) => (extend ? new Set([...prev, path]) : new Set([path])))
+    virtualizer.scrollToIndex(next)
+  }
+
   // Keyboard shortcuts follow the platform, not one hard-coded convention (§8).
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
@@ -652,7 +682,7 @@ export function FileExplorer({
       // platforms — Enter renames on macOS, Delete deletes on Windows — so
       // without this, a keystroke meant for the editor or the address bar acts
       // on whatever happens to be selected in the tree.
-      if (dialog || isTyping(ev)) return
+      if (!visible || dialog || isTyping(ev)) return
       const one = selectedEntries[0]
       if (matches(ev, 'find')) {
         // isTyping already gave the editor first claim on this: CodeMirror's
@@ -665,6 +695,21 @@ export function FileExplorer({
       } else if (matches(ev, 'parentDir') && listing) {
         ev.preventDefault()
         navigate(listing.parent)
+      } else if (matches(ev, 'back')) {
+        ev.preventDefault()
+        back()
+      } else if (matches(ev, 'forward')) {
+        ev.preventDefault()
+        forth()
+      } else if (ev.key === 'ArrowDown' && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
+        ev.preventDefault()
+        step(1, ev.shiftKey)
+      } else if (ev.key === 'ArrowUp' && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
+        ev.preventDefault()
+        step(-1, ev.shiftKey)
+      } else if (one && matches(ev, 'open')) {
+        ev.preventDefault()
+        void openEntry(one)
       } else if (one && matches(ev, 'rename')) {
         ev.preventDefault()
         setInput(one.name)
@@ -819,7 +864,7 @@ export function FileExplorer({
               className="ghost"
               disabled={history.length === 0}
               onClick={back}
-              title={t('뒤로')}
+              title={t('뒤로 ({key})', { key: shortcutLabel('back') })}
             >
               ←
             </button>
@@ -827,7 +872,7 @@ export function FileExplorer({
               className="ghost"
               disabled={forward.length === 0}
               onClick={forth}
-              title={t('앞으로')}
+              title={t('앞으로 ({key})', { key: shortcutLabel('forward') })}
             >
               →
             </button>
@@ -897,9 +942,9 @@ export function FileExplorer({
             <button className="ghost" onClick={() => void refresh()} title={shortcutLabel('refresh')}>
               {t('새로고침')}
             </button>
-          </div>
 
-          <div className="view-toolbar wrap">
+            <span className="tb-sep" aria-hidden="true" />
+
             <button
               onClick={() => {
                 setInput('')
@@ -919,36 +964,44 @@ export function FileExplorer({
               hidden
               onChange={(e) => void onWebFilesPicked(e.target.files)}
             />
-            <button disabled={selectedEntries.length === 0} onClick={() => void download()}>
-              {t('다운로드…')}
-            </button>
-            <button
-              disabled={selectedEntries.length !== 1}
-              onClick={() => {
-                const e = selectedEntries[0]
-                setInput(e.name)
-                setDialog({ kind: 'rename', entry: e })
-              }}
-            >
-              {t('이름 변경')}
-            </button>
-            <button
-              disabled={selectedEntries.length !== 1}
-              onClick={() => {
-                const e = selectedEntries[0]
-                setPerm(e.perm)
-                setDialog({ kind: 'perms', entry: e })
-              }}
-            >
-              {t('권한')}
-            </button>
-            <button
-              className="danger"
-              disabled={selectedEntries.length === 0}
-              onClick={() => void askDelete()}
-            >
-              {t('삭제')}
-            </button>
+            {/* Only once something is selected. Four buttons that are dead
+                until you pick a row taught nobody what they do — they just took
+                a second row of the window on every screen, on every host,
+                whether or not anyone was about to delete anything. */}
+            {selectedEntries.length > 0 && (
+              <>
+                <span className="tb-sep" aria-hidden="true" />
+                <span className="muted small tb-count">
+                  {t('{n}개 선택', { n: selectedEntries.length })}
+                </span>
+                <button onClick={() => void download()}>{t('다운로드…')}</button>
+                <button
+                  disabled={selectedEntries.length !== 1}
+                  title={selectedEntries.length !== 1 ? t('하나만 선택하세요') : undefined}
+                  onClick={() => {
+                    const e = selectedEntries[0]
+                    setInput(e.name)
+                    setDialog({ kind: 'rename', entry: e })
+                  }}
+                >
+                  {t('이름 변경')}
+                </button>
+                <button
+                  disabled={selectedEntries.length !== 1}
+                  title={selectedEntries.length !== 1 ? t('하나만 선택하세요') : undefined}
+                  onClick={() => {
+                    const e = selectedEntries[0]
+                    setPerm(e.perm)
+                    setDialog({ kind: 'perms', entry: e })
+                  }}
+                >
+                  {t('권한')}
+                </button>
+                <button className="danger" onClick={() => void askDelete()}>
+                  {t('삭제')}
+                </button>
+              </>
+            )}
             {listing?.protected && (
               <span className="badge warn" title={t('루트 바로 아래 디렉터리 — 하위까지 지우려면 경로를 직접 입력해야 합니다')}>
                 {t('보호된 경로')}
@@ -961,10 +1014,10 @@ export function FileExplorer({
 
           <div className="table" ref={tableRef}>
             <div className="thead" style={{ gridTemplateColumns: layout.columns }}>
-              <div>NAME</div>
-              <div className="num">SIZE</div>
-              {layout.mode && <div>MODE</div>}
-              {layout.modified && <div>MODIFIED</div>}
+              <div>{t('이름')}</div>
+              <div className="num">{t('크기')}</div>
+              {layout.mode && <div>{t('권한')}</div>}
+              {layout.modified && <div>{t('수정')}</div>}
             </div>
             <div className="tbody" ref={scrollRef}>
               {busy && !listing && <div className="placeholder">{t('읽는 중…')}</div>}
@@ -1118,7 +1171,7 @@ export function FileExplorer({
       )}
 
       {dialog?.kind === 'perms' && (
-        <div className="scrim">
+        <Scrim onClose={() => setDialog(null)}>
           <div className="dialog">
             <h2>{t('권한')}</h2>
             <p className="mono muted ellipsis">{dialog.entry.path}</p>
@@ -1134,11 +1187,11 @@ export function FileExplorer({
               </button>
             </div>
           </div>
-        </div>
+        </Scrim>
       )}
 
       {dialog?.kind === 'delete' && (
-        <div className="scrim">
+        <Scrim onClose={() => setDialog(null)} clickAway={false}>
           <div className="dialog">
             <h2>{t('삭제하시겠습니까?')}</h2>
             <p className="muted">{t('{n}개 항목이 영구히 삭제됩니다.', { n: dialog.entries.length })}</p>
@@ -1190,7 +1243,7 @@ export function FileExplorer({
               </button>
             </div>
           </div>
-        </div>
+        </Scrim>
       )}
 
     </div>
@@ -1215,7 +1268,7 @@ function Prompt({
   const ref = useRef<HTMLInputElement>(null)
   useEffect(() => ref.current?.select(), [])
   return (
-    <div className="scrim">
+    <Scrim onClose={onCancel}>
       <form
         className="dialog"
         onSubmit={(e) => {
@@ -1239,7 +1292,7 @@ function Prompt({
           </button>
         </div>
       </form>
-    </div>
+    </Scrim>
   )
 }
 

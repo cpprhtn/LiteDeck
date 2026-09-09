@@ -30,6 +30,9 @@ export type Action =
   | 'newFolder'
   | 'copyPath'
   | 'save'
+  | 'toggleRail'
+  | 'back'
+  | 'forward'
 
 interface Binding {
   /** KeyboardEvent.key */
@@ -42,15 +45,30 @@ interface Binding {
 }
 
 const MAC: Record<Action, Binding> = {
-  rename: { key: 'Enter', label: '↩' },
+  // Enter opens and F2 renames, the same on both platforms.
+  //
+  // Finder has it the other way round and this followed Finder, which meant
+  // pressing Enter on a folder in a *server file manager* opened a rename box.
+  // The reference here is VS Code's explorer, not Finder: this list sits beside
+  // an editor, the people using it live in that editor, and one rule for both
+  // platforms is one less thing that behaves differently depending on where you
+  // happen to be sitting.
+  rename: { key: 'F2', label: 'F2' },
   delete: { key: 'Backspace', mod: true, label: '⌘⌫' },
   refresh: { key: 'r', mod: true, label: '⌘R' },
   find: { key: 'f', mod: true, label: '⌘F' },
-  open: { key: 'ArrowDown', mod: true, label: '⌘↓' },
+  open: { key: 'Enter', label: '↩' },
   parentDir: { key: 'ArrowUp', mod: true, label: '⌘↑' },
   newFolder: { key: 'n', mod: true, shift: true, label: '⇧⌘N' },
   copyPath: { key: 'c', mod: true, alt: true, label: '⌥⌘C' },
   save: { key: 's', mod: true, label: '⌘S' },
+  toggleRail: { key: 'b', mod: true, label: '⌘B' },
+  // The modifier plus the arrow the button is drawn with, so the shortcut and
+  // the control say the same thing. ⌘← is also "go to start of line" on this
+  // platform, which is why isTyping() guards the handler: in a text field or in
+  // the editor the keystroke never reaches it and moves the caret as always.
+  back: { key: 'ArrowLeft', mod: true, label: '⌘←' },
+  forward: { key: 'ArrowRight', mod: true, label: '⌘→' },
 }
 
 const PC: Record<Action, Binding> = {
@@ -63,6 +81,9 @@ const PC: Record<Action, Binding> = {
   newFolder: { key: 'n', mod: true, shift: true, label: 'Ctrl+Shift+N' },
   copyPath: { key: 'c', mod: true, shift: true, label: 'Ctrl+Shift+C' },
   save: { key: 's', mod: true, label: 'Ctrl+S' },
+  toggleRail: { key: 'b', mod: true, label: 'Ctrl+B' },
+  back: { key: 'ArrowLeft', alt: true, label: 'Alt+←' },
+  forward: { key: 'ArrowRight', alt: true, label: 'Alt+→' },
 }
 
 let platform: Platform = {

@@ -8,6 +8,7 @@ import {
   type SSHDNote,
   type SSHDReport,
 } from './ipc'
+import { LockButton, useSudoState } from './LockButton'
 import { t } from './i18n'
 
 // The network view (v1.x). Answers the two questions people actually open a
@@ -51,6 +52,14 @@ export function NetworkView({
 
   usePoll(refresh, POLL_MS, visible)
 
+  // The same lock the security tab shows. `ss` hands over other users' process
+  // names only to root, and this tab used to say so with nothing on it to act
+  // on — the permission existed one tab away and this one could not reach it.
+  //
+  // Above the loading early-return, with the other hooks. Below it the hook
+  // count changes between renders and React tears the tab down.
+  const sudo = useSudoState(hostID)
+
   if (loading && !net) {
     return <div className="placeholder">{t('네트워크 상태를 읽는 중…')}</div>
   }
@@ -71,6 +80,7 @@ export function NetworkView({
           </button>
         </div>
         <span className="spacer" />
+        <LockButton hostID={hostID} state={sudo} onChange={() => void refresh(true)} />
         <button className="ghost" onClick={() => void refresh(true)}>
           {t('새로고침')}
         </button>
@@ -137,10 +147,10 @@ export function NetworkView({
           {listeners.length > 0 && (
             <div className="table net-table">
               <div className="thead" style={{ gridTemplateColumns: '64px 80px 1fr 1fr' }}>
-                <div>PROTO</div>
-                <div className="num">PORT</div>
-                <div>BIND</div>
-                <div>PROCESS</div>
+                <div>{t('프로토콜')}</div>
+                <div className="num">{t('포트')}</div>
+                <div>{t('주소')}</div>
+                <div>{t('프로세스')}</div>
               </div>
               {listeners.map((l, i) => (
                 <div
@@ -287,9 +297,9 @@ function SSHDSection({ hostID, visible }: { hostID: string; visible: boolean }) 
           {showAll && (
             <div className="table net-table">
               <div className="thead" style={{ gridTemplateColumns: '1fr 1fr 220px' }}>
-                <div>KEYWORD</div>
-                <div>VALUE</div>
-                <div>FILE</div>
+                <div>{t('항목')}</div>
+                <div>{t('값')}</div>
+                <div>{t('파일')}</div>
               </div>
               {report.declared.map((d) => (
                 <div

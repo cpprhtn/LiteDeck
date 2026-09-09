@@ -63,6 +63,17 @@ func (a *App) execMaybeElevated(
 		return conn.Exec(ctx, "sudo", append([]string{"-n", "--", cmd}, args...)...)
 	}
 
+	// A lock already turned on this connection answers for every elevated
+	// command on it. Without this the security tab asked for the password a
+	// second time to read the journal, having just been handed it — and the
+	// network tab could unlock and then watch the security tab ask again for
+	// the same permission on the same connection.
+	if password, ok := a.unlocked.get(hostID, a.mgr.Generation(hostID)); ok {
+		return conn.ExecOpts(ctx,
+			sshcore.ExecOptions{Stdin: strings.NewReader(password + "\n")},
+			"sudo", append([]string{"-S", "-p", "", "--", cmd}, args...)...)
+	}
+
 	password, err := a.prompts.secretFunc(hostID, secret.KindSudo, i18n.S("sudo 비밀번호"))()
 	if err != nil {
 		return nil, err
@@ -117,4 +128,36 @@ func isSudoAuthFailure(res *sshcore.Result) bool {
 		}
 	}
 	return false
+}
+
+// execUnlocked runs a read with sudo when this connection is already unlocked,
+// and plainly when it is not.
+//
+// It never prompts, and that is the difference from execMaybeElevated. The lock
+// is where the asking happens; a view that polls on a timer must not be able to
+// put a password dialog on screen every few seconds, and a read that quietly
+// degrades — process names missing, everything else there — is the right
+// behaviour for one that has not been unlocked.
+//
+// Reports whether it actually ran elevated, so the view can say which of the
+// two answers it is showing.
+func (a *App) execUnlocked(
+	ctx context.Context, conn *sshcore.Conn, hostID, cmd string, args ...string,
+) (*sshcore.Result, bool, error) {
+	if info, err := a.DetectHost(hostID); err == nil && info.SudoNoPasswd {
+		res, err := conn.ExecOpts(ctx, sshcore.ExecOptions{Kind: sshcore.CommandPoll},
+			"sudo", append([]string{"-n", "--", cmd}, args...)...)
+		return res, err == nil, err
+	}
+	if password, ok := a.unlocked.get(hostID, a.mgr.Generation(hostID)); ok {
+		// The password goes on stdin, never in argv — argv is visible in the
+		// remote process table and in the Command Log (§7.2).
+		res, err := conn.ExecOpts(ctx, sshcore.ExecOptions{
+			Kind:  sshcore.CommandPoll,
+			Stdin: strings.NewReader(password + "\n"),
+		}, "sudo", append([]string{"-S", "-p", "", "--", cmd}, args...)...)
+		return res, err == nil, err
+	}
+	res, err := conn.Poll(ctx, cmd, args...)
+	return res, false, err
 }

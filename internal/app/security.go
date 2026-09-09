@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
 	"github.com/cpprhtn/LiteDeck/internal/i18n"
@@ -86,9 +87,14 @@ type SecurityView struct {
 	// are put together.
 	Attackers []adapter.Attacker      `json:"attackers,omitempty"`
 	Clusters  []adapter.SubnetCluster `json:"clusters,omitempty"`
-	// Bans is the recent ban history, and the only place the distinct-address
+	// BanHistory is seven days of bans, and the only place the distinct-address
 	// count lives — the denominator a repeat rate needs and `fail2ban-client
 	// status` does not report.
+	//
+	// Seven days rather than the last N lines. A line cap made the window
+	// shorter on the busier server, so three machines all reported "200 bans"
+	// and their repeat rates were not comparable with each other — which is the
+	// one thing somebody does with that number.
 	BanHistory *adapter.BanHistory `json:"banHistory,omitempty"`
 	// Failures is failed logins per hour over a day. A shape, not a total: the
 	// question is whether a block worked, and that is only visible as a line
@@ -189,6 +195,60 @@ func (d *dropCounts) forget(id string) {
 	delete(d.byID, id)
 }
 
+// securityCache holds one read per host, briefly.
+//
+// The tab is not polled, but its panes stay mounted, so switching to another
+// tab and back flipped `visible` and re-read everything — including the day of
+// journal the failure chart wants, which is 78,000 lines and about three
+// seconds on the server this was measured against. The digest had the same
+// shape and was fixed with a cache one release earlier; this file repeated it.
+//
+// Unlike the digest there *is* a timer here, and a short one. That answer is
+// "what happened since you last looked" and only moves when the mark does; this
+// one is "what is happening now", and a stale answer to that is a wrong answer.
+// A minute is long enough to cover somebody moving between tabs and short
+// enough that nothing on screen is meaningfully old.
+type securityCache struct {
+	mu   sync.Mutex
+	byID map[string]securityEntry
+}
+
+type securityEntry struct {
+	gen uint64
+	// elevated distinguishes the two shapes of the answer. A locked read has no
+	// rules and no ban history, and serving it to an unlocked caller would look
+	// like the lock had stopped working.
+	elevated bool
+	at       time.Time
+	view     SecurityView
+}
+
+const securityTTL = time.Minute
+
+func newSecurityCache() *securityCache { return &securityCache{byID: map[string]securityEntry{}} }
+
+func (c *securityCache) get(id string, gen uint64, elevated bool) (SecurityView, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.byID[id]
+	if !ok || e.gen != gen || e.elevated != elevated || time.Since(e.at) > securityTTL {
+		return SecurityView{}, false
+	}
+	return e.view, true
+}
+
+func (c *securityCache) put(id string, gen uint64, elevated bool, view SecurityView) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.byID[id] = securityEntry{gen: gen, elevated: elevated, at: time.Now(), view: view}
+}
+
+func (c *securityCache) forget(id string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.byID, id)
+}
+
 // sudoUnlock holds a sudo password for the life of one connection.
 //
 // Nothing else in this app keeps one in memory: every other elevated command
@@ -239,7 +299,10 @@ func (u *sudoUnlock) forget(id string) {
 // elevate is the user turning the lock, never the app deciding to. The free
 // half is read either way, so a refused password costs the detail and not the
 // screen.
-func (a *App) HostSecurity(hostID string, elevate bool) (SecurityView, error) {
+//
+// force is the refresh button, which means "ask again" and so goes past the
+// cache. Everything else — a tab switch, a re-render — takes what is there.
+func (a *App) HostSecurity(hostID string, elevate, force bool) (SecurityView, error) {
 	info, err := a.requireCapability(hostID, adapter.CapServices, i18n.S("보안 상태"))
 	if err != nil {
 		return SecurityView{}, err
@@ -247,6 +310,12 @@ func (a *App) HostSecurity(hostID string, elevate bool) (SecurityView, error) {
 	conn, err := a.mgr.Conn(hostID)
 	if err != nil {
 		return SecurityView{}, err
+	}
+	gen := a.mgr.Generation(hostID)
+	if !force {
+		if cached, ok := a.security.get(hostID, gen, elevate); ok {
+			return cached, nil
+		}
 	}
 	view := SecurityView{
 		Units:         []adapter.SecurityUnit{},
@@ -284,16 +353,19 @@ func (a *App) HostSecurity(hostID string, elevate bool) (SecurityView, error) {
 	a.readAttackers(ctx, conn, hostID, &view, info, elevate)
 
 	if !elevate {
+		a.security.put(hostID, gen, elevate, view)
 		return view, nil
 	}
 	if !info.HasSudo {
 		view.RulesError = i18n.T("이 계정에는 sudo 가 없습니다")
+		a.security.put(hostID, gen, elevate, view)
 		return view, nil
 	}
 	rules, ruleset, bans, jailOut, banLog, err := a.securityRules(ctx, conn, hostID, info)
 	if err != nil {
 		// A refused password is a normal answer. The free half stands.
 		view.RulesError = err.Error()
+		a.security.put(hostID, gen, elevate, view)
 		return view, nil
 	}
 	view.Unlocked = true
@@ -340,7 +412,7 @@ func (a *App) HostSecurity(hostID string, elevate bool) (SecurityView, error) {
 		}
 		view.Dropped += c.Packets
 	}
-	view.DroppedSince = a.dropped.since(hostID, a.mgr.Generation(hostID), view.Dropped)
+	view.DroppedSince = a.dropped.since(hostID, gen, view.Dropped)
 	return view, nil
 }
 
@@ -363,7 +435,8 @@ fail2ban-client get sshd bantime 2>/dev/null
 echo '#status sshd'
 fail2ban-client status sshd 2>/dev/null
 echo '#banlog'
-grep '] Ban ' /var/log/fail2ban.log 2>/dev/null | tail -200
+awk -v since="$(date -d '7 days ago' '+%Y-%m-%d' 2>/dev/null || date -v-7d '+%Y-%m-%d')" '
+  /] Ban / && ($1 "") >= (since "")' /var/log/fail2ban.log 2>/dev/null | tail -500
 echo '#end'
 :`
 
@@ -558,6 +631,12 @@ func (a *App) UnlockSecurity(hostID string) (bool, error) {
 		// type their password at any dialog that appears.
 		return true, nil
 	}
+	// Already open on this connection. Turning the lock in one tab and then
+	// turning it in another asked for the password twice for the same
+	// permission, which is exactly the thing this lock exists to avoid.
+	if _, ok := a.unlocked.get(hostID, a.mgr.Generation(hostID)); ok {
+		return true, nil
+	}
 	// Deliberately not secretFunc: that one reads the keychain and offers to
 	// write to it. This lock is a session, not a saved credential — asked every
 	// connection, kept nowhere.
@@ -569,10 +648,62 @@ func (a *App) UnlockSecurity(hostID string) (bool, error) {
 		return false, err
 	}
 	a.unlocked.put(hostID, a.mgr.Generation(hostID), password)
+	a.emitSudoState(hostID)
 	return true, nil
 }
 
 // LockSecurity drops a held sudo password without waiting for a disconnect.
 func (a *App) LockSecurity(hostID string) {
 	a.unlocked.forget(hostID)
+	a.emitSudoState(hostID)
+}
+
+// SudoUnlocked reports whether privileged reads will work on this connection
+// without asking anybody anything.
+//
+// The lock is one thing per connection, not one per tab: the security tab and
+// the network tab both need the same permission for the same reason, and
+// somebody who has already proved they may have it should not be asked again to
+// see process names.
+func (a *App) SudoUnlocked(hostID string) bool {
+	if _, ok := a.unlocked.get(hostID, a.mgr.Generation(hostID)); ok {
+		return true
+	}
+	// Only what detection already found. Calling DetectHost here would probe —
+	// and this runs on the disconnect path, where it repopulated the cache that
+	// had just been dropped and sent commands down a connection being torn
+	// down. A host that has not been detected yet simply reads as locked.
+	info, ok := a.detected.get(hostID)
+	return ok && info.SudoNoPasswd
+}
+
+// SudoState is what the lock looks like right now, for any view that shows one.
+type SudoState struct {
+	HostID   string `json:"hostID"`
+	Unlocked bool   `json:"unlocked"`
+	// Available is false where this account has no sudo at all — then the lock
+	// is not a thing to offer, it is a fact to state.
+	Available bool `json:"available"`
+}
+
+// HostSudoState answers for a view that has just mounted.
+//
+// Reads the detection cache rather than detecting: a view mounting is not a
+// reason to probe a server, and the tab that shows this lock has already caused
+// a detection by the time it renders.
+func (a *App) HostSudoState(hostID string) SudoState {
+	st := SudoState{HostID: hostID, Unlocked: a.SudoUnlocked(hostID)}
+	if info, ok := a.detected.get(hostID); ok {
+		st.Available = info.HasSudo
+	}
+	return st
+}
+
+// emitSudoState tells every open view that the lock turned. Without it the
+// network tab would keep saying "administrator rights are needed" after the
+// security tab had just obtained them.
+func (a *App) emitSudoState(hostID string) {
+	if a.emit != nil {
+		a.emit("sudo:state", a.HostSudoState(hostID))
+	}
 }

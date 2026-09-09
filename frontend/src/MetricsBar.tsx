@@ -128,6 +128,7 @@ function Stat({
   pick,
   warn,
   title,
+  p,
 }: {
   label: string
   value: string
@@ -140,9 +141,11 @@ function Stat({
   pick?: (s: Sample) => number
   warn?: boolean
   title?: string
+  /** What to drop first when the row runs out of window. 1 never goes. */
+  p?: 1 | 2 | 3
 }) {
   return (
-    <div className="metric" data-warn={warn || undefined} title={title}>
+    <div className="metric" data-p={p ?? 1} data-warn={warn || undefined} title={title}>
       <div className="metric-label">{label}</div>
       <div className="metric-row">
         <span className="metric-value">
@@ -247,6 +250,7 @@ export function MetricsBar({ hostID }: { hostID: string }) {
         unit={m.cpu < 0 ? undefined : '%'}
         samples={samples}
         pick={(s) => s.cpu}
+        note={m.cores.length > 0 ? t('{n}코어', { n: m.cores.length }) : undefined}
         warn={m.cpu >= 85}
         title={m.cpu < 0 ? t('두 번째 샘플을 기다리는 중 — 누적 카운터라 한 번만으로는 알 수 없습니다') : undefined}
       />
@@ -256,6 +260,10 @@ export function MetricsBar({ hostID }: { hostID: string }) {
         unit="%"
         samples={samples}
         pick={(s) => s.mem}
+        // The figure people asked for: 62G is what the machine has, and a
+        // percentage alone never says it. It was in the tooltip, which is where
+        // things go to be found by nobody.
+        note={`${fmtBytes(m.memUsed)} / ${fmtBytes(m.memTotal)}`}
         warn={m.memPercent >= 90}
         title={`${fmtBytes(m.memUsed)} / ${fmtBytes(m.memTotal)}`}
       />
@@ -264,9 +272,19 @@ export function MetricsBar({ hostID }: { hostID: string }) {
       {gpus.length === 1 && (
         <Stat
           label="GPU"
+          p={2}
           value={fmtPct(gpus[0].utilization)}
           unit={gpus[0].utilization < 0 ? undefined : '%'}
-          note={gpus[0].fan < 0 ? fmtTemp(gpus[0].tempC) : t('팬 {f}%', { f: fmtPct(gpus[0].fan) })}
+          // VRAM rather than the fan. A card's memory is what fills up and
+          // stops a job; the fan is what you check after. Both are still in the
+          // tooltip.
+          note={
+            gpus[0].memTotal > 0
+              ? `${fmtBytes(gpus[0].memUsed)} / ${fmtBytes(gpus[0].memTotal)}`
+              : gpus[0].fan < 0
+                ? fmtTemp(gpus[0].tempC)
+                : t('팬 {f}%', { f: fmtPct(gpus[0].fan) })
+          }
           samples={samples}
           pick={(s) => s.gpu[0] ?? -1}
           warn={gpuWarn(gpus[0])}
@@ -286,6 +304,7 @@ export function MetricsBar({ hostID }: { hostID: string }) {
           >
             <Stat
               label={t('GPU ×{n}', { n: gpus.length })}
+          p={2}
               value={fmtPct(gpuBusy)}
               unit={gpuBusy < 0 ? undefined : '%'}
               note={gpuFan < 0 ? undefined : t('팬 {f}%', { f: fmtPct(gpuFan) })}
@@ -333,6 +352,7 @@ export function MetricsBar({ hostID }: { hostID: string }) {
           label={t('디스크 {mount}', { mount: disk.mountPoint })}
           value={disk.percent.toFixed(0)}
           unit="%"
+          note={`${fmtBytes(disk.used)} / ${fmtBytes(disk.size)}`}
           warn={disk.percent >= 90}
           title={t('{used} / {size} · 여유 {free}', {
             used: fmtBytes(disk.used),
@@ -347,6 +367,7 @@ export function MetricsBar({ hostID }: { hostID: string }) {
       {m.hasLoad && (
         <Stat
           label={t('로드')}
+          p={3}
           value={`${m.load1.toFixed(2)}`}
           title={t('1분 {a} · 5분 {b} · 15분 {c}', { a: m.load1, b: m.load5, c: m.load15 })}
         />
@@ -354,13 +375,15 @@ export function MetricsBar({ hostID }: { hostID: string }) {
       {m.swapTotal > 0 && (
         <Stat
           label={t('스왑')}
+          p={3}
           value={fmtBytes(m.swapUsed)}
+          note={`/ ${fmtBytes(m.swapTotal)}`}
           warn={m.swapUsed > m.swapTotal * 0.5}
           title={`${fmtBytes(m.swapUsed)} / ${fmtBytes(m.swapTotal)}`}
         />
       )}
       <span className="spacer" />
-      <span className="muted small" title={t('서버 가동 시간')}>
+      <span className="muted small metric-uptime" data-p={3} title={t('서버 가동 시간')}>
         {t('가동 {up}', { up: fmtUptime(m.uptimeSeconds) })}
       </span>
       {failed && (

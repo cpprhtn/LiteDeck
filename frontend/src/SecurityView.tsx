@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
+import { clock, stamp } from './datetime'
 import {
   HostNetwork,
   HostSecurity,
-  LockSecurity,
   RememberSecurityLogins,
   SecurityLogins,
-  UnlockSecurity,
   type Attacker,
   type FirewallRule,
   type Listener,
@@ -17,6 +16,7 @@ import {
   type SecurityView as View,
 } from './ipc'
 import { Panel } from './ResourceView'
+import { LockButton, useSudoState } from './LockButton'
 import { k, t } from './i18n'
 
 // What is guarding this server (T-35).
@@ -58,9 +58,13 @@ export function SecurityView({
   const [logins, setLogins] = useState<Login[]>([])
   const [fresh, setFresh] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
+  // The lock is the connection's, not this tab's. Unlocking in the network tab
+  // has to land here too, which is why the state comes from Go rather than from
+  // whatever this screen last read.
+  const sudo = useSudoState(hostID)
 
   const load = useCallback(
-    async (elevate: boolean) => {
+    async (elevate: boolean, force = false) => {
       setBusy(true)
       try {
         // The same listener list the network tab shows, rather than a second
@@ -68,7 +72,7 @@ export function SecurityView({
         // thing can disagree, and a security screen disagreeing with the
         // network screen about which ports are open is worse than a round trip.
         const [sec, net, who] = await Promise.all([
-          HostSecurity(hostID, elevate),
+          HostSecurity(hostID, elevate, force),
           HostNetwork(hostID).catch(() => null),
           SecurityLogins(hostID).catch(() => null),
         ])
@@ -92,9 +96,14 @@ export function SecurityView({
 
   // Read once, not polled. A firewall does not change between two ticks of a
   // timer, and the tab is one round trip.
+  //
+  // Elevated from the start when the connection is already unlocked — which it
+  // may be because somebody turned the lock in the network tab. Re-reads when
+  // that changes, so this screen never sits on the locked answer while the
+  // permission is already in hand.
   useEffect(() => {
-    if (visible) void load(false)
-  }, [visible, load])
+    if (visible) void load(sudo.unlocked)
+  }, [visible, load, sudo.unlocked])
 
   if (!view) {
     return <div className="placeholder">{busy ? t('읽는 중…') : t('보안 상태를 읽는 중…')}</div>
@@ -127,28 +136,6 @@ export function SecurityView({
   const lastLogin = logins.find((l) => !l.boot)
   const news = logins.filter((l) => !l.boot && l.from && fresh.has(l.from))
 
-  const unlock = async () => {
-    setBusy(true)
-    try {
-      // Closing the dialog answers false. Told apart by the return value rather
-      // than by reading the text of an error, which would break the first time
-      // somebody switched the app to English.
-      if (await UnlockSecurity(hostID)) {
-        await load(true)
-      } else {
-        setBusy(false)
-      }
-    } catch (e) {
-      onError(String(e))
-      setBusy(false)
-    }
-  }
-
-  const lock = async () => {
-    await LockSecurity(hostID).catch(() => {})
-    void load(false)
-  }
-
   return (
     <div className="view security-view">
       <div className="view-toolbar">
@@ -168,8 +155,15 @@ export function SecurityView({
         </span>
         <span className="spacer" />
         {busy && <span className="muted small">{t('읽는 중…')}</span>}
-        <LockButton view={view} onUnlock={() => void unlock()} onLock={() => void lock()} />
-        <button className="ghost small-btn" disabled={busy} onClick={() => void load(view.unlocked)}>
+        <LockButton hostID={hostID} state={sudo} onChange={() => void load(true, true)} />
+        {/* "Ask again" means past the cache. Everything else — a tab switch, a
+            re-render — takes what is there, because the day of journal the
+            chart reads is three seconds of somebody's time. */}
+        <button
+          className="ghost small-btn"
+          disabled={busy}
+          onClick={() => void load(view.unlocked, true)}
+        >
           {t('다시 읽기')}
         </button>
       </div>
@@ -218,7 +212,7 @@ export function SecurityView({
             name
             sub={
               lastLogin
-                ? [`${lastLogin.user} · ${new Date(lastLogin.at).toLocaleString()}`]
+                ? [`${lastLogin.user} · ${stamp(lastLogin.at)}`]
                 : undefined
             }
           />
@@ -274,7 +268,7 @@ export function SecurityView({
             {bans.bans.slice(0, 10).map((b, i) => (
               <div className="security-ban" key={`${b.at}-${i}`}>
                 <span className="mono">{b.address}</span>
-                <span className="muted small">{new Date(b.at).toLocaleString()}</span>
+                <span className="muted small">{stamp(b.at)}</span>
               </div>
             ))}
           </section>
@@ -337,7 +331,7 @@ function FailureChart({ buckets, bans }: { buckets: FailureBucket[]; bans: Ban[]
             key={b.at}
             className="security-bar"
             style={{ height: `${Math.max((b.count / peak) * 100, 2)}%` }}
-            title={`${new Date(b.at).toLocaleString()} · ${b.count}`}
+            title={`${stamp(b.at)} · ${b.count}`}
           />
         ))}
         {bans.map((b, i) => {
@@ -348,13 +342,13 @@ function FailureChart({ buckets, bans }: { buckets: FailureBucket[]; bans: Ban[]
               key={`${b.at}-${i}`}
               className="security-banmark"
               style={{ left: `${((at - from) / span) * 100}%` }}
-              title={`${t('차단')} ${b.address} · ${new Date(b.at).toLocaleString()}`}
+              title={`${t('차단')} ${b.address} · ${stamp(b.at)}`}
             />
           )
         })}
       </div>
       <div className="security-axis muted small">
-        <span>{new Date(buckets[0].at).toLocaleTimeString()}</span>
+        <span>{clock(buckets[0].at)}</span>
         <span>{t('최대 {n}', { n: peak.toLocaleString() })}</span>
         <span>{t('지금')}</span>
       </div>
@@ -373,15 +367,19 @@ function FailureChart({ buckets, bans }: { buckets: FailureBucket[]; bans: Ban[]
  *  Reboots are left out. `last` puts the kernel version where the address goes
  *  on those rows, and marking them would flag every restart as a stranger. */
 function Logins({ logins, fresh }: { logins: Login[]; fresh: Set<string> }) {
-  const rows = logins.filter((l) => !l.boot).slice(0, 8)
-  const news = rows.filter((l) => l.from && fresh.has(l.from))
+  const recent = logins.filter((l) => !l.boot)
+  const rows = recent.slice(0, 8)
+  // Addresses, not logins. It counted rows before, so eight logins from one
+  // machine read as "처음 보는 주소 8곳" — and since the list is cut at eight,
+  // the number could never have gone past eight however many there really were.
+  const news = new Set(recent.filter((l) => l.from && fresh.has(l.from)).map((l) => l.from))
 
   return (
     <section className="panel">
       <h3>{t('최근 접속 성공')}</h3>
-      {news.length > 0 && (
+      {news.size > 0 && (
         <p className="security-warn small">
-          {t('처음 보는 주소 {n}곳에서 접속했습니다.', { n: news.length })}
+          {t('처음 보는 주소 {n}곳에서 접속했습니다.', { n: news.size })}
         </p>
       )}
       {rows.length === 0 && <p className="muted small">{t('기록이 없습니다.')}</p>}
@@ -389,7 +387,7 @@ function Logins({ logins, fresh }: { logins: Login[]; fresh: Set<string> }) {
         <div className="security-login" key={`${l.at}-${i}`} data-new={l.from && fresh.has(l.from) ? true : undefined}>
           <span className="mono security-login-user">{l.user}</span>
           <span className="mono small">{l.from || t('콘솔')}</span>
-          <span className="muted small">{new Date(l.at).toLocaleString()}</span>
+          <span className="muted small">{stamp(l.at)}</span>
           <span className="small">
             {l.from && fresh.has(l.from) ? (
               <span className="security-warn">{t('처음 보는 주소')}</span>
@@ -475,6 +473,14 @@ function Blocking({ view }: { view: View }) {
       {view.attackersAccess !== 'ok' ? (
         <p className="muted small">
           {t('공격 시도를 읽으려면 저널 권한이 필요합니다 — 목록이 비어 있는 것과 다릅니다.')}
+        </p>
+      ) : !view.unlocked ? (
+        // What is already blocked is only known once the lock is open: the
+        // sets and the jail both arrive with it. Showing the list before then
+        // means showing addresses the firewall already handles, which is the
+        // "list nobody can act on" this whole panel exists to avoid.
+        <p className="muted small">
+          {t('잠금을 열면 이미 막힌 것을 빼고 보여줍니다.')}
         </p>
       ) : attackers.length === 0 ? (
         <p className="muted small">{t('최근 15분 동안 막히지 않은 시도는 없습니다.')}</p>
@@ -652,42 +658,4 @@ function ToolRow({
 }
 
 /** Three states, because "cannot" and "have not" are different answers. */
-function LockButton({
-  view,
-  onUnlock,
-  onLock,
-}: {
-  view: View
-  onUnlock: () => void
-  onLock: () => void
-}) {
-  if (!view.canElevate) {
-    return (
-      <span className="muted small" title={t('이 계정에는 sudo 가 없습니다')}>
-        🚫 {t('잠김')}
-      </span>
-    )
-  }
-  if (view.unlocked) {
-    return (
-      <button className="ghost small-btn" onClick={onLock} title={t('연결이 끊기면 자동으로 잠깁니다')}>
-        🔓 {t('잠그기')}
-      </button>
-    )
-  }
-  return (
-    <button
-      className="ghost small-btn"
-      onClick={onUnlock}
-      title={
-        view.freeElevation
-          ? t('이 서버는 비밀번호 없이 열립니다')
-          : t('sudo 비밀번호를 한 번 묻고, 연결이 끊길 때까지 유지합니다')
-      }
-    >
-      🔒 {t('잠금 해제')}
-    </button>
-  )
-}
-
 export const SECURITY_TAB_LABEL = k('보안')

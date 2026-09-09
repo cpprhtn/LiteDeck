@@ -1,4 +1,5 @@
 import { useRef } from 'react'
+import { t } from './i18n'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { ProcessRow } from './ipc'
 
@@ -39,14 +40,14 @@ export function ProcessTable({ rows }: { rows: ProcessRow[] }) {
     <div className="table">
       <div className="thead" style={{ gridTemplateColumns: COLUMNS }}>
         <div className="num">PID</div>
-        <div>USER</div>
+        <div>{t('사용자')}</div>
         <div className="num">CPU%</div>
         <div className="num">MEM%</div>
         <div className="num">RSS</div>
-        <div>STATE</div>
-        <div className="num">TIME</div>
-        <div>COMMAND</div>
-        <div>ARGS</div>
+        <div>{t('상태')}</div>
+        <div className="num">{t('시간')}</div>
+        <div>{t('명령')}</div>
+        <div>{t('인자')}</div>
       </div>
 
       <div className="tbody" ref={scrollRef}>

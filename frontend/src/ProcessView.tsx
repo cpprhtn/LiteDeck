@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Scrim } from './Scrim'
 import { usePoll } from './usePoll'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
@@ -212,7 +213,7 @@ export function ProcessView({
           {header('cpu', 'CPU%', true)}
           {header('mem', 'MEM%', true)}
           {header('rss', 'RSS', true)}
-          <div>STATE</div>
+          <div>{t('상태')}</div>
           {header('elapsed', 'TIME', true)}
           {header('command', 'COMMAND')}
         </div>
@@ -315,7 +316,7 @@ export function ProcessView({
       )}
 
       {confirmKill && (
-        <div className="scrim">
+        <Scrim onClose={() => setConfirmKill(null)} clickAway={false}>
           <div className="dialog" role="dialog" aria-modal="true">
             <h2>{t('강제 종료하시겠습니까?')}</h2>
             <p className="muted">
@@ -336,7 +337,7 @@ export function ProcessView({
               </button>
             </div>
           </div>
-        </div>
+        </Scrim>
       )}
     </div>
   )

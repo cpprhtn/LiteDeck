@@ -626,6 +626,34 @@ export interface SubnetCluster {
   count: number
 }
 
+/** Where the installer got to. Mirrors app.UpdateState. */
+/** The sudo lock for one connection. Mirrors app.SudoState. */
+export interface SudoState {
+  hostID: string
+  unlocked: boolean
+  /** False where the account has no sudo at all. */
+  available: boolean
+}
+
+export interface UpdateState {
+  stage: 'idle' | 'downloading' | 'ready' | 'failed'
+  /** 0-100, or -1 where the server sent no content length. */
+  percent: number
+  error?: string
+  version?: string
+}
+
+export interface UpdateInfo {
+  /** False until somebody presses the button. */
+  checked: boolean
+  /** False where github could not be asked at all — which is not the same
+   *  answer as "nothing newer", and must not be shown as one. */
+  reached: boolean
+  latest?: string
+  newer?: boolean
+  url?: string
+}
+
 export interface SecurityLoginsView {
   logins: Login[]
   /** Addresses not seen succeeding on this host before. */
@@ -851,6 +879,8 @@ export interface Listener {
 }
 
 export interface NetworkView {
+  /** The socket list was read as root. */
+  elevated: boolean
   interfaces: NetInterface[]
   listeners: Listener[]
   warnings: string[]
@@ -1013,10 +1043,16 @@ interface Bindings {
   HostEvents(id: string, range: string, elevate: boolean): Promise<EventsView>
   HostUpdates(id: string): Promise<UpdateStatus>
   HostDigest(id: string): Promise<DigestView>
-  HostSecurity(id: string, elevate: boolean): Promise<SecurityView>
+  HostSecurity(id: string, elevate: boolean, force: boolean): Promise<SecurityView>
+  CheckForUpdate(): Promise<UpdateInfo>
+  DownloadUpdate(): Promise<void>
+  ApplyUpdate(): Promise<void>
+  UpdateStatus(): Promise<UpdateState>
   SecurityLogins(id: string): Promise<SecurityLoginsView>
   RememberSecurityLogins(id: string, addrs: string[]): Promise<string[]>
   UnlockSecurity(id: string): Promise<boolean>
+  HostSudoState(id: string): Promise<SudoState>
+  SudoUnlocked(id: string): Promise<boolean>
   LockSecurity(id: string): Promise<void>
   TypedEntered(hostID: string, termID: string, line: string, blind: boolean): Promise<void>
   TypedHistory(hostID: string): Promise<TypedCommand[]>
@@ -1259,11 +1295,18 @@ export const HostCommandHistory = (id: string, range: string, elevate: boolean) 
   api().HostCommandHistory(id, range, elevate)
 export const HostUpdates = (id: string) => api().HostUpdates(id)
 export const HostDigest = (id: string) => api().HostDigest(id)
-export const HostSecurity = (id: string, elevate: boolean) => api().HostSecurity(id, elevate)
+export const CheckForUpdate = () => api().CheckForUpdate()
+export const DownloadUpdate = () => api().DownloadUpdate()
+export const ApplyUpdate = () => api().ApplyUpdate()
+export const UpdateStatus = () => api().UpdateStatus()
+export const HostSecurity = (id: string, elevate: boolean, force = false) =>
+  api().HostSecurity(id, elevate, force)
 export const SecurityLogins = (id: string) => api().SecurityLogins(id)
 export const RememberSecurityLogins = (id: string, addrs: string[]) =>
   api().RememberSecurityLogins(id, addrs)
 export const UnlockSecurity = (id: string) => api().UnlockSecurity(id)
+export const HostSudoState = (id: string) => api().HostSudoState(id)
+export const SudoUnlocked = (id: string) => api().SudoUnlocked(id)
 export const LockSecurity = (id: string) => api().LockSecurity(id)
 export const TypedEntered = (hostID: string, termID: string, line: string, blind: boolean) =>
   api().TypedEntered(hostID, termID, line, blind)

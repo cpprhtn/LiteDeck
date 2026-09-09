@@ -59,7 +59,7 @@ func TestDisconnectDropsTheHeldPassword(t *testing.T) {
 func TestSecurityReadsTheFreeHalfWithoutElevation(t *testing.T) {
 	a := connectedApp(t)
 
-	view, err := a.HostSecurity("fixture", false)
+	view, err := a.HostSecurity("fixture", false, true)
 	if err != nil {
 		t.Fatalf("HostSecurity: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestElevatedReadWithoutUnlockSaysSoAndKeepsTheRest(t *testing.T) {
 		t.Skip("이 픽스처는 sudo 가 무암호라 잠금이 필요 없다")
 	}
 
-	view, err := a.HostSecurity("fixture", true)
+	view, err := a.HostSecurity("fixture", true, true)
 	if err != nil {
 		t.Fatalf("HostSecurity: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestFirstSeenLoginsAreMarkedOnceAndNotByReboots(t *testing.T) {
 // list reading as "safe" is the worst thing this feature can produce.
 func TestAttackerAccessIsReportedApartFromTheList(t *testing.T) {
 	a := connectedApp(t)
-	view, err := a.HostSecurity("fixture", false)
+	view, err := a.HostSecurity("fixture", false, true)
 	if err != nil {
 		t.Fatalf("HostSecurity: %v", err)
 	}
@@ -295,5 +295,75 @@ func TestDropDeltaIsZeroUntilThereIsSomethingToCompare(t *testing.T) {
 	d.forget("h")
 	if got := d.since("h", 2, 3); got != 0 {
 		t.Errorf("잊은 뒤인데 %d", got)
+	}
+}
+
+// Switching to another tab and back must not re-read the day's journal.
+//
+// The failure chart reads 24 hours of it, which on the server this was measured
+// against is 78,000 lines and about three seconds. The panes stay mounted, so
+// the only thing that triggered a re-read was `visible` flipping — which is
+// exactly what switching tabs does. The digest had the same shape and was fixed
+// with a cache one release earlier; this repeated it.
+func TestSecurityIsNotRereadOnEveryTabSwitch(t *testing.T) {
+	a := connectedApp(t)
+
+	for i := 0; i < 4; i++ {
+		if _, err := a.HostSecurity("fixture", false, false); err != nil {
+			t.Fatalf("HostSecurity #%d: %v", i, err)
+		}
+	}
+	if runs := countSecurityReads(a); runs != 1 {
+		t.Errorf("네 번 열었는데 서버에 %d번 물었다 — 한 번이어야 한다", runs)
+	}
+
+	// The refresh button means "ask again", and has to get through.
+	if _, err := a.HostSecurity("fixture", false, true); err != nil {
+		t.Fatalf("강제 조회: %v", err)
+	}
+	if runs := countSecurityReads(a); runs != 2 {
+		t.Errorf("다시 읽기를 눌렀는데 %d번 — 캐시를 지나쳐야 한다", runs)
+	}
+}
+
+// countSecurityReads counts the free half's round trips.
+func countSecurityReads(a *App) int {
+	runs := 0
+	for _, e := range a.CommandLog() {
+		if !strings.Contains(e.Line, "systemctl show") {
+			continue
+		}
+		if e.Repeat > 0 {
+			runs += e.Repeat
+		} else {
+			runs++
+		}
+	}
+	return runs
+}
+
+// The lock belongs to the connection, not to the app.
+//
+// It is keyed by generation so a reconnect closes it without anybody having to
+// remember to. That is what makes "연결 끊기면 잠긴다" true even when the drop was
+// not a deliberate disconnect — a dropped Wi-Fi link reconnects with a new
+// generation and the held password stops answering for it.
+func TestSudoUnlockIsPerConnection(t *testing.T) {
+	u := newSudoUnlock()
+	u.put("h", 1, "hunter2")
+
+	if pw, ok := u.get("h", 1); !ok || pw != "hunter2" {
+		t.Fatalf("같은 연결에서 못 읽었다: %q %v", pw, ok)
+	}
+	if _, ok := u.get("h", 2); ok {
+		t.Error("다시 연결한 뒤에도 열려 있었다")
+	}
+	if _, ok := u.get("other", 1); ok {
+		t.Error("다른 호스트의 잠금이 열렸다")
+	}
+
+	u.forget("h")
+	if _, ok := u.get("h", 1); ok {
+		t.Error("잠갔는데 그대로였다")
 	}
 }

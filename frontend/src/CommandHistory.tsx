@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { stamp } from './datetime'
 import {
   HostCommandHistory,
   HostShellHistory,
@@ -465,7 +466,7 @@ function FolderCard({
             data-refused={r.refused || undefined}
             data-source={r.source}
             onClick={() => onCopy(r.command, r.at + r.command)}
-            title={`${r.timed ? new Date(r.at).toLocaleString() + ' · ' : ''}${
+            title={`${r.timed ? stamp(r.at, true) + ' · ' : ''}${
               r.source === 'sudo'
                 ? t('sudo 저널')
                 : r.source === 'typed'

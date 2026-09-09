@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { shortStamp } from './datetime'
 import { HostLogins, type Login, type LoginsView } from './ipc'
 import { AccessNotice } from './EventTimeline'
 import { t } from './i18n'
@@ -20,12 +21,7 @@ import { t } from './i18n'
 function fmtWhen(iso: string): string {
   const d = new Date(iso)
   if (!Number.isFinite(d.getTime())) return '—'
-  return d.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  return shortStamp(d)
 }
 
 function lasted(l: Login): string {

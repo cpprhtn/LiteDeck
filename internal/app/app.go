@@ -38,6 +38,12 @@ type App struct {
 	digests   *digestCache
 	unlocked  *sudoUnlock
 	dropped   *dropCounts
+	security  *securityCache
+	updates   updateChecker
+	installer updateInstaller
+	// quitFn closes the window. Set in Startup; nil headless, where there is no
+	// window and the updater is not reachable anyway.
+	quitFn    func()
 	gens      *genCache
 	transfers *transferQueue
 	terminals *terminalRegistry
@@ -88,6 +94,7 @@ func New() *App {
 	a.digests = newDigestCache()
 	a.unlocked = newSudoUnlock()
 	a.dropped = newDropCounts()
+	a.security = newSecurityCache()
 	a.gens = newGenCache()
 	a.transfers = newTransferQueue(a)
 	a.terminals = newTerminalRegistry(a)
@@ -106,6 +113,7 @@ func New() *App {
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
 	a.emit = func(event string, payload any) { wr.EventsEmit(ctx, event, payload) }
+	a.quitFn = func() { wr.Quit(ctx) }
 
 	// Paths only — the frontend decides what to do with them, because only it
 	// knows which host and directory the user is looking at.
