@@ -59,7 +59,7 @@ func TestDisconnectDropsTheHeldPassword(t *testing.T) {
 func TestSecurityReadsTheFreeHalfWithoutElevation(t *testing.T) {
 	a := connectedApp(t)
 
-	view, err := a.HostSecurity("fixture", false)
+	view, err := a.HostSecurity("fixture", false, true)
 	if err != nil {
 		t.Fatalf("HostSecurity: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestElevatedReadWithoutUnlockSaysSoAndKeepsTheRest(t *testing.T) {
 		t.Skip("이 픽스처는 sudo 가 무암호라 잠금이 필요 없다")
 	}
 
-	view, err := a.HostSecurity("fixture", true)
+	view, err := a.HostSecurity("fixture", true, true)
 	if err != nil {
 		t.Fatalf("HostSecurity: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestFirstSeenLoginsAreMarkedOnceAndNotByReboots(t *testing.T) {
 // list reading as "safe" is the worst thing this feature can produce.
 func TestAttackerAccessIsReportedApartFromTheList(t *testing.T) {
 	a := connectedApp(t)
-	view, err := a.HostSecurity("fixture", false)
+	view, err := a.HostSecurity("fixture", false, true)
 	if err != nil {
 		t.Fatalf("HostSecurity: %v", err)
 	}
@@ -296,4 +296,48 @@ func TestDropDeltaIsZeroUntilThereIsSomethingToCompare(t *testing.T) {
 	if got := d.since("h", 2, 3); got != 0 {
 		t.Errorf("잊은 뒤인데 %d", got)
 	}
+}
+
+// Switching to another tab and back must not re-read the day's journal.
+//
+// The failure chart reads 24 hours of it, which on the server this was measured
+// against is 78,000 lines and about three seconds. The panes stay mounted, so
+// the only thing that triggered a re-read was `visible` flipping — which is
+// exactly what switching tabs does. The digest had the same shape and was fixed
+// with a cache one release earlier; this repeated it.
+func TestSecurityIsNotRereadOnEveryTabSwitch(t *testing.T) {
+	a := connectedApp(t)
+
+	for i := 0; i < 4; i++ {
+		if _, err := a.HostSecurity("fixture", false, false); err != nil {
+			t.Fatalf("HostSecurity #%d: %v", i, err)
+		}
+	}
+	if runs := countSecurityReads(a); runs != 1 {
+		t.Errorf("네 번 열었는데 서버에 %d번 물었다 — 한 번이어야 한다", runs)
+	}
+
+	// The refresh button means "ask again", and has to get through.
+	if _, err := a.HostSecurity("fixture", false, true); err != nil {
+		t.Fatalf("강제 조회: %v", err)
+	}
+	if runs := countSecurityReads(a); runs != 2 {
+		t.Errorf("다시 읽기를 눌렀는데 %d번 — 캐시를 지나쳐야 한다", runs)
+	}
+}
+
+// countSecurityReads counts the free half's round trips.
+func countSecurityReads(a *App) int {
+	runs := 0
+	for _, e := range a.CommandLog() {
+		if !strings.Contains(e.Line, "systemctl show") {
+			continue
+		}
+		if e.Repeat > 0 {
+			runs += e.Repeat
+		} else {
+			runs++
+		}
+	}
+	return runs
 }

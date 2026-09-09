@@ -1013,7 +1013,7 @@ interface Bindings {
   HostEvents(id: string, range: string, elevate: boolean): Promise<EventsView>
   HostUpdates(id: string): Promise<UpdateStatus>
   HostDigest(id: string): Promise<DigestView>
-  HostSecurity(id: string, elevate: boolean): Promise<SecurityView>
+  HostSecurity(id: string, elevate: boolean, force: boolean): Promise<SecurityView>
   SecurityLogins(id: string): Promise<SecurityLoginsView>
   RememberSecurityLogins(id: string, addrs: string[]): Promise<string[]>
   UnlockSecurity(id: string): Promise<boolean>
@@ -1259,7 +1259,8 @@ export const HostCommandHistory = (id: string, range: string, elevate: boolean) 
   api().HostCommandHistory(id, range, elevate)
 export const HostUpdates = (id: string) => api().HostUpdates(id)
 export const HostDigest = (id: string) => api().HostDigest(id)
-export const HostSecurity = (id: string, elevate: boolean) => api().HostSecurity(id, elevate)
+export const HostSecurity = (id: string, elevate: boolean, force = false) =>
+  api().HostSecurity(id, elevate, force)
 export const SecurityLogins = (id: string) => api().SecurityLogins(id)
 export const RememberSecurityLogins = (id: string, addrs: string[]) =>
   api().RememberSecurityLogins(id, addrs)

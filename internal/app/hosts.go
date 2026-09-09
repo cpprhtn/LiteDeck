@@ -157,6 +157,7 @@ func (a *App) DisconnectHost(hostID string) error {
 	// The security tab's unlock dies with the connection, by design.
 	a.unlocked.forget(hostID)
 	a.dropped.forget(hostID)
+	a.security.forget(hostID)
 	// The GPU feed rides a channel on the connection being dropped, and its
 	// "this host has no card" is only true of the machine that just answered.
 	a.gpus.forget(hostID)

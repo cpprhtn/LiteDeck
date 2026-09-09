@@ -60,7 +60,7 @@ export function SecurityView({
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(
-    async (elevate: boolean) => {
+    async (elevate: boolean, force = false) => {
       setBusy(true)
       try {
         // The same listener list the network tab shows, rather than a second
@@ -68,7 +68,7 @@ export function SecurityView({
         // thing can disagree, and a security screen disagreeing with the
         // network screen about which ports are open is worse than a round trip.
         const [sec, net, who] = await Promise.all([
-          HostSecurity(hostID, elevate),
+          HostSecurity(hostID, elevate, force),
           HostNetwork(hostID).catch(() => null),
           SecurityLogins(hostID).catch(() => null),
         ])
@@ -134,7 +134,7 @@ export function SecurityView({
       // than by reading the text of an error, which would break the first time
       // somebody switched the app to English.
       if (await UnlockSecurity(hostID)) {
-        await load(true)
+        await load(true, true)
       } else {
         setBusy(false)
       }
@@ -169,7 +169,14 @@ export function SecurityView({
         <span className="spacer" />
         {busy && <span className="muted small">{t('읽는 중…')}</span>}
         <LockButton view={view} onUnlock={() => void unlock()} onLock={() => void lock()} />
-        <button className="ghost small-btn" disabled={busy} onClick={() => void load(view.unlocked)}>
+        {/* "Ask again" means past the cache. Everything else — a tab switch, a
+            re-render — takes what is there, because the day of journal the
+            chart reads is three seconds of somebody's time. */}
+        <button
+          className="ghost small-btn"
+          disabled={busy}
+          onClick={() => void load(view.unlocked, true)}
+        >
           {t('다시 읽기')}
         </button>
       </div>

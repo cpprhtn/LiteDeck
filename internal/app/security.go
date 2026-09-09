@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
 	"github.com/cpprhtn/LiteDeck/internal/i18n"
@@ -189,6 +190,60 @@ func (d *dropCounts) forget(id string) {
 	delete(d.byID, id)
 }
 
+// securityCache holds one read per host, briefly.
+//
+// The tab is not polled, but its panes stay mounted, so switching to another
+// tab and back flipped `visible` and re-read everything — including the day of
+// journal the failure chart wants, which is 78,000 lines and about three
+// seconds on the server this was measured against. The digest had the same
+// shape and was fixed with a cache one release earlier; this file repeated it.
+//
+// Unlike the digest there *is* a timer here, and a short one. That answer is
+// "what happened since you last looked" and only moves when the mark does; this
+// one is "what is happening now", and a stale answer to that is a wrong answer.
+// A minute is long enough to cover somebody moving between tabs and short
+// enough that nothing on screen is meaningfully old.
+type securityCache struct {
+	mu   sync.Mutex
+	byID map[string]securityEntry
+}
+
+type securityEntry struct {
+	gen uint64
+	// elevated distinguishes the two shapes of the answer. A locked read has no
+	// rules and no ban history, and serving it to an unlocked caller would look
+	// like the lock had stopped working.
+	elevated bool
+	at       time.Time
+	view     SecurityView
+}
+
+const securityTTL = time.Minute
+
+func newSecurityCache() *securityCache { return &securityCache{byID: map[string]securityEntry{}} }
+
+func (c *securityCache) get(id string, gen uint64, elevated bool) (SecurityView, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.byID[id]
+	if !ok || e.gen != gen || e.elevated != elevated || time.Since(e.at) > securityTTL {
+		return SecurityView{}, false
+	}
+	return e.view, true
+}
+
+func (c *securityCache) put(id string, gen uint64, elevated bool, view SecurityView) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.byID[id] = securityEntry{gen: gen, elevated: elevated, at: time.Now(), view: view}
+}
+
+func (c *securityCache) forget(id string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.byID, id)
+}
+
 // sudoUnlock holds a sudo password for the life of one connection.
 //
 // Nothing else in this app keeps one in memory: every other elevated command
@@ -239,7 +294,10 @@ func (u *sudoUnlock) forget(id string) {
 // elevate is the user turning the lock, never the app deciding to. The free
 // half is read either way, so a refused password costs the detail and not the
 // screen.
-func (a *App) HostSecurity(hostID string, elevate bool) (SecurityView, error) {
+//
+// force is the refresh button, which means "ask again" and so goes past the
+// cache. Everything else — a tab switch, a re-render — takes what is there.
+func (a *App) HostSecurity(hostID string, elevate, force bool) (SecurityView, error) {
 	info, err := a.requireCapability(hostID, adapter.CapServices, i18n.S("보안 상태"))
 	if err != nil {
 		return SecurityView{}, err
@@ -247,6 +305,12 @@ func (a *App) HostSecurity(hostID string, elevate bool) (SecurityView, error) {
 	conn, err := a.mgr.Conn(hostID)
 	if err != nil {
 		return SecurityView{}, err
+	}
+	gen := a.mgr.Generation(hostID)
+	if !force {
+		if cached, ok := a.security.get(hostID, gen, elevate); ok {
+			return cached, nil
+		}
 	}
 	view := SecurityView{
 		Units:         []adapter.SecurityUnit{},
@@ -284,16 +348,19 @@ func (a *App) HostSecurity(hostID string, elevate bool) (SecurityView, error) {
 	a.readAttackers(ctx, conn, hostID, &view, info, elevate)
 
 	if !elevate {
+		a.security.put(hostID, gen, elevate, view)
 		return view, nil
 	}
 	if !info.HasSudo {
 		view.RulesError = i18n.T("이 계정에는 sudo 가 없습니다")
+		a.security.put(hostID, gen, elevate, view)
 		return view, nil
 	}
 	rules, ruleset, bans, jailOut, banLog, err := a.securityRules(ctx, conn, hostID, info)
 	if err != nil {
 		// A refused password is a normal answer. The free half stands.
 		view.RulesError = err.Error()
+		a.security.put(hostID, gen, elevate, view)
 		return view, nil
 	}
 	view.Unlocked = true
@@ -340,7 +407,7 @@ func (a *App) HostSecurity(hostID string, elevate bool) (SecurityView, error) {
 		}
 		view.Dropped += c.Packets
 	}
-	view.DroppedSince = a.dropped.since(hostID, a.mgr.Generation(hostID), view.Dropped)
+	view.DroppedSince = a.dropped.since(hostID, gen, view.Dropped)
 	return view, nil
 }
 

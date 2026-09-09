@@ -38,6 +38,7 @@ type App struct {
 	digests   *digestCache
 	unlocked  *sudoUnlock
 	dropped   *dropCounts
+	security  *securityCache
 	gens      *genCache
 	transfers *transferQueue
 	terminals *terminalRegistry
@@ -88,6 +89,7 @@ func New() *App {
 	a.digests = newDigestCache()
 	a.unlocked = newSudoUnlock()
 	a.dropped = newDropCounts()
+	a.security = newSecurityCache()
 	a.gens = newGenCache()
 	a.transfers = newTransferQueue(a)
 	a.terminals = newTerminalRegistry(a)
