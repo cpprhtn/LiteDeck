@@ -63,10 +63,12 @@ const MAC: Record<Action, Binding> = {
   copyPath: { key: 'c', mod: true, alt: true, label: '⌥⌘C' },
   save: { key: 's', mod: true, label: '⌘S' },
   toggleRail: { key: 'b', mod: true, label: '⌘B' },
-  // Finder's, not the browser's. ⌘← is "go to start of line" in every text
-  // field on this platform and the file list shares a window with an editor.
-  back: { key: '[', mod: true, label: '⌘[' },
-  forward: { key: ']', mod: true, label: '⌘]' },
+  // The modifier plus the arrow the button is drawn with, so the shortcut and
+  // the control say the same thing. ⌘← is also "go to start of line" on this
+  // platform, which is why isTyping() guards the handler: in a text field or in
+  // the editor the keystroke never reaches it and moves the caret as always.
+  back: { key: 'ArrowLeft', mod: true, label: '⌘←' },
+  forward: { key: 'ArrowRight', mod: true, label: '⌘→' },
 }
 
 const PC: Record<Action, Binding> = {
