@@ -725,11 +725,11 @@ button.icon-btn:hover {
   color: var(--fg-muted);
 }
 .badge.danger {
-  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  background: var(--danger-bg);
   color: var(--danger);
 }
 .badge.warn {
-  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  background: var(--warn-bg);
   color: var(--warn);
 }
 
@@ -739,7 +739,7 @@ button.icon-btn:hover {
   justify-content: space-between;
   gap: var(--sp-3);
   padding: var(--sp-2) var(--sp-4);
-  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  background: var(--danger-bg);
   color: var(--danger);
   font-size: var(--text-sm);
 }
@@ -803,7 +803,7 @@ code {
 }
 .stat[data-warn] {
   border-color: var(--warn);
-  background: color-mix(in srgb, var(--warn) 10%, var(--bg-raised));
+  background: var(--warn-bg);
 }
 .stat-label {
   font-size: var(--text-xs);
@@ -836,7 +836,7 @@ code {
   padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--warn);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--warn) 10%, transparent);
+  background: var(--warn-bg);
   font-size: var(--text-sm);
 }
 .elevate > span {
@@ -1255,7 +1255,7 @@ button.danger {
 .warn-text {
   padding: var(--sp-2) var(--sp-3);
   border-left: 3px solid var(--danger);
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  background: var(--danger-bg);
   font-size: var(--text-sm);
 }
 
@@ -1934,7 +1934,7 @@ button.danger {
 }
 .net-warnings {
   padding: var(--sp-2) var(--sp-4);
-  background: color-mix(in srgb, var(--warn) 10%, transparent);
+  background: var(--warn-bg);
   border-bottom: 1px solid var(--border);
 }
 
@@ -2104,7 +2104,7 @@ button.danger {
 /* 통과 중일 때는 조용하지 않아야 한다. */
 .mcp-badge[data-mode='bypass'] {
   border-color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  background: var(--danger-bg);
   color: var(--danger);
   font-weight: 600;
 }
@@ -2220,7 +2220,7 @@ button.danger {
 .mcp-clients button[data-on] {
   color: var(--fg);
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  background: var(--accent-bg);
 }
 .mcp-host {
   padding: var(--sp-2) 0;
@@ -2415,7 +2415,7 @@ button.danger {
   border-radius: 999px;
   padding: 1px 7px;
   color: var(--warn);
-  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  background: var(--warn-bg);
 }
 .history-badge[data-sure] {
   color: var(--accent);
@@ -2770,9 +2770,11 @@ button.events-unit {
   position: absolute;
   left: 0;
   transform: translateY(50%);
-  font-size: 9px;
+  /* 11px is the floor; at 9px these were unreadable at any contrast the
+     palette allows, and they are the only labels on a chart. */
+  font-size: var(--text-xs);
   line-height: 1.2;
-  color: var(--fg-faint);
+  color: var(--fg-muted);
   font-variant-numeric: tabular-nums;
   /* 격자선 위에 앉으므로 바탕을 깔아야 읽힌다. */
   background: var(--bg-sunken);
@@ -2925,6 +2927,7 @@ button.events-unit {
   padding: 1px 0;
 }
 .res-facts dt {
+  white-space: nowrap;
   color: var(--fg-muted);
 }
 .res-facts dd {
@@ -3354,7 +3357,7 @@ button.events-unit {
 /* An address this person has not seen succeed here before. The only row in
    this tab that can be urgent, so it is the only one with a background. */
 .security-login[data-new] {
-  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  background: var(--warn-bg);
 }
 .security-mismatch {
   border-left: 2px solid var(--warn);

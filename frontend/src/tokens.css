@@ -1,26 +1,103 @@
 /*
- * Design tokens.
+ * Design tokens — three layers.
  *
- * Every colour, spacing step and font in the app resolves through a variable
- * here. Nothing downstream hard-codes a hex value. That keeps the
- * platform-native theming in §4.7-1 a matter of swapping values rather than
- * editing components, and it is what makes dark mode a two-line change.
+ *   1. Primitive   --p-*    raw values. Named after what they are, never what
+ *                           they are for. Nothing outside this file reads them.
+ *   2. Semantic    --bg,    named after the job. Components read only these,
+ *                  --fg,    so a theme is a change to the second layer and
+ *                  --accent nothing else moves.
+ *   3. Component   --panel-*, --btn-*, --nav-*: sizes and colours that belong
+ *                           to one primitive component and would otherwise be
+ *                           re-invented in three places.
+ *
+ * Every colour, spacing step and font in the app resolves through this file.
+ * Nothing downstream hard-codes a hex value.
+ *
+ * # Contrast is a build gate, not a matter of taste
+ *
+ * Every foreground/background pair below is checked by
+ * TestTokenContrast (internal/app/tokens_contrast_test.go), which parses this
+ * file and computes the WCAG ratio. Body text must clear 4.5:1 against every
+ * ground it can land on. The previous palette failed on four counts — faint
+ * text at 2.57, the light accent at 3.65, and text on its own tinted badge —
+ * and nobody noticed because nothing measured it.
+ *
+ * So: change a value here and run `go test ./internal/app -run TokenContrast`.
+ * If it goes red, the colour is wrong, not the test.
  */
 
 :root {
   color-scheme: light dark;
 
-  /* Type. The system stack is the cheapest way to look like it belongs on the
+  /* ── 1. Primitives ─────────────────────────────────────────────────────
+     A neutral ramp plus four hues. Steps are not evenly spaced; they are
+     placed where the interface actually needs a stop. */
+
+  --p-n0: #ffffff;
+  --p-n25: #fbfbfd;
+  --p-n50: #f5f5f7;
+  --p-n100: #ededf0;
+  --p-n150: #e4e4e8;
+  --p-n200: #d7d7dc;
+  --p-n300: #c2c2c9;
+  --p-n400: #9a9aa3;
+  --p-n500: #6e6e77;
+  --p-n600: #5f5f68;
+  --p-n700: #45454d;
+  --p-n800: #2c2c33;
+  --p-n850: #242427;
+  --p-n900: #1c1c1e;
+  --p-n950: #141416;
+
+  --p-blue-100: #e8f1fd;
+  --p-blue-200: #b9d5f5;
+  --p-blue-600: #0064cf;
+  --p-blue-400: #4da3ff;
+  --p-blue-300: #8cc4ff;
+  --p-blue-900: #12253a;
+  --p-blue-800: #2a4a6e;
+
+  --p-green-100: #e7f4ea;
+  --p-green-200: #b5ddc0;
+  --p-green-600: #146c2e;
+  --p-green-400: #4ac25c;
+  --p-green-300: #79dd8b;
+  --p-green-900: #122c19;
+  --p-green-800: #2a5a35;
+
+  --p-amber-100: #fdf2d7;
+  --p-amber-200: #e6cf96;
+  --p-amber-700: #7a5300;
+  --p-amber-400: #d8a52c;
+  --p-amber-300: #efc571;
+  --p-amber-900: #31280e;
+  --p-amber-800: #5a481b;
+
+  --p-red-100: #fdebec;
+  --p-red-200: #f3c0c4;
+  --p-red-600: #c00d1e;
+  --p-red-400: #ff6b61;
+  --p-red-300: #ff9c94;
+  --p-red-900: #38201f;
+  --p-red-800: #68302e;
+
+  /* ── 2. Semantic — type ──────────────────────────────────────────────
+     The system stack is the cheapest way to look like it belongs on the
      platform — SF on macOS, Segoe on Windows, the desktop default on Linux. */
+
   --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui,
     'Noto Sans KR', 'Malgun Gothic', sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
     'Liberation Mono', monospace;
 
+  /* 11px is the floor. Anything smaller was unreadable at the contrast this
+     palette allows, and the 9px chart ticks proved it. */
   --text-xs: 11px;
   --text-sm: 12px;
   --text-md: 13px;
   --text-lg: 15px;
+  --text-xl: 20px;
+  --text-2xl: 28px;
 
   /* Space: a 4px scale. */
   --sp-1: 4px;
@@ -28,75 +105,139 @@
   --sp-3: 12px;
   --sp-4: 16px;
   --sp-5: 24px;
+  --sp-6: 32px;
 
+  --radius-sm: 4px;
   --radius: 6px;
+  --radius-lg: 10px;
   --row-height: 26px;
 
-  /* Light theme. */
-  --bg: #ffffff;
-  --bg-sunken: #f5f5f7;
-  --bg-raised: #ffffff;
+  /* ── 2. Semantic — light theme ──────────────────────────────────────── */
+
+  --bg: var(--p-n0);
+  --bg-sunken: var(--p-n50);
+  --bg-raised: var(--p-n0);
   --bg-hover: #00000008;
-  --bg-selected: #0a84ff1a;
+  --bg-selected: #0064cf14;
+  --bg-overlay: #00000040;
 
   --border: #00000014;
   --border-strong: #00000026;
 
   --fg: #1d1d1f;
-  --fg-muted: #6e6e73;
-  --fg-faint: #a1a1a6;
+  --fg-muted: var(--p-n600);
+  --fg-faint: var(--p-n500);
+  --fg-on-accent: var(--p-n0);
 
-  --accent: #0a84ff;
-  --ok: #1a7f37;
-  --warn: #bf8700;
-  --danger: #d1242f;
+  --accent: var(--p-blue-600);
+  --accent-bg: var(--p-blue-100);
+  --accent-border: var(--p-blue-200);
 
-  /* Syntax highlighting (§4.7-3). Here rather than in the editor module for the
-     same reason as everything else above: a theme should be a change to this
-     file. Chosen to sit at similar weight so nothing in a config file shouts —
-     the point is to make structure visible, not to decorate it. */
-  --syn-comment: #6e7781;
-  --syn-keyword: #cf222e;
+  --ok: var(--p-green-600);
+  --ok-bg: var(--p-green-100);
+  --ok-border: var(--p-green-200);
+
+  --warn: var(--p-amber-700);
+  --warn-bg: var(--p-amber-100);
+  --warn-border: var(--p-amber-200);
+
+  --danger: var(--p-red-600);
+  --danger-bg: var(--p-red-100);
+  --danger-border: var(--p-red-200);
+
+  /* Depth. Three steps, because a fourth is never the reason a screen reads
+     badly. Shadows carry no colour of their own — a tinted shadow on a neutral
+     surface is the fastest way to make a light theme look dirty. */
+  --shadow-1: 0 1px 2px #0000000f;
+  --shadow-2: 0 4px 12px #00000014;
+  --shadow-3: 0 12px 32px #0000001f;
+
+  /* Focus. One ring everywhere; it is the only thing a keyboard user has. */
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+
+  /* Syntax highlighting (§4.7-3). Chosen to sit at similar weight so nothing
+     in a config file shouts — the point is to make structure visible, not to
+     decorate it. */
+  --syn-comment: #5f6a75;
+  --syn-keyword: #b31d28;
   --syn-string: #0a3069;
   --syn-number: #0550ae;
-  --syn-function: #8250df;
-  --syn-def: #8250df;
-  --syn-type: #953800;
+  --syn-function: #7228c4;
+  --syn-def: #7228c4;
+  --syn-type: #8a3600;
   --syn-property: #0550ae;
   --syn-variable: #1d1d1f;
   --syn-operator: #0550ae;
-  --syn-punct: #6e6e73;
-  --syn-meta: #116329;
+  --syn-punct: var(--p-n600);
+  --syn-meta: #0f5227;
   --syn-heading: #0550ae;
-  --syn-link: #0a84ff;
+  --syn-link: var(--p-blue-600);
 
   /* Tree indent guides. Fainter than a border: they are there to be followed
      when you look for them, not to draw a grid over the listing. */
   --tree-guide: #00000018;
+
+  /* ── 3. Component ──────────────────────────────────────────────────── */
+
+  --panel-bg: var(--bg-raised);
+  --panel-border: var(--border);
+  --panel-radius: var(--radius-lg);
+  --panel-pad: var(--sp-4);
+
+  --nav-w: 216px;
+  --nav-w-collapsed: 52px;
+  --nav-item-h: 28px;
+
+  --table-head-bg: var(--bg-sunken);
+  --table-row-h: var(--row-height);
+
+  --field-h: 26px;
+  --btn-h: 26px;
+  --btn-h-sm: 22px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1c1c1e;
-    --bg-sunken: #141416;
-    --bg-raised: #242427;
+    --bg: var(--p-n900);
+    --bg-sunken: var(--p-n950);
+    --bg-raised: var(--p-n850);
     --bg-hover: #ffffff0d;
-    --bg-selected: #0a84ff26;
+    --bg-selected: #4da3ff26;
+    --bg-overlay: #00000073;
 
     --border: #ffffff14;
-    --border-strong: #ffffff26;
+    --border-strong: #ffffff2e;
 
     --fg: #f5f5f7;
-    --fg-muted: #98989d;
-    --fg-faint: #636366;
+    --fg-muted: #9d9da5;
+    --fg-faint: #8b8b94;
+    --fg-on-accent: var(--p-n950);
 
-    --accent: #0a84ff;
-    --ok: #3fb950;
-    --warn: #d29922;
-    --danger: #f85149;
+    --accent: var(--p-blue-400);
+    --accent-bg: var(--p-blue-900);
+    --accent-border: var(--p-blue-800);
 
-    --syn-comment: #8b949e;
-    --syn-keyword: #ff7b72;
+    --ok: var(--p-green-400);
+    --ok-bg: var(--p-green-900);
+    --ok-border: var(--p-green-800);
+
+    --warn: var(--p-amber-400);
+    --warn-bg: var(--p-amber-900);
+    --warn-border: var(--p-amber-800);
+
+    --danger: var(--p-red-400);
+    --danger-bg: var(--p-red-900);
+    --danger-border: var(--p-red-800);
+
+    /* Dark surfaces do not take shadow the way light ones do — the contrast is
+       not there. Depth is carried by --bg-raised instead, and the shadows stay
+       only to seat floating things against the window. */
+    --shadow-1: 0 1px 2px #00000052;
+    --shadow-2: 0 4px 12px #0000005c;
+    --shadow-3: 0 12px 32px #00000080;
+
+    --syn-comment: #9aa4ae;
+    --syn-keyword: #ff8b83;
     --syn-string: #a5d6ff;
     --syn-number: #79c0ff;
     --syn-function: #d2a8ff;
@@ -105,10 +246,10 @@
     --syn-property: #79c0ff;
     --syn-variable: #f5f5f7;
     --syn-operator: #79c0ff;
-    --syn-punct: #98989d;
+    --syn-punct: #9d9da5;
     --syn-meta: #7ee787;
     --syn-heading: #79c0ff;
-    --syn-link: #58a6ff;
+    --syn-link: var(--p-blue-300);
 
     --tree-guide: #ffffff1f;
   }
@@ -134,6 +275,14 @@ body {
      web page. Scrolling happens inside panels only. */
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
+}
+
+/* One focus ring for the whole app. :focus-visible rather than :focus so a
+   mouse click does not leave a ring behind, but a Tab always does. */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
 }
 
 /* Overlay scrollbars, as the platform does. */
