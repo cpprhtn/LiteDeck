@@ -388,8 +388,11 @@
 .view-toolbar {
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-2) var(--sp-4);
+  /* Wraps rather than overflowing: the file toolbar is one row now, and one row
+     that runs off the edge hides controls without saying so. */
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
   border-bottom: 1px solid var(--border);
 }
 
@@ -961,6 +964,18 @@ button.danger {
 
 /* Tree and editor side by side. With nothing open the tree takes the width and
    the split is invisible — the file view is unchanged until it needs to be. */
+/* A hairline between groups of controls in one toolbar row. Cheaper than a
+   second row and it says the same thing: these belong together, those do not. */
+.tb-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: var(--sp-1) var(--sp-1);
+  background: var(--border-strong);
+}
+.tb-count {
+  white-space: nowrap;
+}
+
 .file-split {
   display: flex;
   flex: 1;

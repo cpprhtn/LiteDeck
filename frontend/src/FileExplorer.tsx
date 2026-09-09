@@ -897,9 +897,9 @@ export function FileExplorer({
             <button className="ghost" onClick={() => void refresh()} title={shortcutLabel('refresh')}>
               {t('새로고침')}
             </button>
-          </div>
 
-          <div className="view-toolbar wrap">
+            <span className="tb-sep" aria-hidden="true" />
+
             <button
               onClick={() => {
                 setInput('')
@@ -919,36 +919,44 @@ export function FileExplorer({
               hidden
               onChange={(e) => void onWebFilesPicked(e.target.files)}
             />
-            <button disabled={selectedEntries.length === 0} onClick={() => void download()}>
-              {t('다운로드…')}
-            </button>
-            <button
-              disabled={selectedEntries.length !== 1}
-              onClick={() => {
-                const e = selectedEntries[0]
-                setInput(e.name)
-                setDialog({ kind: 'rename', entry: e })
-              }}
-            >
-              {t('이름 변경')}
-            </button>
-            <button
-              disabled={selectedEntries.length !== 1}
-              onClick={() => {
-                const e = selectedEntries[0]
-                setPerm(e.perm)
-                setDialog({ kind: 'perms', entry: e })
-              }}
-            >
-              {t('권한')}
-            </button>
-            <button
-              className="danger"
-              disabled={selectedEntries.length === 0}
-              onClick={() => void askDelete()}
-            >
-              {t('삭제')}
-            </button>
+            {/* Only once something is selected. Four buttons that are dead
+                until you pick a row taught nobody what they do — they just took
+                a second row of the window on every screen, on every host,
+                whether or not anyone was about to delete anything. */}
+            {selectedEntries.length > 0 && (
+              <>
+                <span className="tb-sep" aria-hidden="true" />
+                <span className="muted small tb-count">
+                  {t('{n}개 선택', { n: selectedEntries.length })}
+                </span>
+                <button onClick={() => void download()}>{t('다운로드…')}</button>
+                <button
+                  disabled={selectedEntries.length !== 1}
+                  title={selectedEntries.length !== 1 ? t('하나만 선택하세요') : undefined}
+                  onClick={() => {
+                    const e = selectedEntries[0]
+                    setInput(e.name)
+                    setDialog({ kind: 'rename', entry: e })
+                  }}
+                >
+                  {t('이름 변경')}
+                </button>
+                <button
+                  disabled={selectedEntries.length !== 1}
+                  title={selectedEntries.length !== 1 ? t('하나만 선택하세요') : undefined}
+                  onClick={() => {
+                    const e = selectedEntries[0]
+                    setPerm(e.perm)
+                    setDialog({ kind: 'perms', entry: e })
+                  }}
+                >
+                  {t('권한')}
+                </button>
+                <button className="danger" onClick={() => void askDelete()}>
+                  {t('삭제')}
+                </button>
+              </>
+            )}
             {listing?.protected && (
               <span className="badge warn" title={t('루트 바로 아래 디렉터리 — 하위까지 지우려면 경로를 직접 입력해야 합니다')}>
                 {t('보호된 경로')}
