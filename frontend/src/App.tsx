@@ -614,7 +614,7 @@ function renderTab(
 
   switch (tab) {
     case 'files':
-      return <FileExplorer hostID={hostID} onError={onError} />
+      return <FileExplorer hostID={hostID} visible={visible} onError={onError} />
 
     case 'processes':
       return <ProcessView hostID={hostID} visible={visible} onError={onError} />

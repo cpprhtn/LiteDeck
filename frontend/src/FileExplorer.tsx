@@ -230,9 +230,15 @@ type Dialog =
 
 export function FileExplorer({
   hostID,
+  visible,
   onError,
 }: {
   hostID: string
+  /** This tab is the one on screen. The keyboard handler is on the window, and
+   *  the pane stays mounted when another tab is showing — without this, an
+   *  arrow key in the terminal moved the selection in a file list nobody could
+   *  see, and F5 on the monitoring tab reloaded a directory. */
+  visible: boolean
   onError: (msg: string) => void
 }) {
   const [listing, setListing] = useState<DirListing | null>(null)
@@ -645,6 +651,29 @@ export function FileExplorer({
     }
   }
 
+  /**
+   * Moves the selection by one row, the way a file list is expected to.
+   *
+   * The anchor is the far end in the direction of travel, so ↓ after a
+   * multi-select continues from the bottom of it rather than from the top —
+   * which is what every file manager does and what nobody notices until it is
+   * wrong. Shift extends instead of replacing.
+   */
+  const step = (delta: number, extend: boolean) => {
+    if (rows.length === 0) return
+    const hit = rows.map((r, i) => (selected.has(r.entry.path) ? i : -1)).filter((i) => i >= 0)
+    const from = hit.length === 0 ? -1 : delta > 0 ? Math.max(...hit) : Math.min(...hit)
+    const next =
+      from < 0
+        ? delta > 0
+          ? 0
+          : rows.length - 1
+        : Math.max(0, Math.min(rows.length - 1, from + delta))
+    const path = rows[next].entry.path
+    setSelected((prev) => (extend ? new Set([...prev, path]) : new Set([path])))
+    virtualizer.scrollToIndex(next)
+  }
+
   // Keyboard shortcuts follow the platform, not one hard-coded convention (§8).
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
@@ -652,7 +681,7 @@ export function FileExplorer({
       // platforms — Enter renames on macOS, Delete deletes on Windows — so
       // without this, a keystroke meant for the editor or the address bar acts
       // on whatever happens to be selected in the tree.
-      if (dialog || isTyping(ev)) return
+      if (!visible || dialog || isTyping(ev)) return
       const one = selectedEntries[0]
       if (matches(ev, 'find')) {
         // isTyping already gave the editor first claim on this: CodeMirror's
@@ -665,6 +694,21 @@ export function FileExplorer({
       } else if (matches(ev, 'parentDir') && listing) {
         ev.preventDefault()
         navigate(listing.parent)
+      } else if (matches(ev, 'back')) {
+        ev.preventDefault()
+        back()
+      } else if (matches(ev, 'forward')) {
+        ev.preventDefault()
+        forth()
+      } else if (ev.key === 'ArrowDown' && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
+        ev.preventDefault()
+        step(1, ev.shiftKey)
+      } else if (ev.key === 'ArrowUp' && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
+        ev.preventDefault()
+        step(-1, ev.shiftKey)
+      } else if (one && matches(ev, 'open')) {
+        ev.preventDefault()
+        void openEntry(one)
       } else if (one && matches(ev, 'rename')) {
         ev.preventDefault()
         setInput(one.name)
@@ -819,7 +863,7 @@ export function FileExplorer({
               className="ghost"
               disabled={history.length === 0}
               onClick={back}
-              title={t('뒤로')}
+              title={t('뒤로 ({key})', { key: shortcutLabel('back') })}
             >
               ←
             </button>
@@ -827,7 +871,7 @@ export function FileExplorer({
               className="ghost"
               disabled={forward.length === 0}
               onClick={forth}
-              title={t('앞으로')}
+              title={t('앞으로 ({key})', { key: shortcutLabel('forward') })}
             >
               →
             </button>

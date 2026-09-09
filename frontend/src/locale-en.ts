@@ -708,4 +708,6 @@ export const en: Record<string, string> = {
   '{n}개 선택': '{n} selected',
   '하나만 선택하세요': 'Select exactly one',
   '호스트 바꾸기': 'Switch host',
+  '뒤로 ({key})': 'Back ({key})',
+  '앞으로 ({key})': 'Forward ({key})',
 }

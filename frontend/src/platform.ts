@@ -31,6 +31,8 @@ export type Action =
   | 'copyPath'
   | 'save'
   | 'toggleRail'
+  | 'back'
+  | 'forward'
 
 interface Binding {
   /** KeyboardEvent.key */
@@ -53,6 +55,10 @@ const MAC: Record<Action, Binding> = {
   copyPath: { key: 'c', mod: true, alt: true, label: '⌥⌘C' },
   save: { key: 's', mod: true, label: '⌘S' },
   toggleRail: { key: 'b', mod: true, label: '⌘B' },
+  // Finder's, not the browser's. ⌘← is "go to start of line" in every text
+  // field on this platform and the file list shares a window with an editor.
+  back: { key: '[', mod: true, label: '⌘[' },
+  forward: { key: ']', mod: true, label: '⌘]' },
 }
 
 const PC: Record<Action, Binding> = {
@@ -66,6 +72,8 @@ const PC: Record<Action, Binding> = {
   copyPath: { key: 'c', mod: true, shift: true, label: 'Ctrl+Shift+C' },
   save: { key: 's', mod: true, label: 'Ctrl+S' },
   toggleRail: { key: 'b', mod: true, label: 'Ctrl+B' },
+  back: { key: 'ArrowLeft', alt: true, label: 'Alt+←' },
+  forward: { key: 'ArrowRight', alt: true, label: 'Alt+→' },
 }
 
 let platform: Platform = {
