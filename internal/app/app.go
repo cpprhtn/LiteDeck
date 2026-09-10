@@ -88,7 +88,12 @@ func New() *App {
 	a.prompts = newPromptBridge(a)
 	a.log = newCommandLog(a)
 	a.detected = newDetectCache()
-	a.typed = newTypedLog(a.configDir)
+	// Built with no directory on purpose. configDir is not known until Startup,
+	// and this used to be handed a.configDir here — which was still "" — so the
+	// path came out as the bare name "typed.json" and every command anybody
+	// typed was written to whatever the process's working directory happened to
+	// be. Startup rebuilds it once the real directory is known.
+	a.typed = newTypedLog("")
 	a.selves = newSelfCache()
 	a.sshPorts = newPortCache()
 	a.ifaces = newIfaceCache()
@@ -156,6 +161,8 @@ func (a *App) boot() {
 		return
 	}
 	a.configDir = dir
+	// Now that there is somewhere to put it. See New().
+	a.typed = newTypedLog(dir)
 	// Preferences load before the host list: a corrupt hosts.json must not cost
 	// the user their language, and neither file should break the other.
 	a.settings = config.OpenSettings(dir)

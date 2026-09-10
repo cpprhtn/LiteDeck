@@ -1,6 +1,8 @@
 package app
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
@@ -159,5 +161,45 @@ func TestHistoryIsNewestFirstAndBounded(t *testing.T) {
 		if rows[i].At.After(rows[i-1].At) {
 			t.Fatalf("row %d is newer than the one before it", i)
 		}
+	}
+}
+
+// The typed history is written where the config lives, and nowhere else.
+//
+// It used to be built in New() with a.configDir — which Startup does not fill
+// in until later, so the value was "". filepath.Join("", "typed.json") is
+// "typed.json": a relative path, resolved against whatever working directory
+// the launcher picked. Every command anybody typed in the terminal was written
+// there and was not found again on the next start. A copy turned up in the
+// source tree, which is how this was noticed.
+func TestTypedLogNeverWritesToTheWorkingDirectory(t *testing.T) {
+	l := newTypedLog("")
+	if l.path != "" {
+		t.Fatalf("path = %q, want empty — a relative path lands in the CWD", l.path)
+	}
+
+	// It still remembers in memory; it just does not persist.
+	dir := t.TempDir()
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	l.enter("h", "t1", "echo hi", false)
+	l.save()
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("wrote %d files into the working directory", len(entries))
+	}
+	if _, err := os.Stat(filepath.Join(cwd, "typed.json")); err == nil {
+		t.Error("wrote typed.json next to the source")
+	}
+
+	// With a directory it persists there.
+	real := t.TempDir()
+	m := newTypedLog(real)
+	m.enter("h", "t1", "echo hi", false)
+	m.save()
+	if _, err := os.Stat(filepath.Join(real, "typed.json")); err != nil {
+		t.Errorf("nothing written to the config directory: %v", err)
 	}
 }
