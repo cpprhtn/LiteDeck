@@ -303,7 +303,7 @@ func (u *sudoUnlock) forget(id string) {
 // force is the refresh button, which means "ask again" and so goes past the
 // cache. Everything else — a tab switch, a re-render — takes what is there.
 func (a *App) HostSecurity(hostID string, elevate, force bool) (SecurityView, error) {
-	info, err := a.requireCapability(hostID, adapter.CapServices, i18n.S("보안 상태"))
+	info, err := a.requireCapability(hostID, adapter.CapFirewall, i18n.S("보안 상태"))
 	if err != nil {
 		return SecurityView{}, err
 	}
@@ -335,7 +335,12 @@ func (a *App) HostSecurity(hostID string, elevate, force bool) (SecurityView, er
 		return SecurityView{}, err
 	}
 	units, ufwConf, jails, modules := adapter.SplitSecurityOutput(string(res.Stdout))
-	view.Units = adapter.ParseSecurityUnits(units)
+	// Assigned only when the parser found something. A nil slice crosses to the
+	// webview as `null`, and the screen reads it as `units.find of null` —
+	// which is what a Windows host did before CapFirewall existed.
+	if got := adapter.ParseSecurityUnits(units); got != nil {
+		view.Units = got
+	}
 	view.UfwEnabled, view.UfwConfFound = adapter.ParseUfwConf(ufwConf)
 	if got := adapter.ParseFail2banJails(jails); got != nil {
 		view.Jails = got

@@ -137,6 +137,17 @@ const (
 	// capability cannot say "yes, but empty unless you escalate", so the tab is
 	// enabled here and the view explains the rest.
 	CapEvents Capability = "events"
+	// CapFirewall is the security tab. It reads ufw, fail2ban, nftables and
+	// iptables — none of which exist on Windows.
+	//
+	// This used to ride on CapServices, on the reasoning that "systemd is here"
+	// is what the free half of the read needs. That is true on Linux and wrong
+	// everywhere else: Windows reports CapServices for Win32_Service, so the
+	// tab appeared there and ran `sh -c` against cmd. The parser then got an
+	// empty string, returned a nil slice, and the screen died on
+	// `units.find of null`. A capability that means two things is a capability
+	// that will be read as the wrong one.
+	CapFirewall Capability = "firewall"
 )
 
 // Capabilities reports which tabs this server supports (§3.3).
@@ -155,6 +166,7 @@ func (i ServerInfo) Capabilities() map[Capability]bool {
 			CapNetwork:    false,
 			CapSessions:   false,
 			CapEvents:     false,
+			CapFirewall:   false,
 		}
 	}
 	if i.Platform == PlatformWindows {
@@ -170,6 +182,9 @@ func (i ServerInfo) Capabilities() map[Capability]bool {
 			// The Windows event log sits where journald does, but nothing reads
 			// it yet.
 			CapEvents: false,
+			// Windows Firewall is a different thing with a different vocabulary
+			// and nothing here reads it.
+			CapFirewall: false,
 		}
 	}
 	return map[Capability]bool{
@@ -180,6 +195,7 @@ func (i ServerInfo) Capabilities() map[Capability]bool {
 		CapNetwork:    true, // iproute2; the tab degrades per-command if partial
 		CapSessions:   true, // ps; w/ss/loginctl only enrich
 		CapEvents:     i.HasSystemd,
+		CapFirewall:   i.HasSystemd,
 	}
 }
 
