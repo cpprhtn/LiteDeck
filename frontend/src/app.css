@@ -328,6 +328,25 @@
   border-top-color: transparent;
 }
 
+/* The new-terminal button, and the shell menu it drops on a host that has
+   more than one. */
+.term-new {
+  position: relative;
+  display: inline-flex;
+}
+.term-shell-menu {
+  position: absolute;
+  top: calc(100% + var(--sp-1));
+  left: 0;
+  z-index: 20;
+  min-width: 180px;
+  padding: var(--sp-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-2);
+}
+
 /* The lock. Same control in the security tab and the network tab, because it
    is the same lock. */
 .lock-btn,

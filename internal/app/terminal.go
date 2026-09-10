@@ -41,6 +41,9 @@ type TerminalOptions struct {
 	Dir string `json:"dir,omitempty"`
 	// ContainerID opens a shell inside that container instead of on the host.
 	ContainerID string `json:"containerId,omitempty"`
+	// ShellID picks which shell to start, from HostShells. Empty means the
+	// first one, which is what sshd would have given anyway.
+	ShellID string `json:"shellId,omitempty"`
 }
 
 // openTerminal is one live session and what the UI needs to show it again.
@@ -163,6 +166,18 @@ func (a *App) OpenTerminal(hostID string, opts TerminalOptions) (TerminalInfo, e
 		Windows:    a.isWindows(hostID),
 	}
 	title := hostID
+	// Windows hands out whatever sshd's DefaultShell says, and that is usually
+	// cmd. Which shell the user asked for decides the whole command line,
+	// including how "start in this directory" is spelled — the three shells do
+	// not agree on that and there is no line that works in all of them.
+	if opts.ContainerID == "" && a.isWindows(hostID) {
+		if sh, exact := a.pickShell(hostID, opts.ShellID); sh.ID != "" {
+			ptyOpts.Line = adapter.WindowsShellCommand(sh, opts.Dir)
+			if exact && sh.ID != "cmd" {
+				title = sh.Label
+			}
+		}
+	}
 	if opts.ContainerID != "" {
 		runtime, err := a.containerRuntime(hostID)
 		if err != nil {
@@ -393,4 +408,90 @@ func shortID(id string) string {
 		return id[:12]
 	}
 	return id
+}
+
+// Which shells this host can open (§4.6).
+//
+// One entry on a POSIX host — the account's login shell, which the user did not
+// choose here and should not be asked about. Several on Windows, where sshd
+// hands out cmd.exe by default and the person at the keyboard probably wanted
+// PowerShell.
+//
+// Cached per connection: the answer is a property of the machine, and a menu
+// that costs a round trip every time it opens is a menu that feels broken.
+type shellCache struct {
+	mu   sync.Mutex
+	byID map[string]shellEntry
+}
+
+type shellEntry struct {
+	gen    uint64
+	shells []adapter.Shell
+}
+
+func newShellCache() *shellCache { return &shellCache{byID: map[string]shellEntry{}} }
+
+func (c *shellCache) get(id string, gen uint64) ([]adapter.Shell, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.byID[id]
+	if !ok || e.gen != gen {
+		return nil, false
+	}
+	return e.shells, true
+}
+
+func (c *shellCache) put(id string, gen uint64, shells []adapter.Shell) {
+	c.mu.Lock()
+	c.byID[id] = shellEntry{gen: gen, shells: shells}
+	c.mu.Unlock()
+}
+
+func (c *shellCache) forget(id string) {
+	c.mu.Lock()
+	delete(c.byID, id)
+	c.mu.Unlock()
+}
+
+// HostShells lists what a new terminal on this host could start.
+func (a *App) HostShells(hostID string) ([]adapter.Shell, error) {
+	if !a.isWindows(hostID) {
+		// Nothing to choose. The empty argv is "whatever sshd gives", which on
+		// a POSIX host is the login shell the account already has.
+		return []adapter.Shell{{ID: "login", Label: i18n.T("로그인 셸")}}, nil
+	}
+	gen := a.mgr.Generation(hostID)
+	if got, ok := a.shells.get(hostID, gen); ok {
+		return got, nil
+	}
+	conn, err := a.mgr.Conn(hostID)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), pollTimeout)
+	defer cancel()
+
+	raw, err := a.runPowerShell(ctx, conn, sshcore.CommandPoll, adapter.WindowsShellsScript())
+	if err != nil {
+		// A probe that failed is not a reason to refuse a terminal. cmd is
+		// always there; the menu just has one entry until the next connection.
+		return adapter.ParseWindowsShells(""), nil
+	}
+	shells := adapter.ParseWindowsShells(string(raw))
+	a.shells.put(hostID, gen, shells)
+	return shells, nil
+}
+
+// pickShell finds the requested shell, falling back to the first one.
+func (a *App) pickShell(hostID, id string) (adapter.Shell, bool) {
+	list, err := a.HostShells(hostID)
+	if err != nil || len(list) == 0 {
+		return adapter.Shell{}, false
+	}
+	for _, s := range list {
+		if s.ID == id {
+			return s, true
+		}
+	}
+	return list[0], false
 }

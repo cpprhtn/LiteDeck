@@ -330,6 +330,8 @@ export interface TerminalOptions {
   rows: number
   dir?: string
   containerId?: string
+  /** Which shell to start, from HostShells. Windows only in practice. */
+  shellId?: string
 }
 
 /** One mounted filesystem (§4.7). */
@@ -627,6 +629,13 @@ export interface SubnetCluster {
 }
 
 /** Where the installer got to. Mirrors app.UpdateState. */
+/** One prompt a host can give. Mirrors adapter.Shell. */
+export interface Shell {
+  id: string
+  label: string
+  argv?: string[]
+}
+
 /** The sudo lock for one connection. Mirrors app.SudoState. */
 export interface SudoState {
   hostID: string
@@ -1050,6 +1059,7 @@ interface Bindings {
   UpdateStatus(): Promise<UpdateState>
   SecurityLogins(id: string): Promise<SecurityLoginsView>
   RememberSecurityLogins(id: string, addrs: string[]): Promise<string[]>
+  HostShells(id: string): Promise<Shell[]>
   UnlockSecurity(id: string): Promise<boolean>
   HostSudoState(id: string): Promise<SudoState>
   SudoUnlocked(id: string): Promise<boolean>
@@ -1304,6 +1314,7 @@ export const HostSecurity = (id: string, elevate: boolean, force = false) =>
 export const SecurityLogins = (id: string) => api().SecurityLogins(id)
 export const RememberSecurityLogins = (id: string, addrs: string[]) =>
   api().RememberSecurityLogins(id, addrs)
+export const HostShells = (id: string) => api().HostShells(id)
 export const UnlockSecurity = (id: string) => api().UnlockSecurity(id)
 export const HostSudoState = (id: string) => api().HostSudoState(id)
 export const SudoUnlocked = (id: string) => api().SudoUnlocked(id)

@@ -5,6 +5,7 @@ import '@xterm/xterm/css/xterm.css'
 import {
   CloseTerminal,
   ListTerminals,
+  HostShells,
   OpenTerminal,
   ReadClipboard,
   ResizeTerminal,
@@ -13,6 +14,7 @@ import {
   TypedEntered,
   WriteTerminal,
   on,
+  type Shell,
   type TerminalInfo,
 } from './ipc'
 import { CommandHistory } from './CommandHistory'
@@ -320,14 +322,45 @@ export function TerminalView({
     }
   }, [histOpen, active])
   const opening = useRef(false)
+  // What this host can give a prompt in. One entry on Linux — the account's
+  // login shell, which nobody chose here — and several on Windows, where sshd
+  // hands out cmd.exe and the person at the keyboard probably wanted
+  // PowerShell. The menu only appears when there is something to choose.
+  const [shells, setShells] = useState<Shell[]>([])
+  const [shellMenu, setShellMenu] = useState(false)
+  const shellRef = useRef<HTMLDivElement>(null)
   /** The host whose sessions this view has already taken over. */
   const adopted = useRef<string | null>(null)
 
-  const openTab = useCallback(async () => {
+  useEffect(() => {
+    let alive = true
+    void HostShells(hostID)
+      .then((list) => alive && setShells(list))
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [hostID])
+
+  useEffect(() => {
+    if (!shellMenu) return
+    const away = (e: MouseEvent) => {
+      if (!shellRef.current?.contains(e.target as Node)) setShellMenu(false)
+    }
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setShellMenu(false)
+    document.addEventListener('mousedown', away)
+    document.addEventListener('keydown', esc)
+    return () => {
+      document.removeEventListener('mousedown', away)
+      document.removeEventListener('keydown', esc)
+    }
+  }, [shellMenu])
+
+  const openTab = useCallback(async (shellId?: string) => {
     if (opening.current) return
     opening.current = true
     try {
-      const info = await OpenTerminal(hostID, { cols: 80, rows: 24 })
+      const info = await OpenTerminal(hostID, { cols: 80, rows: 24, shellId })
       setTabs((t) => [...t, info])
       setActive(info.id)
     } catch (e) {
@@ -483,9 +516,34 @@ export function TerminalView({
               </span>
             </button>
           ))}
-          <button className="ghost" onClick={() => void openTab()} title={t('새 터미널')}>
-            +
-          </button>
+          <div className="term-new" ref={shellRef}>
+            <button
+              className="ghost"
+              onClick={() => (shells.length > 1 ? setShellMenu((v) => !v) : void openTab())}
+              aria-haspopup={shells.length > 1 ? 'menu' : undefined}
+              aria-expanded={shells.length > 1 ? shellMenu : undefined}
+              title={shells.length > 1 ? t('새 터미널 — 셸 고르기') : t('새 터미널')}
+            >
+              +
+            </button>
+            {shellMenu && (
+              <div className="term-shell-menu" role="menu">
+                {shells.map((sh) => (
+                  <button
+                    key={sh.id}
+                    role="menuitem"
+                    className="rail-pop-item"
+                    onClick={() => {
+                      setShellMenu(false)
+                      void openTab(sh.id)
+                    }}
+                  >
+                    {sh.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
         <span className="spacer" />
         <button

@@ -715,4 +715,5 @@ export const en: Record<string, string> = {
   '앱을 닫고 새 버전으로 다시 엽니다. OS 키체인에 저장한 비밀번호는 그대로 남습니다.': 'Closes the app and reopens the new version. Passwords saved in the OS keychain are kept.',
   '업데이트 실패': 'Update failed',
   '업데이트 적용': 'Install update',
+  '새 터미널 — 셸 고르기': 'New terminal — pick a shell',
 }

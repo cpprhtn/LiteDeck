@@ -116,4 +116,6 @@ var english = map[string]string{
 	"아직 받아 둔 업데이트가 없습니다":                              "Nothing has been downloaded yet",
 	"이 플랫폼용 자동 업데이트는 아직 없습니다":                         "There is no automatic update for this platform yet",
 	"체크섬 목록에 없습니다":                                    "Not listed in the checksums",
+	"명령 프롬프트":                                         "Command Prompt",
+	"로그인 셸":                                           "Login shell",
 }

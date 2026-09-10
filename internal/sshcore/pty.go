@@ -40,6 +40,14 @@ type PTYOptions struct {
 	// Windows makes the shell cmd.exe rather than a POSIX one, which changes
 	// the only question this package ever asks a live terminal (§4.6a).
 	Windows bool
+
+	// Line is a ready-made command line to start instead of the login shell.
+	//
+	// Windows only, and deliberately a string rather than argv: the quoting
+	// rules there are per-shell — cmd, PowerShell and wsl each want a different
+	// spelling of "start here" — so the adapter builds the whole line and this
+	// package does not try to quote it a second time.
+	Line string
 }
 
 // PTYSession is one live terminal.
@@ -170,6 +178,11 @@ func (c *Conn) OpenPTY(
 // start launches either a login shell or a specific command.
 func (p *PTYSession) start(opts PTYOptions) error {
 	switch {
+	case opts.Line != "":
+		if err := p.sess.Start(opts.Line); err != nil {
+			return fmt.Errorf("sshcore: start terminal shell: %w", err)
+		}
+
 	case len(opts.Exec) > 0:
 		line, err := shellquote.Join(opts.Exec...)
 		if err != nil {
@@ -186,7 +199,7 @@ func (p *PTYSession) start(opts PTYOptions) error {
 			return fmt.Errorf("sshcore: start terminal command: %w", err)
 		}
 
-	case opts.InitialDir != "":
+	case opts.InitialDir != "" && !opts.Windows:
 		dir, err := shellquote.Quote(opts.InitialDir)
 		if err != nil {
 			return fmt.Errorf("sshcore: quote directory: %w", err)

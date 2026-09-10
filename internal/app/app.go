@@ -47,6 +47,7 @@ type App struct {
 	gens      *genCache
 	transfers *transferQueue
 	terminals *terminalRegistry
+	shells    *shellCache
 	cpu       *cpuHistory
 	gpus      *gpuWatcher
 	logs      *logRegistry
@@ -98,6 +99,7 @@ func New() *App {
 	a.gens = newGenCache()
 	a.transfers = newTransferQueue(a)
 	a.terminals = newTerminalRegistry(a)
+	a.shells = newShellCache()
 	a.cpu = newCPUHistory()
 	a.gpus = newGPUWatcher()
 	a.logs = newLogRegistry(a)
