@@ -716,4 +716,5 @@ export const en: Record<string, string> = {
   '업데이트 실패': 'Update failed',
   '업데이트 적용': 'Install update',
   '새 터미널 — 셸 고르기': 'New terminal — pick a shell',
+  '{shell} 여는 중…': 'Opening {shell}…',
 }

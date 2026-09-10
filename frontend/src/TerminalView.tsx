@@ -328,6 +328,12 @@ export function TerminalView({
   // PowerShell. The menu only appears when there is something to choose.
   const [shells, setShells] = useState<Shell[]>([])
   const [shellMenu, setShellMenu] = useState(false)
+  // What is being opened right now, if anything. A WSL distribution whose
+  // virtual machine has idled out takes ten to twenty seconds to come back, and
+  // Go spends that waiting for it in the mode that is safe to wait in. Without
+  // this the window simply sits there, which is indistinguishable from broken —
+  // and what people do about that is press the button again.
+  const [opening_, setOpening] = useState<string | null>(null)
   const shellRef = useRef<HTMLDivElement>(null)
   /** The host whose sessions this view has already taken over. */
   const adopted = useRef<string | null>(null)
@@ -356,19 +362,24 @@ export function TerminalView({
     }
   }, [shellMenu])
 
-  const openTab = useCallback(async (shellId?: string) => {
-    if (opening.current) return
-    opening.current = true
-    try {
-      const info = await OpenTerminal(hostID, { cols: 80, rows: 24, shellId })
-      setTabs((t) => [...t, info])
-      setActive(info.id)
-    } catch (e) {
-      onError(String(e))
-    } finally {
-      opening.current = false
-    }
-  }, [hostID, onError])
+  const openTab = useCallback(
+    async (shellId?: string, label?: string) => {
+      if (opening.current) return
+      opening.current = true
+      setOpening(label ?? t('새 터미널'))
+      try {
+        const info = await OpenTerminal(hostID, { cols: 80, rows: 24, shellId })
+        setTabs((t) => [...t, info])
+        setActive(info.id)
+      } catch (e) {
+        onError(String(e))
+      } finally {
+        opening.current = false
+        setOpening(null)
+      }
+    },
+    [hostID, onError, t],
+  )
 
   // Adopt whatever is already running, and only open a new terminal if there is
   // nothing to adopt.
@@ -545,6 +556,12 @@ export function TerminalView({
             </div>
           )}
         </div>
+        {opening_ && (
+          <span className="term-opening muted small">
+            <span className="spin" aria-hidden="true" />
+            {t('{shell} 여는 중…', { shell: opening_ })}
+          </span>
+        )}
         <span className="spacer" />
         <button
           className="ghost small-btn"

@@ -328,6 +328,17 @@
   border-top-color: transparent;
 }
 
+/* Shown while a terminal is being opened. A WSL virtual machine that has idled
+   out takes ten to twenty seconds to come back, and a strip that says nothing
+   for that long is a strip somebody clicks again. */
+.term-opening {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: var(--sp-3);
+  white-space: nowrap;
+}
+
 /* The new-terminal button, and the shell menu it drops on a host that has
    more than one.
    
