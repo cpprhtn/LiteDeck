@@ -63,35 +63,38 @@
 > success nothing is left behind. If the `rename` fails, the temp file's path is shown on screen and
 > the file is deliberately not deleted, which beats losing the edit.
 
-## What changed in 2.0.0
+## What changed in 2.1.0
 
-<p align="center">
-  <img src="docs/media/07-focus.png" width="880" alt="The rail folded: a 52px icon strip on the left and an editor taking the rest">
-</p>
+**Windows servers get the same tabs Linux ones do.** Until now the sessions and
+security tabs told you a Windows box could not answer. It could; the question just
+had to be asked differently.
 
-**⌘B folds the left column down to a 52px icon strip** — and you can still switch
-server and section from it. The two bands that used to sit across the top are one
-row now, so at 1440×900 the editor went from 823×691 to 1071×748: 41% more area.
+- **Pick a shell in the terminal** — cmd, PowerShell or WSL. A developer's machine
+  has all three, and getting cmd when you wanted PowerShell is not a matter of
+  taste: half the commands you know are not there. WSL distributions are read from
+  the registry, because `wsl -l` on a machine with none **prints its help and exits
+  zero** — parse that a line at a time and the menu offers "WSL · --online, -o"
+- **The sessions tab.** Windows OpenSSH does not create the `sshd: user@pts/0`
+  process the Linux parser reads. A session is the sshd child owned by the account
+  that logged in, and the client address comes from the OpenSSH event log rather
+  than the socket table, which attributes every connection on port 22 to the
+  listener. Ending one is `taskkill /F /T`, the whole tree: kill the single process
+  and the shell under it survives and the client stays connected
+- **The security tab.** Three firewall profiles with the one your live network is
+  in marked, the inbound rules that open a port (**with the ones something is
+  actually behind at the top**), the account lockout policy, Defender, and who is
+  knocking. Account lockout stands where fail2ban does, and **how it is weaker is
+  on the screen** — it locks the account, not the address, so an attack working
+  through account names never trips it
+- **The window it read is stated honestly.** The Windows OpenSSH log is circular
+  and 1 MB. On a measured server taking a password attack, 2,343 records covered
+  **77 minutes**. Calling that "the last 24 hours" makes an attack that has run all
+  day look like it just started, so the oldest record still in the log is what the
+  screen says instead
+- **A column nothing fills is not drawn.** Windows has no terminal device and no
+  idle time, and neither does a container that writes no utmp. Six columns of
+  dashes read as a broken table, not an honest one
 
-- **Nine horizontal tabs became a grouped vertical rail** — Work, System, Observe.
-  A view the server cannot serve is marked with a dot rather than greyed out; grey
-  tells nobody why, and the view itself explains
-- **Automatic updates.** One check ten seconds after launch. When there is a newer
-  release the same button becomes *Update to 2.1.0*; pressing it downloads the
-  release, checks it against `SHA256SUMS.txt`, and turns into *Install update* —
-  **which only ever runs when somebody presses it.** Silently replacing an unsigned
-  binary is the shape of a supply-chain attack. Passwords in the OS keychain are kept
-- **The file tab from the keyboard.** `↑` `↓` to move, `Enter` to open (into a folder,
-  or into the editor), `F2` to rename, `⌘←` `⌘→` back and forward, `⌘↑` for the parent.
-  `Alt` on Windows
-- **One lock per connection, not per tab.** Unlock in the security tab and the network
-  tab shows process names too — the same permission is not asked for twice
-- **`Escape` closes every dialog.** Anything irreversible ignores a click outside:
-  a stray click is not an answer
-- **Text that was invisible in light mode.** Chart ticks were 9px at 2.36:1 contrast.
-  The palette was redrawn, and **a test now holds it there**
-- **One timestamp shape** — `2026-09-09 12:23`, the same one the server's own logs
-  print, so there is nothing to translate between them
 
 ## Claude works your servers through this app
 

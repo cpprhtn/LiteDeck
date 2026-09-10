@@ -27,6 +27,73 @@
 | **Connecting** | Password, key, agent, 2FA. Import from `~/.ssh/config`. One **ProxyJump** hop |
 | **Language** | English and Korean. Uses whichever you last chose, or your OS language if you never have. Switch with `KO`/`EN` at the bottom of the sidebar |
 
+## The shell
+
+<p align="center">
+  <img src="media/07-focus.png" width="880" alt="The rail folded: a 52px icon strip on the left and an editor taking the rest">
+</p>
+
+**⌘B folds the left column down to a 52px icon strip** — and you can still switch
+server and section from it. The two bands that used to sit across the top are one
+row now, so at 1440×900 the editor went from 823×691 to 1071×748: 41% more area.
+
+- **Nine horizontal tabs became a grouped vertical rail** — Work, System, Observe.
+  A view the server cannot serve is marked with a dot rather than greyed out; grey
+  tells nobody why, and the view itself explains
+- **The file tab from the keyboard.** `↑` `↓` to move, `Enter` to open (into a folder,
+  or into the editor), `F2` to rename, `⌘←` `⌘→` back and forward, `⌘↑` for the parent.
+  `Alt` on Windows
+- **One lock per connection, not per tab.** Unlock in the security tab and the network
+  tab shows process names too — the same permission is not asked for twice
+- **`Escape` closes every dialog.** Anything irreversible ignores a click outside:
+  a stray click is not an answer
+- **Text that was invisible in light mode.** Chart ticks were 9px at 2.36:1 contrast.
+  The palette was redrawn, and **a test now holds it there**
+- **One timestamp shape** — `2026-09-09 12:23`, the same one the server's own logs
+  print, so there is nothing to translate between them
+
+## Automatic updates
+
+One check ten seconds after launch. When there is a newer release the same button
+becomes *Update to 2.2.0*; pressing it downloads the release, checks it against
+`SHA256SUMS.txt`, and turns into *Install update* — **which only ever runs when
+somebody presses it.** Silently replacing an unsigned binary is the shape of a
+supply-chain attack. Passwords in the OS keychain are kept.
+
+There is no timer after that. An app somebody opens to do one thing and closes has
+no reason to poll github all afternoon.
+
+## Windows servers
+
+The same questions as Linux, answered from evidence that has nothing in common
+with it.
+
+**Pick a shell** — cmd, PowerShell or WSL. sshd hands out whatever
+`HKLM\SOFTWARE\OpenSSH\DefaultShell` says, which is cmd on a stock install. WSL
+distributions come from the registry (`Lxss`) rather than from `wsl -l`, because on
+a machine with no distribution that command prints its help and exits zero — 98
+lines on the box this was measured against, every one of which a line-per-
+distribution parser turns into a menu entry.
+
+Bare `wsl.exe -d X` is never run. Under ConPTY it hangs and leaves LxssManager
+wedged for the whole machine until it reboots, so it is always given a command. The
+wake-up check **waits for one already running rather than starting another** —
+leaving one behind per press of the button was what wedged the service.
+
+**Sessions** — a session is the sshd child owned by a real account. `SYSTEM` owns
+the listener and the per-connection parent; `sshd_NNNN` owns a stranger who has not
+authenticated yet. The client address cannot come from the socket table, which
+attributes every connection on port 22 to the listener, so it is matched by time
+against the OpenSSH event log.
+
+**Security** — three firewall profiles, the inbound rules that open a port, the
+account lockout policy and Defender. The policy is read with `secedit /export`
+rather than `net accounts`: the latter is localised, so a parser keyed on its
+labels reads a Korean machine as having no policy at all.
+
+**Not yet** — the events tab. The Windows event log sits where journald does, but
+nothing reads it.
+
 ## Command Log: learn the CLI from the GUI
 
 <p align="center">
