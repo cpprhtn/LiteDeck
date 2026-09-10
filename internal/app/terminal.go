@@ -128,9 +128,18 @@ func (r *terminalRegistry) closeAll() {
 	}
 	r.all = make(map[string]*openTerminal)
 	r.mu.Unlock()
+	// Together, not one after another: each close gives the remote shell a
+	// moment to leave (see PTYSession.Close), and four tabs closing in series
+	// would make quitting the app take four of those.
+	var wg sync.WaitGroup
 	for _, s := range sessions {
-		_ = s.Close()
+		wg.Add(1)
+		go func(s *sshcore.PTYSession) {
+			defer wg.Done()
+			_ = s.Close()
+		}(s)
 	}
+	wg.Wait()
 }
 
 // ListTerminals reports the sessions already open on a host (§4.6).
@@ -172,6 +181,9 @@ func (a *App) OpenTerminal(hostID string, opts TerminalOptions) (TerminalInfo, e
 	// not agree on that and there is no line that works in all of them.
 	if opts.ContainerID == "" && a.isWindows(hostID) {
 		if sh, exact := a.pickShell(hostID, opts.ShellID); sh.ID != "" {
+			if err := a.warmWSL(hostID, sh); err != nil {
+				return TerminalInfo{}, err
+			}
 			ptyOpts.Line = adapter.WindowsShellCommand(sh, opts.Dir)
 			if exact && sh.ID != "cmd" {
 				title = sh.Label
@@ -494,4 +506,50 @@ func (a *App) pickShell(hostID, id string) (adapter.Shell, bool) {
 		}
 	}
 	return list[0], false
+}
+
+// wslWarmTimeout bounds the check below. A cold WSL2 machine boots its VM in
+// ten to twenty seconds; one that has not answered in forty is not slow.
+const wslWarmTimeout = 40 * time.Second
+
+// warmWSL makes sure the distribution can answer before a terminal is attached
+// to it.
+//
+// Two things go wrong without it, both of them silent.
+//
+// The first is timing. A cold WSL2 machine spends ten to twenty seconds
+// starting its virtual machine, and during that the terminal pane is simply
+// blank — which reads as "it did not work", so people press the button again.
+// This does the waiting in the mode that is safe to wait in.
+//
+// The second is worse. `wsl.exe` asked for an interactive session on a
+// distribution that cannot start does not fail: it hangs, and a hung wsl.exe
+// holds LxssManager open. The service goes to StopPending and stays there —
+// WSL is then broken for every program on that machine until it reboots. A
+// terminal that will not open is a small problem; a terminal that breaks a
+// system service is not, and this app does not get to do that.
+//
+// `-- true` is the non-interactive path, which is the one that reports failure
+// instead of hanging.
+func (a *App) warmWSL(hostID string, sh adapter.Shell) error {
+	distro := strings.TrimPrefix(sh.ID, "wsl:")
+	if distro == sh.ID {
+		return nil // not a WSL shell
+	}
+	conn, err := a.mgr.Conn(hostID)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), wslWarmTimeout)
+	defer cancel()
+
+	res, err := conn.ExecOpts(ctx, sshcore.ExecOptions{Kind: sshcore.CommandPoll},
+		"wsl.exe", "-d", distro, "--", "true")
+	if err != nil {
+		return i18n.Errorf("%s 를 시작하지 못했습니다: %v", distro, err)
+	}
+	if !res.OK() {
+		return i18n.Errorf("%s 가 응답하지 않습니다 — 터미널을 열면 WSL 이 멈춥니다", distro)
+	}
+	return nil
 }

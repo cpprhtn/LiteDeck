@@ -117,4 +117,6 @@ var english = map[string]string{
 	"이 플랫폼용 자동 업데이트는 아직 없습니다":                         "There is no automatic update for this platform yet",
 	"체크섬 목록에 없습니다":                                    "Not listed in the checksums",
 	"로그인 셸":                                           "Login shell",
+	"%s 를 시작하지 못했습니다: %v":                             "Could not start %s: %v",
+	"%s 가 응답하지 않습니다 — 터미널을 열면 WSL 이 멈춥니다":             "%s is not answering — opening a terminal on it would wedge WSL",
 }
