@@ -202,6 +202,17 @@ export function AccessNotice({
     )
   }
 
+  if (view.access === 'no-ssh-log') {
+    return (
+      <div className="events-notice">
+        <p>{t('OpenSSH 로그가 비어 있습니다. 지금 이 연결도 SSH 이므로, 기록이 없는 것이 아니라 로그가 꺼져 있거나 지워진 것입니다.')}</p>
+        <p className="muted small">
+          {t('이벤트 뷰어의 응용 프로그램 및 서비스 로그 > OpenSSH > Operational 을 확인하세요.')}
+        </p>
+      </div>
+    )
+  }
+
   return (
     <div className="events-notice">
       <p>{t('이 서버에는 systemd 저널이 없습니다.')}</p>

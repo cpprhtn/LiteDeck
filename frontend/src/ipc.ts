@@ -429,7 +429,7 @@ export interface ServerEvent {
  */
 export interface EventsView {
   events: ServerEvent[]
-  access: 'ok' | 'needs-sudo' | 'denied' | 'no-journal'
+  access: 'ok' | 'needs-sudo' | 'denied' | 'no-journal' | 'no-ssh-log'
   range: '1h' | '24h' | '7d'
   /** The read hit its line cap, so the window shown is narrower than asked for. */
   truncated: boolean
@@ -496,8 +496,11 @@ export interface LoginsView {
   auth: AuthSummary
   /** About the failures alone. wtmp needs no journal, so the successes arrive
    *  whatever this says. */
-  access: 'ok' | 'needs-sudo' | 'denied' | 'no-journal'
+  access: 'ok' | 'needs-sudo' | 'denied' | 'no-journal' | 'no-ssh-log'
   window: string
+  /** The oldest record the source still holds, when the log rolled over before
+   *  the window did. Absent when the window is the whole truth. */
+  since?: string
 }
 
 /** What happened while nobody was watching (T-29). */
@@ -783,7 +786,7 @@ export interface UpdateStatus {
 
 export interface CommandHistoryView {
   runs: SudoRun[]
-  access: 'ok' | 'needs-sudo' | 'denied' | 'no-journal'
+  access: 'ok' | 'needs-sudo' | 'denied' | 'no-journal' | 'no-ssh-log'
   range: '1h' | '24h' | '7d'
   truncated: boolean
   /** How many commands looked like they carried a credential. A count, not a

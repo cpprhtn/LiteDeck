@@ -17,6 +17,8 @@ import (
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
 	"github.com/cpprhtn/LiteDeck/internal/i18n"
+	"github.com/cpprhtn/LiteDeck/internal/sshcore"
+	"time"
 )
 
 // selfCache remembers each connection's own sshd ancestors.
@@ -164,7 +166,6 @@ func (a *App) ListSSHSessions(hostID string) ([]adapter.SSHSession, error) {
 	if err != nil {
 		return nil, err
 	}
-	_ = info
 
 	conn, err := a.mgr.Conn(hostID)
 	if err != nil {
@@ -172,6 +173,14 @@ func (a *App) ListSSHSessions(hostID string) ([]adapter.SSHSession, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), pollTimeout)
 	defer cancel()
+
+	if info.Platform == adapter.PlatformWindows {
+		raw, err := a.runPowerShell(ctx, conn, sshcore.CommandPoll, adapter.WindowsSessionsScript())
+		if err != nil {
+			return nil, err
+		}
+		return adapter.ParseWindowsSessions(string(raw), time.Now()), nil
+	}
 
 	self, err := a.selfPIDs(ctx, hostID)
 	if err != nil {
@@ -284,7 +293,8 @@ func (a *App) EndSSHSession(hostID string, pid int) ActionResult {
 	if pid <= 1 {
 		return failResult(fmt.Errorf("app: invalid pid %d", pid))
 	}
-	if _, err := a.requireCapability(hostID, adapter.CapSessions, i18n.S("SSH 세션 목록")); err != nil {
+	info, err := a.requireCapability(hostID, adapter.CapSessions, i18n.S("SSH 세션 목록"))
+	if err != nil {
 		return failResult(err)
 	}
 	conn, err := a.mgr.Conn(hostID)
@@ -293,6 +303,10 @@ func (a *App) EndSSHSession(hostID string, pid int) ActionResult {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), PromptTimeout+pollTimeout)
 	defer cancel()
+
+	if info.Platform == adapter.PlatformWindows {
+		return a.endWindowsSession(ctx, conn, pid)
+	}
 
 	self, err := a.selfPIDs(ctx, hostID)
 	if err != nil {
@@ -340,4 +354,44 @@ func (a *App) EndSSHSession(hostID string, pid int) ActionResult {
 		return failResult(err)
 	}
 	return a.classify(hostID, out, false)
+}
+
+// endWindowsSession ends one login on a Windows host.
+//
+// The list is read again rather than trusting the row that was clicked: PIDs are
+// reused, and by the time somebody clicks, that number may belong to something
+// else. The same reason the POSIX path re-reads `ps`.
+func (a *App) endWindowsSession(ctx context.Context, conn *sshcore.Conn, pid int) ActionResult {
+	raw, err := a.runPowerShell(ctx, conn, sshcore.CommandPoll, adapter.WindowsSessionsScript())
+	if err != nil {
+		return failResult(err)
+	}
+	var target *adapter.SSHSession
+	for _, s := range adapter.ParseWindowsSessions(string(raw), time.Now()) {
+		if s.PID == pid {
+			found := s
+			target = &found
+			break
+		}
+	}
+	if target == nil {
+		// Either it ended on its own or that number is something else now.
+		// Killing it either way is how a session list turns into a way to end
+		// arbitrary processes.
+		return failResult(errors.New(i18n.T("PID %d 는 더 이상 SSH 세션이 아닙니다", pid)))
+	}
+	if target.Self {
+		return failResult(errors.New(i18n.T("이 세션은 LiteDeck 이 쓰고 있는 연결입니다")))
+	}
+	out, err := a.runPowerShell(ctx, conn, sshcore.CommandAction, adapter.WindowsEndSessionScript(pid))
+	if err != nil {
+		return failResult(err)
+	}
+	if !adapter.ParseWindowsEndSession(string(out)) {
+		// Measured: the first version of this reported success while the login
+		// carried on, because it killed a process the session did not depend on
+		// and read the exit code rather than the machine.
+		return failResult(errors.New(i18n.T("세션이 끝나지 않았습니다. 다른 계정의 세션은 관리자 권한이 필요할 수 있습니다.")))
+	}
+	return okResult()
 }

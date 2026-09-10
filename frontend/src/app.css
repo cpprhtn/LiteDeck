@@ -2914,11 +2914,16 @@ button.danger {
    things rather than one row. */
 .login-row {
   display: grid;
-  grid-template-columns: 120px 80px minmax(0, 200px) 150px 90px;
+  /* Without a terminal column. wtmp has one and the Windows event log has no
+     equivalent, so the list drops it rather than printing a dash per row. */
+  grid-template-columns: 120px minmax(0, 200px) 150px 90px;
   gap: var(--sp-3);
   align-items: baseline;
   padding: 3px 0;
   border-bottom: 1px solid var(--border);
+}
+.login-list[data-tty] .login-row {
+  grid-template-columns: 120px 80px minmax(0, 200px) 150px 90px;
 }
 /* A restart is not a person logging in. It is the row people actually look for
    in this file, so it is marked rather than blended in. */

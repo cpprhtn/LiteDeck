@@ -6,6 +6,8 @@ import (
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
 	"github.com/cpprhtn/LiteDeck/internal/i18n"
+	"github.com/cpprhtn/LiteDeck/internal/sshcore"
+	"time"
 )
 
 // Who got in, and who kept trying (T-26).
@@ -29,6 +31,14 @@ type LoginsView struct {
 	// Window is how far back the failures were counted, echoed so the screen
 	// cannot label a day's worth as an hour's.
 	Window string `json:"window"`
+	// Since is the oldest record the source still holds, when that is later
+	// than the window asked for. Zero on a host whose log covers the window.
+	//
+	// Windows needs this and Linux does not. The OpenSSH event log is circular
+	// and 1 MB: on a box taking a routine password attack it held 77 minutes,
+	// and labelling that "the last 24 hours" turns an attack that has been
+	// running all day into one that just started.
+	Since *time.Time `json:"since,omitempty"`
 }
 
 // authWindow is how far back the failure count reaches.
@@ -57,6 +67,10 @@ func (a *App) HostLogins(hostID string, elevate bool) (LoginsView, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), pollTimeout)
 	defer cancel()
+
+	if info.Platform == adapter.PlatformWindows {
+		return a.windowsLogins(ctx, conn)
+	}
 
 	// One script, the way the metrics snapshot is one script (§3.2b's stated
 	// exception). Nothing is interpolated into it.
@@ -103,4 +117,29 @@ func splitLoginsOutput(out string) (last, auth string) {
 		return rest, ""
 	}
 	return last, auth
+}
+
+// windowsLogins reads both halves out of the OpenSSH event log.
+//
+// There is no elevate branch and no access notice: the log is readable by the
+// account that logged in over it, so the failures either come back or the log
+// is not there at all. The POSIX path needs those because the journal is
+// privileged and wtmp is not — one source, two permissions. Here it is one
+// source with one permission.
+func (a *App) windowsLogins(ctx context.Context, conn *sshcore.Conn) (LoginsView, error) {
+	raw, err := a.runPowerShell(ctx, conn, sshcore.CommandPoll, adapter.WindowsLoginsScript())
+	if err != nil {
+		return LoginsView{}, err
+	}
+	got := adapter.ParseWindowsLogins(string(raw))
+	view := LoginsView{Logins: got.Logins, Auth: got.Auth, Window: authWindow, Access: EventAccessOK}
+	if !got.HasLog {
+		view.Access = EventAccessNoSSHLog
+		return view, nil
+	}
+	if !got.Since.IsZero() && time.Since(got.Since) < 24*time.Hour {
+		since := got.Since
+		view.Since = &since
+	}
+	return view, nil
 }

@@ -126,10 +126,9 @@ const (
 	// the network tab was the one view with no gate at all and kept polling a
 	// host that could not answer.
 	CapNetwork Capability = "network"
-	// CapSessions needs ps, which every POSIX host has. Windows has SSH logins
-	// too, but sshd there does not produce the "sshd: user@pts/N" process the
-	// parser reads, so it stays off until something reads Get-CimInstance
-	// Win32_LogonSession instead.
+	// CapSessions is who is logged in. Read from ps on POSIX and from the sshd
+	// process tree plus the OpenSSH event log on Windows — the two platforms
+	// answer the same question with completely different evidence.
 	CapSessions Capability = "sessions"
 	// CapEvents is the event timeline. It needs the journal, so it follows
 	// systemd — but being able to *reach* the journal is a second question that
@@ -178,7 +177,11 @@ func (i ServerInfo) Capabilities() map[Capability]bool {
 			// parser applies unchanged when the binary is present.
 			CapContainers: i.HasDocker,
 			CapNetwork:    true, // Get-NetIPAddress, Get-NetAdapter, Get-Net{TCP,UDP}
-			CapSessions:   false,
+			// Not ps — Windows OpenSSH does not write the "sshd: user@pts/0"
+			// process the POSIX parser reads. The session is the sshd child
+			// owned by the account that logged in, and the address comes from
+			// the OpenSSH event log. See windows_sessions.go.
+			CapSessions: true,
 			// The Windows event log sits where journald does, but nothing reads
 			// it yet.
 			CapEvents: false,

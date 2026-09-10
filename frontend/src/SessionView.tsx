@@ -93,7 +93,27 @@ export function SessionView({
   }
 
   const others = sessions.filter((s) => !s.self).length
-  const cols = '1fr 90px 1.3fr 90px 90px 1fr 90px'
+
+  // Three of these columns are filled from `w` and `who`, and a host can leave
+  // every one of them empty: a container writes no utmp, and Windows has no
+  // equivalent at all — there a terminal is not a pts device and there is no
+  // idle time to read. Six columns of "—" look like a broken table rather than
+  // an honest one, so a column nothing fills is not drawn.
+  const has = (pick: (s: SSHSession) => string | undefined) => sessions.some((s) => !!pick(s))
+  const showTTY = has((s) => s.tty)
+  const showIdle = has((s) => s.idle)
+  const showWhat = has((s) => s.what)
+  const cols = [
+    '1fr',
+    showTTY && '90px',
+    '1.3fr',
+    '90px',
+    showIdle && '90px',
+    showWhat && '1fr',
+    '90px',
+  ]
+    .filter(Boolean)
+    .join(' ')
 
   return (
     <div className="view">
@@ -114,11 +134,11 @@ export function SessionView({
       <div className="table session-table">
         <div className="thead" style={{ gridTemplateColumns: cols }}>
           <div>{t('사용자')}</div>
-          <div>{t('단말')}</div>
+          {showTTY && <div>{t('단말')}</div>}
           <div>{t('접속 위치')}</div>
           <div className="num">{t('경과')}</div>
-          <div className="num">{t('유휴')}</div>
-          <div>{t('실행 중')}</div>
+          {showIdle && <div className="num">{t('유휴')}</div>}
+          {showWhat && <div>{t('실행 중')}</div>}
           <div />
         </div>
         <div className="tbody" style={{ overflowY: 'auto' }}>
@@ -143,7 +163,7 @@ export function SessionView({
                   </span>
                 )}
               </div>
-              <div className="mono small muted">{s.tty || '—'}</div>
+              {showTTY && <div className="mono small muted">{s.tty || '—'}</div>}
               <div className="ellipsis mono small muted" title={s.from}>
                 {/* Blank when ss could not attach the process, which needs
                     privileges for other users' sockets. A missing column beats a
@@ -151,8 +171,8 @@ export function SessionView({
                 {s.from || '—'}
               </div>
               <div className="num mono small">{fmtElapsed(s.elapsed)}</div>
-              <div className="num mono small muted">{s.idle || '—'}</div>
-              <div className="ellipsis muted mono small">{s.what || '—'}</div>
+              {showIdle && <div className="num mono small muted">{s.idle || '—'}</div>}
+              {showWhat && <div className="ellipsis muted mono small">{s.what || '—'}</div>}
               <div>
                 <button
                   className="ghost small-btn"
@@ -184,8 +204,12 @@ export function SessionView({
             <dl className="keyinfo">
               <dt>{t('사용자')}</dt>
               <dd className="mono">{confirm.user}</dd>
-              <dt>{t('단말')}</dt>
-              <dd className="mono">{confirm.tty || t('(터미널 없음 — 명령 또는 전송)')}</dd>
+              {confirm.tty && (
+                <>
+                  <dt>{t('단말')}</dt>
+                  <dd className="mono">{confirm.tty}</dd>
+                </>
+              )}
               {confirm.from && (
                 <>
                   <dt>{t('접속 위치')}</dt>

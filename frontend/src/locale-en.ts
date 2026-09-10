@@ -39,7 +39,6 @@ export const en: Record<string, string> = {
   '(선택) bastion — 아직 미구현': '(optional) bastion — not implemented yet',
   '(선택) jump@bastion:22 — 한 단계만': '(optional) jump@bastion:22 — one hop only',
   '(선택) production': '(optional) production',
-  '(터미널 없음 — 명령 또는 전송)': '(no terminal — command or transfer)',
   '(표 폴백)': '(table fallback)',
   '+ 추가': '+ Add',
   '10.0.0.5 또는 example.com': '10.0.0.5 or example.com',
@@ -717,4 +716,7 @@ export const en: Record<string, string> = {
   '업데이트 적용': 'Install update',
   '새 터미널 — 셸 고르기': 'New terminal — pick a shell',
   '{shell} 여는 중…': 'Opening {shell}…',
+  'OpenSSH 로그가 비어 있습니다. 지금 이 연결도 SSH 이므로, 기록이 없는 것이 아니라 로그가 꺼져 있거나 지워진 것입니다.': 'The OpenSSH log is empty. This connection is itself SSH, so there is no record because the log is off or has been cleared \u2014 not because nobody logged in.',
+  '이벤트 뷰어의 응용 프로그램 및 서비스 로그 > OpenSSH > Operational 을 확인하세요.': 'Check Event Viewer, under Applications and Services Logs > OpenSSH > Operational.',
+  '{t} 이후 — 로그가 그 앞을 덮어썼습니다': 'since {t} \u2014 the log overwrote everything before it',
 }

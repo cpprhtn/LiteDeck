@@ -33,6 +33,12 @@ const (
 	EventAccessDenied EventAccess = "denied"
 	// EventAccessNoJournal means no systemd. The tab is not offered.
 	EventAccessNoJournal EventAccess = "no-journal"
+	// EventAccessNoSSHLog is the Windows shape of the same problem: sshd is
+	// plainly running, because we came in through it, but OpenSSH/Operational
+	// answered with nothing. The log is disabled or has been cleared — which is
+	// not "nobody has logged in", and is worth saying out loud to somebody
+	// looking for an intrusion.
+	EventAccessNoSSHLog EventAccess = "no-ssh-log"
 )
 
 // EventsView is what the timeline renders.

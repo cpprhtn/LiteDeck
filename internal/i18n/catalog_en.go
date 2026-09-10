@@ -119,4 +119,7 @@ var english = map[string]string{
 	"로그인 셸":                                                                  "Login shell",
 	"%s 가 응답하지 않습니다. 서버에서 `wsl --shutdown` 을 실행하거나, 그래도 안 되면 서버를 재시작해야 합니다.": "%s is not answering. Run `wsl --shutdown` on the server, and restart it if that does not help.",
 	"%s 를 시작하지 못했습니다 — 서버에서 `wsl -d %s` 가 되는지 확인해 주세요.":                      "Could not start %s — check that `wsl -d %s` works on the server.",
+	"PID %d 는 더 이상 SSH 세션이 아닙니다":                                             "PID %d is no longer an SSH session",
+	"이 세션은 LiteDeck 이 쓰고 있는 연결입니다":                                           "This is the session LiteDeck is using",
+	"세션이 끝나지 않았습니다. 다른 계정의 세션은 관리자 권한이 필요할 수 있습니다.":                          "The session did not end. Ending another account's session may need administrator rights.",
 }
