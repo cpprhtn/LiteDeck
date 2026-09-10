@@ -116,6 +116,14 @@ type SecurityView struct {
 	// RulesError says why the elevated read did not happen, when it did not.
 	RulesError string `json:"rulesError,omitempty"`
 
+	// Windows is the whole screen on a Windows host, and every field above is
+	// then empty. Not a translation of the fields above: Windows has a firewall
+	// and none of the other four things this view is shaped around — no
+	// fail2ban, no jail, no ban list, no drop counter — so the frontend renders
+	// a different screen rather than a Linux one with four blanks in it. See
+	// adapter/windows_security.go.
+	Windows *adapter.WindowsSecurity `json:"windows,omitempty"`
+
 	// rawAttackers is the unfiltered count, kept so the list can be filtered
 	// again once the lock reveals what is already blocked. Not sent: a screen
 	// showing addresses the firewall already handles is what this avoids.
@@ -326,6 +334,25 @@ func (a *App) HostSecurity(hostID string, elevate, force bool) (SecurityView, er
 
 	ctx, cancel := context.WithTimeout(context.Background(), pollTimeout)
 	defer cancel()
+
+	if info.Platform == adapter.PlatformWindows {
+		// No elevate branch and no lock. Windows has no sudo — an operation
+		// that needs administrator needs a different login — so each section
+		// either answered or it did not, and says which.
+		raw, err := a.runPowerShell(ctx, conn, sshcore.CommandPoll, adapter.WindowsSecurityScript())
+		if err != nil {
+			return SecurityView{}, err
+		}
+		win := adapter.ParseWindowsSecurity(string(raw))
+		view.Windows = &win
+		view.CanElevate = false
+		view.AttackersAccess = EventAccessOK
+		if !win.HasLog {
+			view.AttackersAccess = EventAccessNoSSHLog
+		}
+		a.security.put(hostID, gen, elevate, view)
+		return view, nil
+	}
 
 	// One round trip for the whole free half. Not polled: a firewall does not
 	// change between two ticks of a timer, and the audit that came before this

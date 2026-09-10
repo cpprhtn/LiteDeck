@@ -136,8 +136,9 @@ const (
 	// capability cannot say "yes, but empty unless you escalate", so the tab is
 	// enabled here and the view explains the rest.
 	CapEvents Capability = "events"
-	// CapFirewall is the security tab. It reads ufw, fail2ban, nftables and
-	// iptables — none of which exist on Windows.
+	// CapFirewall is the security tab. Both platforms have one now, and they
+	// share nothing but the question: ufw, fail2ban and nftables on Linux;
+	// Windows Firewall profiles, account lockout and Defender on Windows.
 	//
 	// This used to ride on CapServices, on the reasoning that "systemd is here"
 	// is what the free half of the read needs. That is true on Linux and wrong
@@ -185,9 +186,11 @@ func (i ServerInfo) Capabilities() map[Capability]bool {
 			// The Windows event log sits where journald does, but nothing reads
 			// it yet.
 			CapEvents: false,
-			// Windows Firewall is a different thing with a different vocabulary
-			// and nothing here reads it.
-			CapFirewall: false,
+			// A different thing with a different vocabulary, read on its own
+			// terms: profiles and rules rather than ufw, account lockout rather
+			// than fail2ban, and no ban list or drop counter at all. See
+			// windows_security.go.
+			CapFirewall: true,
 		}
 	}
 	return map[Capability]bool{

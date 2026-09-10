@@ -752,6 +752,71 @@ export interface SecurityView {
   rules?: string
   bans?: string
   rulesError?: string
+  /** The whole screen on a Windows host, and every field above is then empty.
+   *  Windows has a firewall and none of the other four things this view is
+   *  shaped around, so the tab renders a different screen rather than a Linux
+   *  one with four blanks in it. */
+  windows?: WindowsSecurity
+}
+
+export interface WindowsFirewallProfile {
+  /** Domain, Private or Public. */
+  name: string
+  enabled: boolean
+  /** The effective default for connections nothing allows. */
+  inboundBlocked: boolean
+  /** False where the profile says "NotConfigured", which is the stock state
+   *  and means the Windows default. A profile explicitly set to allow inbound
+   *  is somebody's decision and worth pointing at. */
+  inboundExplicit: boolean
+  logBlocked: boolean
+  /** The profile the live network is actually in. The other two are switched
+   *  on and not deciding anything right now. */
+  active: boolean
+}
+
+export interface WindowsFirewallRule {
+  protocol: string
+  port: string
+  profile: string
+  name: string
+}
+
+export interface WindowsLockout {
+  /** Bad attempts before the account locks. Zero means never. */
+  threshold: number
+  /** Minutes. */
+  duration: number
+  window: number
+}
+
+export interface WindowsDefender {
+  enabled: boolean
+  realTime: boolean
+  /** Days. On with month-old signatures is a different state from on. */
+  signatureAge: number
+}
+
+export interface WindowsSecurity {
+  profiles?: WindowsFirewallProfile[]
+  profilesRead: boolean
+  rules?: WindowsFirewallRule[]
+  rulesRead: boolean
+  /** Every enabled inbound allow, so the list can say "60 of 72". */
+  ruleTotal: number
+  /** Addresses inbound block rules name — the nearest thing Windows has to a
+   *  ban list. Empty on a stock machine. */
+  blockedRemote?: string[]
+  lockout?: WindowsLockout
+  defender?: WindowsDefender
+  failures?: FailureBucket[]
+  attackers?: Attacker[]
+  clusters?: SubnetCluster[]
+  failed: number
+  /** The oldest record the OpenSSH log still holds. It is circular and 1 MB;
+   *  on a box under attack it covered 77 minutes. */
+  logSince?: string
+  hasLog: boolean
 }
 
 export interface DigestView {
