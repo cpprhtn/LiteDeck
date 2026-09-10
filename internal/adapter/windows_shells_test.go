@@ -211,11 +211,11 @@ func TestWindowsShellCommandRefusesInjection(t *testing.T) {
 // the hung child is itself what wedges LxssManager. The inline call is the one
 // that comes back.
 func TestWSLProbeIsInline(t *testing.T) {
-	script := WSLProbeScript("Ubuntu-24.04", 10)
+	script := WSLProbeScript("Ubuntu-24.04", 45)
 	if strings.Contains(script, "Start-Process") {
 		t.Errorf("uses Start-Process, which does not return for wsl.exe:\n%s", script)
 	}
-	if strings.Contains(script, "Kill()") {
+	if strings.Contains(script, "Kill()") || strings.Contains(script, "Stop-Process") {
 		t.Errorf("kills the child, which is what wedges the service:\n%s", script)
 	}
 	for _, want := range []string{`wsl.exe -d 'Ubuntu-24.04' -- true`, "WSL=ready", "WSL=broken"} {
@@ -225,12 +225,62 @@ func TestWSLProbeIsInline(t *testing.T) {
 	}
 }
 
+// The bug that cost the user their WSL: one abandoned wake-up per press of the
+// button. Three were caught running on the server at once, fourteen seconds
+// apart, with LxssManager stuck behind them.
+//
+// The script must look before it starts one, and wait for whatever is already
+// in flight rather than adding to it.
+func TestWSLProbeNeverStacks(t *testing.T) {
+	script := WSLProbeScript("Ubuntu-24.04", 45)
+
+	// It has to find the ones already running before it starts its own.
+	probes := strings.Index(script, "Win32_Process")
+	start := strings.Index(script, "wsl.exe -d 'Ubuntu-24.04' -- true")
+	if probes < 0 || start < 0 || probes > start {
+		t.Fatalf("starts a wake-up before looking for one:\n%s", script)
+	}
+	if !strings.Contains(script, "WSL=starting") {
+		t.Error("no way to say a wake-up is already in flight, so the caller reports a failure and the user presses again")
+	}
+	if !strings.Contains(script, "(Probes).Count -gt 0") {
+		t.Error("does not wait for the wake-up already running")
+	}
+
+	// Only wake-ups count, not terminals. Our own WSL terminals are long-lived
+	// wsl.exe processes by design; counting those would report "still starting"
+	// forever on a healthy machine.
+	if !strings.Contains(script, `$_.CommandLine -like '*-- true'`) {
+		t.Errorf("counts every wsl.exe, including the terminals people have open:\n%s", script)
+	}
+}
+
+// A service already in StopPending cannot be helped by one more client, and the
+// three orphans that put it there arrived exactly that way.
+func TestWSLProbeRefusesToTouchAWedgedService(t *testing.T) {
+	script := WSLProbeScript("Ubuntu-24.04", 45)
+	svc := strings.Index(script, "StopPending")
+	start := strings.Index(script, "wsl.exe -d 'Ubuntu-24.04' -- true")
+	if svc < 0 {
+		t.Fatalf("never looks at LxssManager:\n%s", script)
+	}
+	if svc > start {
+		t.Error("starts a wake-up before checking whether the service is stuck")
+	}
+	// Slow and stuck need different words: one asks for patience, the other for
+	// a reboot.
+	if !strings.Contains(script, "TotalSeconds -gt 180") {
+		t.Error("a wake-up running for minutes is still reported as merely slow")
+	}
+}
+
 func TestParseWSLProbe(t *testing.T) {
 	for _, tc := range []struct {
 		raw  string
 		want WSLProbeState
 	}{
 		{"WSL=ready\r\n", WSLReady},
+		{"WSL=starting\r\n", WSLStarting},
 		{"WSL=hung\r\n", WSLHung},
 		{"WSL=broken\r\n", WSLBroken},
 		{"", WSLBroken},

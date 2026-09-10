@@ -1,6 +1,9 @@
 package adapter
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // Which shells a Windows box can give you a prompt in (§4.6).
 //
@@ -225,32 +228,96 @@ const (
 	WSLBroken WSLProbeState = iota
 	// WSLReady means the distribution ran a command and exited zero.
 	WSLReady
-	// WSLHung is what a context expiry means: nothing answered. On this
-	// platform that is LxssManager stuck, and only a reboot clears it.
+	// WSLHung is LxssManager stuck, or a wake-up that has been running for
+	// minutes. Measured: `wsl --shutdown` on a machine in this state took 242
+	// seconds and exited -1, and left the service in StopPending with the
+	// stuck processes still there. Only a reboot clears it.
 	WSLHung
+	// WSLStarting is a wake-up already in flight that has not finished yet.
+	// Not a failure: the virtual machine is coming up and pressing the button
+	// again in a moment will find it. The one thing that must not happen is a
+	// second wake-up on top of the first.
+	WSLStarting
 )
 
-// WSLProbeScript asks whether a distribution can still run a command.
+// wslProbeMark is what makes a wake-up recognisable in the process table.
 //
-// Inline, and deliberately not Start-Process. Three shapes were measured on
-// Windows 10 19045:
+// `-- true` is the whole point: it is what this probe runs and nothing else
+// does. Counting every wsl.exe instead would count the terminals people have
+// open — which are long-lived by design — and the probe would then report
+// "still starting" forever on a machine whose WSL is perfectly healthy.
+const wslProbeMark = "-- true"
+
+// wslStuckSeconds is when a wake-up stops being slow and starts being stuck.
 //
-//	inline in PowerShell        works — 3626, 123, 85, 85, 84, 121 ms over six runs
-//	`wsl … -- true` over Exec   works on a healthy box, but Windows sshd does not
-//	                            kill the child when the channel closes, so an
-//	                            abandoned probe keeps running and holds LxssManager
-//	Start-Process + WaitForExit never returns, whatever the window style — and
-//	                            killing the hung child is itself what wedges the
-//	                            service
+// A cold virtual machine was measured at 3.6 seconds. Three minutes is fifty
+// times that, and nothing that is going to answer takes it. Past that the
+// honest word is not "wait a little longer".
+const wslStuckSeconds = 180
+
+// WSLProbeScript wakes a distribution up, or reports why it will not wake.
 //
-// So there is no way to put a hard stop on it from the Windows side. The inline
-// call is the one that comes back, and it is bounded by the caller's context
-// instead. On a machine whose WSL has already stopped answering nothing here
-// helps; that is what the message tells the user to fix.
+// # The bug this shape exists to prevent
+//
+// The first version ran `wsl.exe -d X -- true` and let the caller's context
+// expire. Windows sshd does not kill the child when the channel closes, so
+// every timed-out wake-up stayed running. Caught on the user's server: three of
+// them, started 23:54:17, 23:54:31 and 23:54:45 — one per press of the button,
+// fourteen seconds apart — with LxssManager in StopPending behind them. The
+// check meant to protect WSL was the thing breaking it, once per attempt.
+//
+// So the rule is: never start a second wake-up while the first is running. The
+// script looks before it acts, waits for whatever is already in flight, and
+// starts one of its own only when nothing else is. At most one wsl.exe carrying
+// `-- true` can exist because of this app.
+//
+// # Why it does not kill the one it finds
+//
+// Killing a hung wsl.exe is what wedges LxssManager — measured, and the reason
+// an earlier "safety" fix made things worse. A wake-up that is still running is
+// also the thing warming the machine up, so waiting for it is both the safe
+// move and the useful one.
 func WSLProbeScript(distro string, seconds int) string {
-	_ = seconds // the bound is the caller's context; see above
 	return strings.Join([]string{
 		`$ErrorActionPreference = 'SilentlyContinue'`,
+		`function Probes { @(Get-CimInstance Win32_Process -Filter "Name='wsl.exe'" |`,
+		`  Where-Object { $_.CommandLine -like '*` + wslProbeMark + `' }) }`,
+
+		// Nothing is worth starting on a service that is already stuck. This is
+		// the state the three orphans left the machine in, and adding a fourth
+		// only made the message wrong as well.
+		//
+		// Both names, because which one is in charge depends on which WSL is
+		// installed. Windows 10's inbox WSL uses LxssManager; the separately
+		// installed WSL (2.x, the one Ubuntu 24.04 actually supports) uses
+		// WSLService and leaves LxssManager stopped for good. Checking only the
+		// first would watch the wrong service on a machine that had been fixed.
+		`foreach ($n in 'LxssManager','WSLService') {`,
+		`  $svc = Get-Service $n -EA SilentlyContinue`,
+		`  if ($svc -and ($svc.Status -eq 'StopPending' -or $svc.Status -eq 'StartPending')) {`,
+		`    Write-Output 'WSL=hung'`,
+		`    return`,
+		`  }`,
+		`}`,
+
+		// A wake-up already in flight. Wait for it rather than adding to it.
+		`$now = Get-Date`,
+		`foreach ($p in (Probes)) {`,
+		`  if (($now - $p.CreationDate).TotalSeconds -gt ` + strconv.Itoa(wslStuckSeconds) + `) {`,
+		`    Write-Output 'WSL=hung'`,
+		`    return`,
+		`  }`,
+		`}`,
+		`$deadline = $now.AddSeconds(` + strconv.Itoa(seconds) + `)`,
+		`while ((Get-Date) -lt $deadline -and (Probes).Count -gt 0) { Start-Sleep -Milliseconds 500 }`,
+		`if ((Probes).Count -gt 0) {`,
+		`  Write-Output 'WSL=starting'`,
+		`  return`,
+		`}`,
+
+		// Ours, and the only one. Inline and deliberately not Start-Process:
+		// Start-Process + WaitForExit never returns for wsl.exe on Windows 10
+		// 19045, measured both with a new window and with the console inherited.
 		`wsl.exe -d '` + distro + `' -- true 2>&1 | Out-Null`,
 		`if ($LASTEXITCODE -eq 0) { Write-Output 'WSL=ready' } else { Write-Output 'WSL=broken' }`,
 	}, "\n")
@@ -261,6 +328,8 @@ func ParseWSLProbe(raw string) WSLProbeState {
 	switch {
 	case strings.Contains(raw, "WSL=ready"):
 		return WSLReady
+	case strings.Contains(raw, "WSL=starting"):
+		return WSLStarting
 	case strings.Contains(raw, "WSL=hung"):
 		return WSLHung
 	default:

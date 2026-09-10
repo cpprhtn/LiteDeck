@@ -522,10 +522,23 @@ func (a *App) pickShell(hostID, id string) (adapter.Shell, bool) {
 
 // wslWarmTimeout bounds the check below.
 //
-// Measured on Windows 10 19045 with the virtual machine down: 3.6 seconds to
-// answer, and 0.1 once it is up. Eight is more than twice the slow case, and
-// the wait is enforced on the server rather than here — see warmWSL.
-const wslWarmSeconds = 10
+// Measured on Windows 10 19045, cold — the virtual machine down — across two
+// WSL builds:
+//
+//	inbox WSL (10.0.19041)   3.6 s, 3.9 s, 4.4 s
+//	WSL 2.7.13               11.5 s first after boot, 6.1 s after a shutdown
+//	either, warm             0.3 s
+//
+// Ten seconds was set from the first row and it was wrong for the second: a
+// healthy, up-to-date WSL takes longer to start cold than the old bound
+// allowed. The user's server gave up three times in a row and each attempt left
+// a process behind — see WSLProbeScript for what that cost.
+//
+// Forty-five is chosen against the failure rather than the measurement. Waiting
+// too long costs one slow terminal; giving up too early cost the whole service.
+// The wait is enforced on the server and the probe cannot stack, so a longer
+// bound buys nothing but patience.
+const wslWarmSeconds = 45
 
 // warmWSL makes sure the distribution can answer before a terminal is attached
 // to it.
@@ -559,10 +572,12 @@ func (a *App) warmWSL(hostID string, sh adapter.Shell) error {
 	if err != nil {
 		return err
 	}
-	// The only bound there is. Measured cold: 3.6 seconds; warm: 0.1. Ten is
-	// nearly three times the slow case, and when WSL is wedged no amount of
-	// waiting produces an answer.
-	ctx, cancel := context.WithTimeout(context.Background(), wslWarmSeconds*time.Second)
+	// Longer than the script's own deadline, so PowerShell gets to print its
+	// answer rather than being cut off mid-wait. Being cut off is the whole
+	// problem this feature has had: an answer that never arrives leaves a
+	// process nobody is waiting for.
+	ctx, cancel := context.WithTimeout(context.Background(),
+		(wslWarmSeconds+15)*time.Second)
 	defer cancel()
 
 	out, err := a.runPowerShell(ctx, conn, sshcore.CommandPoll,
@@ -574,10 +589,19 @@ func (a *App) warmWSL(hostID string, sh adapter.Shell) error {
 	switch state {
 	case adapter.WSLReady:
 		return nil
-	case adapter.WSLHung:
+	case adapter.WSLStarting:
+		// Not a failure, and pressing the button again is now safe: the script
+		// waits for the wake-up in flight instead of starting another.
 		return i18n.Errorf(
-			"%s 가 응답하지 않습니다. 서버에서 `wsl --shutdown` 을 실행하거나, 그래도 안 되면 서버를 재시작해야 합니다.",
-			distro)
+			"%s 가 아직 켜지는 중입니다. 잠시 뒤에 다시 눌러 주세요.", distro)
+	case adapter.WSLHung:
+		// Not "run wsl --shutdown", which is what this used to say. Measured on
+		// a machine in this state: the shutdown ran for 242 seconds, exited -1,
+		// and left LxssManager in StopPending with the stuck processes still
+		// there. Sending somebody to a four-minute command that does not work
+		// is worse than sending them nowhere.
+		return i18n.Errorf(
+			"서버의 WSL 서비스가 멈춰 있습니다. 서버를 재시작해야 합니다 — `wsl --shutdown` 으로는 풀리지 않는 상태입니다.")
 	default:
 		return i18n.Errorf("%s 를 시작하지 못했습니다 — 서버에서 `wsl -d %s` 가 되는지 확인해 주세요.", distro, distro)
 	}
