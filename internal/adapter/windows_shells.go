@@ -1,10 +1,6 @@
 package adapter
 
-import (
-	"strings"
-
-	"github.com/cpprhtn/LiteDeck/internal/i18n"
-)
+import "strings"
 
 // Which shells a Windows box can give you a prompt in (§4.6).
 //
@@ -74,8 +70,11 @@ func WindowsShellsScript() string {
 // available by definition and a box where it is missing could not have answered.
 func ParseWindowsShells(raw string) []Shell {
 	out := []Shell{{
-		ID:    "cmd",
-		Label: i18n.T("명령 프롬프트"),
+		ID: "cmd",
+		// Not "명령 프롬프트". Korean developers say cmd, and so does everyone
+		// else; the full name is what the Start menu calls it, not what anyone
+		// types or says.
+		Label: "cmd",
 		// Empty argv: this is sshd's DefaultShell on a stock install, and
 		// starting it by name would ignore an admin who changed it on purpose.
 		Argv: nil,

@@ -516,34 +516,34 @@ export function TerminalView({
               </span>
             </button>
           ))}
-          <div className="term-new" ref={shellRef}>
-            <button
-              className="ghost"
-              onClick={() => (shells.length > 1 ? setShellMenu((v) => !v) : void openTab())}
-              aria-haspopup={shells.length > 1 ? 'menu' : undefined}
-              aria-expanded={shells.length > 1 ? shellMenu : undefined}
-              title={shells.length > 1 ? t('새 터미널 — 셸 고르기') : t('새 터미널')}
-            >
-              +
-            </button>
-            {shellMenu && (
-              <div className="term-shell-menu" role="menu">
-                {shells.map((sh) => (
-                  <button
-                    key={sh.id}
-                    role="menuitem"
-                    className="rail-pop-item"
-                    onClick={() => {
-                      setShellMenu(false)
-                      void openTab(sh.id)
-                    }}
-                  >
-                    {sh.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+        </div>
+        <div className="term-new" ref={shellRef}>
+          <button
+            className="ghost"
+            onClick={() => (shells.length > 1 ? setShellMenu((v) => !v) : void openTab())}
+            aria-haspopup={shells.length > 1 ? 'menu' : undefined}
+            aria-expanded={shells.length > 1 ? shellMenu : undefined}
+            title={shells.length > 1 ? t('새 터미널 — 셸 고르기') : t('새 터미널')}
+          >
+            +
+          </button>
+          {shellMenu && (
+            <div className="term-shell-menu" role="menu">
+              {shells.map((sh) => (
+                <button
+                  key={sh.id}
+                  role="menuitem"
+                  className="rail-pop-item"
+                  onClick={() => {
+                    setShellMenu(false)
+                    void openTab(sh.id)
+                  }}
+                >
+                  {sh.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <span className="spacer" />
         <button

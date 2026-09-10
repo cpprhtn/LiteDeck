@@ -329,16 +329,25 @@
 }
 
 /* The new-terminal button, and the shell menu it drops on a host that has
-   more than one. */
+   more than one.
+   
+   It sits beside .term-tabs rather than inside it. That strip is
+   `overflow-x: auto` so many tabs can scroll, and an overflow that is not
+   `visible` clips its descendants — the menu was not being drawn behind the
+   terminal, it was being cut off by the scroll box it lived in. Out here it
+   also stays put when the tabs scroll, which is where a "new tab" button
+   should be anyway. */
 .term-new {
   position: relative;
   display: inline-flex;
+  flex: none;
 }
 .term-shell-menu {
   position: absolute;
   top: calc(100% + var(--sp-1));
   left: 0;
-  z-index: 20;
+  /* Above the terminal, which paints its own canvas. */
+  z-index: 50;
   min-width: 180px;
   padding: var(--sp-1);
   border: 1px solid var(--border-strong);
