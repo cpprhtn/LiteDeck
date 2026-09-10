@@ -114,9 +114,11 @@ func (r *terminalRegistry) closeHost(hostID string) {
 		}
 	}
 	r.mu.Unlock()
-	for _, t := range doomed {
-		_ = t.sess.Close()
-	}
+	closeTogether(func(yield func(*sshcore.PTYSession)) {
+		for _, t := range doomed {
+			yield(t.sess)
+		}
+	})
 }
 
 // closeAll ends every terminal, used on shutdown.
@@ -128,17 +130,27 @@ func (r *terminalRegistry) closeAll() {
 	}
 	r.all = make(map[string]*openTerminal)
 	r.mu.Unlock()
-	// Together, not one after another: each close gives the remote shell a
-	// moment to leave (see PTYSession.Close), and four tabs closing in series
-	// would make quitting the app take four of those.
+	closeTogether(func(yield func(*sshcore.PTYSession)) {
+		for _, s := range sessions {
+			yield(s)
+		}
+	})
+}
+
+// closeTogether ends every session at once.
+//
+// Each close gives the remote shell a moment to leave (see PTYSession.Close),
+// and four tabs closing one after another would make quitting the app — or
+// disconnecting a host — take four of those.
+func closeTogether(each func(yield func(*sshcore.PTYSession))) {
 	var wg sync.WaitGroup
-	for _, s := range sessions {
+	each(func(s *sshcore.PTYSession) {
 		wg.Add(1)
-		go func(s *sshcore.PTYSession) {
+		go func() {
 			defer wg.Done()
 			_ = s.Close()
-		}(s)
-	}
+		}()
+	})
 	wg.Wait()
 }
 
@@ -508,9 +520,15 @@ func (a *App) pickShell(hostID, id string) (adapter.Shell, bool) {
 	return list[0], false
 }
 
-// wslWarmTimeout bounds the check below. A cold WSL2 machine boots its VM in
-// ten to twenty seconds; one that has not answered in forty is not slow.
-const wslWarmTimeout = 40 * time.Second
+// wslWarmTimeout bounds the check below.
+//
+// Measured on Windows 10 19045 with the virtual machine down: 3.6 seconds to
+// answer, and 0.1 once it is up. Ten is three times the slow case.
+//
+// It was forty, which was worse than useless: when WSL is wedged nothing ever
+// answers, so forty seconds bought no extra chance of success and cost the user
+// forty seconds of a frozen window before being told no.
+const wslWarmTimeout = 10 * time.Second
 
 // warmWSL makes sure the distribution can answer before a terminal is attached
 // to it.
@@ -546,10 +564,17 @@ func (a *App) warmWSL(hostID string, sh adapter.Shell) error {
 	res, err := conn.ExecOpts(ctx, sshcore.ExecOptions{Kind: sshcore.CommandPoll},
 		"wsl.exe", "-d", distro, "--", "true")
 	if err != nil {
-		return i18n.Errorf("%s 를 시작하지 못했습니다: %v", distro, err)
+		// Almost always a wedged LxssManager: WSL that cannot start does not
+		// refuse, it stops answering, and it stays that way until the machine
+		// reboots. Saying so beats repeating the Go error, because the thing
+		// the person needs to know is that pressing the button again will not
+		// help.
+		return i18n.Errorf(
+			"%s 가 응답하지 않습니다. 서버에서 `wsl --shutdown` 을 실행하거나, 그래도 안 되면 서버를 재시작해야 합니다.",
+			distro)
 	}
 	if !res.OK() {
-		return i18n.Errorf("%s 가 응답하지 않습니다 — 터미널을 열면 WSL 이 멈춥니다", distro)
+		return i18n.Errorf("%s 를 시작하지 못했습니다 — 서버에서 `wsl -d %s` 가 되는지 확인해 주세요.", distro, distro)
 	}
 	return nil
 }
