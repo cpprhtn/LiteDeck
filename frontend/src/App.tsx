@@ -78,10 +78,7 @@ const TABS: { id: Tab; label: string; capability?: string }[] = [
   { id: 'containers', label: k('컨테이너'), capability: 'containers' },
   { id: 'network', label: k('네트워크'), capability: 'network' },
   { id: 'sessions', label: k('세션'), capability: 'sessions' },
-  // Gated on services because that is the capability that means "systemd is
-  // here and this app can ask it things" — the whole free half of the security
-  // read is one `systemctl show`.
-  { id: 'security', label: k('보안'), capability: 'services' },
+  { id: 'security', label: k('보안'), capability: 'firewall' },
   { id: 'monitor', label: k('모니터링'), capability: 'metrics' },
   { id: 'terminal', label: k('터미널') },
 ]
@@ -620,7 +617,10 @@ function renderTab(
       return <ProcessView hostID={hostID} visible={visible} onError={onError} />
 
     case 'security':
-      if (!info.capabilities?.services) {
+      // Its own capability, not the service one. Windows reports services for
+      // Win32_Service and has none of ufw, fail2ban or nftables, so riding on
+      // that one put this screen on a host it could not read at all.
+      if (!info.capabilities?.firewall) {
         return (
           <Unavailable
             title={t('이 서버의 보안 상태를 읽을 수 없습니다')}

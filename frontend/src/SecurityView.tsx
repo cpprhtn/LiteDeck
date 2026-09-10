@@ -18,6 +18,7 @@ import {
 import { Panel } from './ResourceView'
 import { LockButton, useSudoState } from './LockButton'
 import { k, t } from './i18n'
+import { WindowsSecurityView } from './WindowsSecurityView'
 
 // What is guarding this server (T-35).
 //
@@ -107,6 +108,20 @@ export function SecurityView({
 
   if (!view) {
     return <div className="placeholder">{busy ? t('읽는 중…') : t('보안 상태를 읽는 중…')}</div>
+  }
+
+  // Windows answers the same four questions with none of the same evidence, so
+  // it gets its own screen rather than this one with the missing three quarters
+  // blanked out. Everything below reads ufw, fail2ban and nftables.
+  if (view.windows) {
+    return (
+      <div className="view security-view">
+        <div className="security-body">
+          <WindowsSecurityView win={view.windows} listening={listening} />
+          <Logins logins={logins} fresh={fresh} />
+        </div>
+      </div>
+    )
   }
 
   const f2b = view.units.find((u) => u.name === 'fail2ban.service')
@@ -317,7 +332,7 @@ function seconds(v: string): string {
  *  bars from before that, which reads as "not handled". The ban marks are what
  *  turn a tall bar into a story — one that falls after a mark is the block
  *  working, and one that does not is somebody the block did not cover. */
-function FailureChart({ buckets, bans }: { buckets: FailureBucket[]; bans: Ban[] }) {
+export function FailureChart({ buckets, bans }: { buckets: FailureBucket[]; bans: Ban[] }) {
   const peak = Math.max(...buckets.map((b) => b.count), 1)
   const from = new Date(buckets[0].at).getTime()
   const to = new Date(buckets[buckets.length - 1].at).getTime() + 3_600_000

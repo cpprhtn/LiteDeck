@@ -5,6 +5,7 @@ import '@xterm/xterm/css/xterm.css'
 import {
   CloseTerminal,
   ListTerminals,
+  HostShells,
   OpenTerminal,
   ReadClipboard,
   ResizeTerminal,
@@ -13,6 +14,7 @@ import {
   TypedEntered,
   WriteTerminal,
   on,
+  type Shell,
   type TerminalInfo,
 } from './ipc'
 import { CommandHistory } from './CommandHistory'
@@ -320,22 +322,64 @@ export function TerminalView({
     }
   }, [histOpen, active])
   const opening = useRef(false)
+  // What this host can give a prompt in. One entry on Linux — the account's
+  // login shell, which nobody chose here — and several on Windows, where sshd
+  // hands out cmd.exe and the person at the keyboard probably wanted
+  // PowerShell. The menu only appears when there is something to choose.
+  const [shells, setShells] = useState<Shell[]>([])
+  const [shellMenu, setShellMenu] = useState(false)
+  // What is being opened right now, if anything. A WSL distribution whose
+  // virtual machine has idled out takes ten to twenty seconds to come back, and
+  // Go spends that waiting for it in the mode that is safe to wait in. Without
+  // this the window simply sits there, which is indistinguishable from broken —
+  // and what people do about that is press the button again.
+  const [opening_, setOpening] = useState<string | null>(null)
+  const shellRef = useRef<HTMLDivElement>(null)
   /** The host whose sessions this view has already taken over. */
   const adopted = useRef<string | null>(null)
 
-  const openTab = useCallback(async () => {
-    if (opening.current) return
-    opening.current = true
-    try {
-      const info = await OpenTerminal(hostID, { cols: 80, rows: 24 })
-      setTabs((t) => [...t, info])
-      setActive(info.id)
-    } catch (e) {
-      onError(String(e))
-    } finally {
-      opening.current = false
+  useEffect(() => {
+    let alive = true
+    void HostShells(hostID)
+      .then((list) => alive && setShells(list))
+      .catch(() => {})
+    return () => {
+      alive = false
     }
-  }, [hostID, onError])
+  }, [hostID])
+
+  useEffect(() => {
+    if (!shellMenu) return
+    const away = (e: MouseEvent) => {
+      if (!shellRef.current?.contains(e.target as Node)) setShellMenu(false)
+    }
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setShellMenu(false)
+    document.addEventListener('mousedown', away)
+    document.addEventListener('keydown', esc)
+    return () => {
+      document.removeEventListener('mousedown', away)
+      document.removeEventListener('keydown', esc)
+    }
+  }, [shellMenu])
+
+  const openTab = useCallback(
+    async (shellId?: string, label?: string) => {
+      if (opening.current) return
+      opening.current = true
+      setOpening(label ?? t('새 터미널'))
+      try {
+        const info = await OpenTerminal(hostID, { cols: 80, rows: 24, shellId })
+        setTabs((t) => [...t, info])
+        setActive(info.id)
+      } catch (e) {
+        onError(String(e))
+      } finally {
+        opening.current = false
+        setOpening(null)
+      }
+    },
+    [hostID, onError, t],
+  )
 
   // Adopt whatever is already running, and only open a new terminal if there is
   // nothing to adopt.
@@ -483,10 +527,41 @@ export function TerminalView({
               </span>
             </button>
           ))}
-          <button className="ghost" onClick={() => void openTab()} title={t('새 터미널')}>
+        </div>
+        <div className="term-new" ref={shellRef}>
+          <button
+            className="ghost"
+            onClick={() => (shells.length > 1 ? setShellMenu((v) => !v) : void openTab())}
+            aria-haspopup={shells.length > 1 ? 'menu' : undefined}
+            aria-expanded={shells.length > 1 ? shellMenu : undefined}
+            title={shells.length > 1 ? t('새 터미널 — 셸 고르기') : t('새 터미널')}
+          >
             +
           </button>
+          {shellMenu && (
+            <div className="term-shell-menu" role="menu">
+              {shells.map((sh) => (
+                <button
+                  key={sh.id}
+                  role="menuitem"
+                  className="rail-pop-item"
+                  onClick={() => {
+                    setShellMenu(false)
+                    void openTab(sh.id)
+                  }}
+                >
+                  {sh.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
+        {opening_ && (
+          <span className="term-opening muted small">
+            <span className="spin" aria-hidden="true" />
+            {t('{shell} 여는 중…', { shell: opening_ })}
+          </span>
+        )}
         <span className="spacer" />
         <button
           className="ghost small-btn"

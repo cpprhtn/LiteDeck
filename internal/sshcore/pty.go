@@ -40,6 +40,14 @@ type PTYOptions struct {
 	// Windows makes the shell cmd.exe rather than a POSIX one, which changes
 	// the only question this package ever asks a live terminal (§4.6a).
 	Windows bool
+
+	// Line is a ready-made command line to start instead of the login shell.
+	//
+	// Windows only, and deliberately a string rather than argv: the quoting
+	// rules there are per-shell — cmd, PowerShell and wsl each want a different
+	// spelling of "start here" — so the adapter builds the whole line and this
+	// package does not try to quote it a second time.
+	Line string
 }
 
 // PTYSession is one live terminal.
@@ -48,6 +56,9 @@ type PTYSession struct {
 	stdin   io.WriteCloser
 	release func() // returns the long-lived channel slot
 	windows bool
+	// done is closed when the remote command has ended. Close waits on it
+	// briefly so the shell gets to leave on its own — see Close.
+	done chan struct{}
 
 	mu     sync.Mutex
 	closed bool
@@ -136,7 +147,7 @@ func (c *Conn) OpenPTY(
 	// With a PTY the server merges stderr into stdout, so only one reader is
 	// needed; asking for a separate stderr pipe would just sit idle.
 
-	p := &PTYSession{sess: sess, stdin: stdin, release: release, windows: opts.Windows}
+	p := &PTYSession{sess: sess, stdin: stdin, release: release, windows: opts.Windows, done: make(chan struct{})}
 
 	startErr := p.start(opts)
 	if startErr != nil {
@@ -158,6 +169,7 @@ func (c *Conn) OpenPTY(
 			}
 		}
 		waitErr := sess.Wait()
+		close(p.done)
 		p.Close()
 		if onClose != nil {
 			onClose(waitErr)
@@ -170,6 +182,11 @@ func (c *Conn) OpenPTY(
 // start launches either a login shell or a specific command.
 func (p *PTYSession) start(opts PTYOptions) error {
 	switch {
+	case opts.Line != "":
+		if err := p.sess.Start(opts.Line); err != nil {
+			return fmt.Errorf("sshcore: start terminal shell: %w", err)
+		}
+
 	case len(opts.Exec) > 0:
 		line, err := shellquote.Join(opts.Exec...)
 		if err != nil {
@@ -186,7 +203,7 @@ func (p *PTYSession) start(opts PTYOptions) error {
 			return fmt.Errorf("sshcore: start terminal command: %w", err)
 		}
 
-	case opts.InitialDir != "":
+	case opts.InitialDir != "" && !opts.Windows:
 		dir, err := shellquote.Quote(opts.InitialDir)
 		if err != nil {
 			return fmt.Errorf("sshcore: quote directory: %w", err)
@@ -204,6 +221,13 @@ func (p *PTYSession) start(opts PTYOptions) error {
 	}
 	return nil
 }
+
+// exitGrace is how long Close waits for the shell to leave after being told to.
+//
+// Short: it is paid on every terminal that is still open when the app quits,
+// and closeAll runs them together so the wall-clock cost is one grace, not one
+// per tab.
+const exitGrace = 1200 * time.Millisecond
 
 // probeTimeout bounds how long the screen may stay frozen waiting for an
 // answer. A shell that is busy running something will not reply, and the user
@@ -341,6 +365,25 @@ func (p *PTYSession) Close() error {
 	}
 	p.closed = true
 	p.mu.Unlock()
+
+	// Ask the shell to leave before the channel goes.
+	//
+	// On Windows this is not politeness. Closing the channel out from under
+	// wsl.exe leaves it holding LxssManager open; the service goes to
+	// StopPending and WSL is then broken for every program on that machine
+	// until it reboots. Measured on Windows 10 19045: several sessions torn
+	// down this way and `wsl -- echo` stopped answering.
+	//
+	// Bounded, and the wait is skipped entirely when the remote end has already
+	// finished — which is the common case, because the reader closes done
+	// before calling this.
+	if p.windows {
+		_, _ = p.stdin.Write([]byte("exit\r\n"))
+		select {
+		case <-p.done:
+		case <-time.After(exitGrace):
+		}
+	}
 
 	_ = p.stdin.Close()
 	err := p.sess.Close()

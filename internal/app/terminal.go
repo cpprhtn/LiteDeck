@@ -41,6 +41,9 @@ type TerminalOptions struct {
 	Dir string `json:"dir,omitempty"`
 	// ContainerID opens a shell inside that container instead of on the host.
 	ContainerID string `json:"containerId,omitempty"`
+	// ShellID picks which shell to start, from HostShells. Empty means the
+	// first one, which is what sshd would have given anyway.
+	ShellID string `json:"shellId,omitempty"`
 }
 
 // openTerminal is one live session and what the UI needs to show it again.
@@ -111,9 +114,11 @@ func (r *terminalRegistry) closeHost(hostID string) {
 		}
 	}
 	r.mu.Unlock()
-	for _, t := range doomed {
-		_ = t.sess.Close()
-	}
+	closeTogether(func(yield func(*sshcore.PTYSession)) {
+		for _, t := range doomed {
+			yield(t.sess)
+		}
+	})
 }
 
 // closeAll ends every terminal, used on shutdown.
@@ -125,9 +130,28 @@ func (r *terminalRegistry) closeAll() {
 	}
 	r.all = make(map[string]*openTerminal)
 	r.mu.Unlock()
-	for _, s := range sessions {
-		_ = s.Close()
-	}
+	closeTogether(func(yield func(*sshcore.PTYSession)) {
+		for _, s := range sessions {
+			yield(s)
+		}
+	})
+}
+
+// closeTogether ends every session at once.
+//
+// Each close gives the remote shell a moment to leave (see PTYSession.Close),
+// and four tabs closing one after another would make quitting the app — or
+// disconnecting a host — take four of those.
+func closeTogether(each func(yield func(*sshcore.PTYSession))) {
+	var wg sync.WaitGroup
+	each(func(s *sshcore.PTYSession) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = s.Close()
+		}()
+	})
+	wg.Wait()
 }
 
 // ListTerminals reports the sessions already open on a host (§4.6).
@@ -163,6 +187,21 @@ func (a *App) OpenTerminal(hostID string, opts TerminalOptions) (TerminalInfo, e
 		Windows:    a.isWindows(hostID),
 	}
 	title := hostID
+	// Windows hands out whatever sshd's DefaultShell says, and that is usually
+	// cmd. Which shell the user asked for decides the whole command line,
+	// including how "start in this directory" is spelled — the three shells do
+	// not agree on that and there is no line that works in all of them.
+	if opts.ContainerID == "" && a.isWindows(hostID) {
+		if sh, exact := a.pickShell(hostID, opts.ShellID); sh.ID != "" {
+			if err := a.warmWSL(hostID, sh); err != nil {
+				return TerminalInfo{}, err
+			}
+			ptyOpts.Line = adapter.WindowsShellCommand(sh, opts.Dir)
+			if exact && sh.ID != "cmd" {
+				title = sh.Label
+			}
+		}
+	}
 	if opts.ContainerID != "" {
 		runtime, err := a.containerRuntime(hostID)
 		if err != nil {
@@ -393,4 +432,177 @@ func shortID(id string) string {
 		return id[:12]
 	}
 	return id
+}
+
+// Which shells this host can open (§4.6).
+//
+// One entry on a POSIX host — the account's login shell, which the user did not
+// choose here and should not be asked about. Several on Windows, where sshd
+// hands out cmd.exe by default and the person at the keyboard probably wanted
+// PowerShell.
+//
+// Cached per connection: the answer is a property of the machine, and a menu
+// that costs a round trip every time it opens is a menu that feels broken.
+type shellCache struct {
+	mu   sync.Mutex
+	byID map[string]shellEntry
+}
+
+type shellEntry struct {
+	gen    uint64
+	shells []adapter.Shell
+}
+
+func newShellCache() *shellCache { return &shellCache{byID: map[string]shellEntry{}} }
+
+func (c *shellCache) get(id string, gen uint64) ([]adapter.Shell, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.byID[id]
+	if !ok || e.gen != gen {
+		return nil, false
+	}
+	return e.shells, true
+}
+
+func (c *shellCache) put(id string, gen uint64, shells []adapter.Shell) {
+	c.mu.Lock()
+	c.byID[id] = shellEntry{gen: gen, shells: shells}
+	c.mu.Unlock()
+}
+
+func (c *shellCache) forget(id string) {
+	c.mu.Lock()
+	delete(c.byID, id)
+	c.mu.Unlock()
+}
+
+// HostShells lists what a new terminal on this host could start.
+func (a *App) HostShells(hostID string) ([]adapter.Shell, error) {
+	if !a.isWindows(hostID) {
+		// Nothing to choose. The empty argv is "whatever sshd gives", which on
+		// a POSIX host is the login shell the account already has.
+		return []adapter.Shell{{ID: "login", Label: i18n.T("로그인 셸")}}, nil
+	}
+	gen := a.mgr.Generation(hostID)
+	if got, ok := a.shells.get(hostID, gen); ok {
+		return got, nil
+	}
+	conn, err := a.mgr.Conn(hostID)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), pollTimeout)
+	defer cancel()
+
+	raw, err := a.runPowerShell(ctx, conn, sshcore.CommandPoll, adapter.WindowsShellsScript())
+	if err != nil {
+		// A probe that failed is not a reason to refuse a terminal. cmd is
+		// always there; the menu just has one entry until the next connection.
+		return adapter.ParseWindowsShells(""), nil
+	}
+	shells := adapter.ParseWindowsShells(string(raw))
+	a.shells.put(hostID, gen, shells)
+	return shells, nil
+}
+
+// pickShell finds the requested shell, falling back to the first one.
+func (a *App) pickShell(hostID, id string) (adapter.Shell, bool) {
+	list, err := a.HostShells(hostID)
+	if err != nil || len(list) == 0 {
+		return adapter.Shell{}, false
+	}
+	for _, s := range list {
+		if s.ID == id {
+			return s, true
+		}
+	}
+	return list[0], false
+}
+
+// wslWarmTimeout bounds the check below.
+//
+// Measured on Windows 10 19045, cold — the virtual machine down — across two
+// WSL builds:
+//
+//	inbox WSL (10.0.19041)   3.6 s, 3.9 s, 4.4 s
+//	WSL 2.7.13               11.5 s first after boot, 6.1 s after a shutdown
+//	either, warm             0.3 s
+//
+// Ten seconds was set from the first row and it was wrong for the second: a
+// healthy, up-to-date WSL takes longer to start cold than the old bound
+// allowed. The user's server gave up three times in a row and each attempt left
+// a process behind — see WSLProbeScript for what that cost.
+//
+// Forty-five is chosen against the failure rather than the measurement. Waiting
+// too long costs one slow terminal; giving up too early cost the whole service.
+// The wait is enforced on the server and the probe cannot stack, so a longer
+// bound buys nothing but patience.
+const wslWarmSeconds = 45
+
+// warmWSL makes sure the distribution can answer before a terminal is attached
+// to it.
+//
+// # Why there is a check at all
+//
+// A cold WSL2 machine spends about three and a half seconds starting its
+// virtual machine, and `wsl.exe` asked for an interactive session on a
+// distribution that cannot start does not fail — it hangs, holding LxssManager
+// open. The service goes to StopPending and WSL is then broken for every
+// program on that machine until it reboots. A terminal that will not open is a
+// small problem; a terminal that breaks a system service is not.
+//
+// # Why it goes through PowerShell and kills its own child
+//
+// The obvious version — run `wsl.exe -d X -- true` over the Exec channel and
+// let the context expire — was worse than nothing. Windows sshd does not kill
+// the child when the channel closes, so every timed-out probe left a wsl.exe
+// running forever. Caught in the act: two of them, aged one and one and a half
+// minutes, both `wsl.exe -d Ubuntu-24.04 -- true`, on a machine whose WSL had
+// stopped answering. The check meant to protect WSL was piling onto it.
+//
+// So the timeout is enforced where the process is. PowerShell starts it, waits,
+// and kills it if it does not finish — the probe cannot outlive its own answer.
+func (a *App) warmWSL(hostID string, sh adapter.Shell) error {
+	distro := strings.TrimPrefix(sh.ID, "wsl:")
+	if distro == sh.ID {
+		return nil // not a WSL shell
+	}
+	conn, err := a.mgr.Conn(hostID)
+	if err != nil {
+		return err
+	}
+	// Longer than the script's own deadline, so PowerShell gets to print its
+	// answer rather than being cut off mid-wait. Being cut off is the whole
+	// problem this feature has had: an answer that never arrives leaves a
+	// process nobody is waiting for.
+	ctx, cancel := context.WithTimeout(context.Background(),
+		(wslWarmSeconds+15)*time.Second)
+	defer cancel()
+
+	out, err := a.runPowerShell(ctx, conn, sshcore.CommandPoll,
+		adapter.WSLProbeScript(distro, wslWarmSeconds))
+	state := adapter.WSLHung
+	if err == nil {
+		state = adapter.ParseWSLProbe(string(out))
+	}
+	switch state {
+	case adapter.WSLReady:
+		return nil
+	case adapter.WSLStarting:
+		// Not a failure, and pressing the button again is now safe: the script
+		// waits for the wake-up in flight instead of starting another.
+		return i18n.Errorf(
+			"%s 가 아직 켜지는 중입니다. 잠시 뒤에 다시 눌러 주세요.", distro)
+	case adapter.WSLHung:
+		// Not "run wsl --shutdown", which is what this used to say. Measured on
+		// a machine in this state: the shutdown ran for 242 seconds, exited -1,
+		// and left LxssManager in StopPending with the stuck processes still
+		// there. Sending somebody to a four-minute command that does not work
+		// is worse than sending them nowhere.
+		return i18n.Errorf(
+			"서버의 WSL 서비스가 멈춰 있습니다. 서버를 재시작해야 합니다 — `wsl --shutdown` 으로는 풀리지 않는 상태입니다.")
+	default:
+		return i18n.Errorf("%s 를 시작하지 못했습니다 — 서버에서 `wsl -d %s` 가 되는지 확인해 주세요.", distro, distro)
+	}
 }

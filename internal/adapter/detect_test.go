@@ -36,3 +36,42 @@ func TestCPUModelTakesTheFirstBlock(t *testing.T) {
 		t.Errorf("%q, want the first", got)
 	}
 }
+
+// The security tab rode on CapServices, which Windows reports for
+// Win32_Service. So the tab appeared on a Windows host, ran `sh -c` against
+// cmd, got an empty string back, and the screen died on `units.find of null`.
+//
+// A capability that means two things gets read as the wrong one. Windows has
+// its own security read now and the tab is on there again — but from its own
+// entry in the table, so switching one off never silently switches the other.
+func TestFirewallIsItsOwnCapability(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		info     ServerInfo
+		services bool
+		firewall bool
+	}{
+		{"windows", ServerInfo{Platform: PlatformWindows}, true, true},
+		{"linux with systemd", ServerInfo{Platform: PlatformLinux, HasSystemd: true}, true, true},
+		{"linux without systemd", ServerInfo{Platform: PlatformLinux}, false, false},
+		{"no adapter", ServerInfo{Platform: PlatformUnknown}, false, false},
+	} {
+		caps := tc.info.Capabilities()
+		if got := caps[CapServices]; got != tc.services {
+			t.Errorf("%s: services = %v, want %v", tc.name, got, tc.services)
+		}
+		if got := caps[CapFirewall]; got != tc.firewall {
+			t.Errorf("%s: firewall = %v, want %v", tc.name, got, tc.firewall)
+		}
+	}
+
+	// A platform with no adapter gets nothing, whatever else it claims to have.
+	// This is the case that made the original bug reachable: the table used to
+	// hand out capabilities before asking whether the host was POSIX.
+	none := ServerInfo{Platform: PlatformUnknown, HasSystemd: true, HasDocker: true}.Capabilities()
+	for cap, on := range none {
+		if on {
+			t.Errorf("unsupported platform offered %s", cap)
+		}
+	}
+}

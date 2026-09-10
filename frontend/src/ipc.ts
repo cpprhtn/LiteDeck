@@ -330,6 +330,8 @@ export interface TerminalOptions {
   rows: number
   dir?: string
   containerId?: string
+  /** Which shell to start, from HostShells. Windows only in practice. */
+  shellId?: string
 }
 
 /** One mounted filesystem (§4.7). */
@@ -427,7 +429,7 @@ export interface ServerEvent {
  */
 export interface EventsView {
   events: ServerEvent[]
-  access: 'ok' | 'needs-sudo' | 'denied' | 'no-journal'
+  access: 'ok' | 'needs-sudo' | 'denied' | 'no-journal' | 'no-ssh-log'
   range: '1h' | '24h' | '7d'
   /** The read hit its line cap, so the window shown is narrower than asked for. */
   truncated: boolean
@@ -494,8 +496,11 @@ export interface LoginsView {
   auth: AuthSummary
   /** About the failures alone. wtmp needs no journal, so the successes arrive
    *  whatever this says. */
-  access: 'ok' | 'needs-sudo' | 'denied' | 'no-journal'
+  access: 'ok' | 'needs-sudo' | 'denied' | 'no-journal' | 'no-ssh-log'
   window: string
+  /** The oldest record the source still holds, when the log rolled over before
+   *  the window did. Absent when the window is the whole truth. */
+  since?: string
 }
 
 /** What happened while nobody was watching (T-29). */
@@ -627,6 +632,13 @@ export interface SubnetCluster {
 }
 
 /** Where the installer got to. Mirrors app.UpdateState. */
+/** One prompt a host can give. Mirrors adapter.Shell. */
+export interface Shell {
+  id: string
+  label: string
+  argv?: string[]
+}
+
 /** The sudo lock for one connection. Mirrors app.SudoState. */
 export interface SudoState {
   hostID: string
@@ -740,6 +752,71 @@ export interface SecurityView {
   rules?: string
   bans?: string
   rulesError?: string
+  /** The whole screen on a Windows host, and every field above is then empty.
+   *  Windows has a firewall and none of the other four things this view is
+   *  shaped around, so the tab renders a different screen rather than a Linux
+   *  one with four blanks in it. */
+  windows?: WindowsSecurity
+}
+
+export interface WindowsFirewallProfile {
+  /** Domain, Private or Public. */
+  name: string
+  enabled: boolean
+  /** The effective default for connections nothing allows. */
+  inboundBlocked: boolean
+  /** False where the profile says "NotConfigured", which is the stock state
+   *  and means the Windows default. A profile explicitly set to allow inbound
+   *  is somebody's decision and worth pointing at. */
+  inboundExplicit: boolean
+  logBlocked: boolean
+  /** The profile the live network is actually in. The other two are switched
+   *  on and not deciding anything right now. */
+  active: boolean
+}
+
+export interface WindowsFirewallRule {
+  protocol: string
+  port: string
+  profile: string
+  name: string
+}
+
+export interface WindowsLockout {
+  /** Bad attempts before the account locks. Zero means never. */
+  threshold: number
+  /** Minutes. */
+  duration: number
+  window: number
+}
+
+export interface WindowsDefender {
+  enabled: boolean
+  realTime: boolean
+  /** Days. On with month-old signatures is a different state from on. */
+  signatureAge: number
+}
+
+export interface WindowsSecurity {
+  profiles?: WindowsFirewallProfile[]
+  profilesRead: boolean
+  rules?: WindowsFirewallRule[]
+  rulesRead: boolean
+  /** Every enabled inbound allow, so the list can say "60 of 72". */
+  ruleTotal: number
+  /** Addresses inbound block rules name — the nearest thing Windows has to a
+   *  ban list. Empty on a stock machine. */
+  blockedRemote?: string[]
+  lockout?: WindowsLockout
+  defender?: WindowsDefender
+  failures?: FailureBucket[]
+  attackers?: Attacker[]
+  clusters?: SubnetCluster[]
+  failed: number
+  /** The oldest record the OpenSSH log still holds. It is circular and 1 MB;
+   *  on a box under attack it covered 77 minutes. */
+  logSince?: string
+  hasLog: boolean
 }
 
 export interface DigestView {
@@ -774,7 +851,7 @@ export interface UpdateStatus {
 
 export interface CommandHistoryView {
   runs: SudoRun[]
-  access: 'ok' | 'needs-sudo' | 'denied' | 'no-journal'
+  access: 'ok' | 'needs-sudo' | 'denied' | 'no-journal' | 'no-ssh-log'
   range: '1h' | '24h' | '7d'
   truncated: boolean
   /** How many commands looked like they carried a credential. A count, not a
@@ -1050,6 +1127,7 @@ interface Bindings {
   UpdateStatus(): Promise<UpdateState>
   SecurityLogins(id: string): Promise<SecurityLoginsView>
   RememberSecurityLogins(id: string, addrs: string[]): Promise<string[]>
+  HostShells(id: string): Promise<Shell[]>
   UnlockSecurity(id: string): Promise<boolean>
   HostSudoState(id: string): Promise<SudoState>
   SudoUnlocked(id: string): Promise<boolean>
@@ -1304,6 +1382,7 @@ export const HostSecurity = (id: string, elevate: boolean, force = false) =>
 export const SecurityLogins = (id: string) => api().SecurityLogins(id)
 export const RememberSecurityLogins = (id: string, addrs: string[]) =>
   api().RememberSecurityLogins(id, addrs)
+export const HostShells = (id: string) => api().HostShells(id)
 export const UnlockSecurity = (id: string) => api().UnlockSecurity(id)
 export const HostSudoState = (id: string) => api().HostSudoState(id)
 export const SudoUnlocked = (id: string) => api().SudoUnlocked(id)

@@ -156,6 +156,7 @@ func (a *App) DisconnectHost(hostID string) error {
 	a.digests.forget(hostID)
 	// The security tab's unlock dies with the connection, by design.
 	a.unlocked.forget(hostID)
+	a.shells.forget(hostID)
 	a.emitSudoState(hostID)
 	a.dropped.forget(hostID)
 	a.security.forget(hostID)

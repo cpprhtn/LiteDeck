@@ -81,9 +81,19 @@ type typedLog struct {
 // leaves the previous version rather than half a line.
 const typedLogMax = 500
 
+// newTypedLog opens the typed-command history in dir.
+//
+// An empty dir means "remember, but write nothing". The alternative — joining
+// "" with the file name — produces a relative path, and a relative path in a
+// GUI app is the working directory the launcher happened to pick. That is how
+// typed.json ended up in a source tree.
 func newTypedLog(dir string) *typedLog {
+	path := ""
+	if dir != "" {
+		path = filepath.Join(dir, "typed.json")
+	}
 	l := &typedLog{
-		path: filepath.Join(dir, "typed.json"),
+		path: path,
 		byID: map[string][]TypedCommand{},
 		cwd:  map[string]*adapter.CdTracker{},
 		home: map[string]string{},
@@ -93,6 +103,9 @@ func newTypedLog(dir string) *typedLog {
 }
 
 func (l *typedLog) load() {
+	if l.path == "" {
+		return
+	}
 	b, err := os.ReadFile(l.path)
 	if err != nil {
 		return
@@ -107,6 +120,9 @@ func (l *typedLog) load() {
 }
 
 func (l *typedLog) save() {
+	if l.path == "" {
+		return
+	}
 	b, err := json.Marshal(l.byID)
 	if err != nil {
 		return

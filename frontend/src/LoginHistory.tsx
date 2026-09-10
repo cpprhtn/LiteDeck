@@ -62,6 +62,7 @@ export function LoginHistory({ hostID }: { hostID: string }) {
 
   const auth = view.auth
   const readable = view.access === 'ok'
+  const showTTY = view.logins.some((l) => !!l.tty)
 
   return (
     <div className="login-hist">
@@ -78,7 +79,15 @@ export function LoginHistory({ hostID }: { hostID: string }) {
               {t('실패 {n}건', { n: auth.failed })}
             </span>
             <span className="muted">{t('성공 {n}건', { n: auth.accepted })}</span>
-            <span className="muted small">{t('최근 24시간')}</span>
+            <span className="muted small">
+              {/* Not always a day. On Windows the OpenSSH log is circular and
+                  1 MB, and on a box taking a password attack it held 77
+                  minutes; calling that "the last 24 hours" would make an attack
+                  that has run all day look like it had just started. */}
+              {view.since
+                ? t('{t} 이후 — 로그가 그 앞을 덮어썼습니다', { t: fmtWhen(view.since) })
+                : t('최근 24시간')}
+            </span>
           </div>
 
           {auth.failed > 0 && (
@@ -116,10 +125,14 @@ export function LoginHistory({ hostID }: { hostID: string }) {
         </div>
       )}
 
+      {/* The terminal column is filled from wtmp's tty field. Windows has no
+          such field — a login there is a process, not a pts device — so on that
+          platform the column is a full-height row of dashes. A column nothing
+          fills is not drawn, the same rule the session table above uses. */}
       {view.logins.length === 0 ? (
         <p className="muted small login-hist-empty">{t('기록된 접속이 없습니다.')}</p>
       ) : (
-        <div className="login-list">
+        <div className="login-list" data-tty={showTTY || undefined}>
           {view.logins.map((l, i) => (
             <div key={`${l.at}-${i}`} className="login-row" data-boot={l.boot || undefined}>
               <span className="mono login-who">
@@ -133,7 +146,7 @@ export function LoginHistory({ hostID }: { hostID: string }) {
                     record. */}
                 {l.boot ? t('재부팅') : l.user}
               </span>
-              <span className="mono small muted login-tty">{l.tty || '—'}</span>
+              {showTTY && <span className="mono small muted login-tty">{l.tty || '—'}</span>}
               <span className="mono small muted ellipsis login-from" title={l.from}>
                 {l.from || '—'}
               </span>

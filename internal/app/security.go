@@ -116,6 +116,14 @@ type SecurityView struct {
 	// RulesError says why the elevated read did not happen, when it did not.
 	RulesError string `json:"rulesError,omitempty"`
 
+	// Windows is the whole screen on a Windows host, and every field above is
+	// then empty. Not a translation of the fields above: Windows has a firewall
+	// and none of the other four things this view is shaped around — no
+	// fail2ban, no jail, no ban list, no drop counter — so the frontend renders
+	// a different screen rather than a Linux one with four blanks in it. See
+	// adapter/windows_security.go.
+	Windows *adapter.WindowsSecurity `json:"windows,omitempty"`
+
 	// rawAttackers is the unfiltered count, kept so the list can be filtered
 	// again once the lock reveals what is already blocked. Not sent: a screen
 	// showing addresses the firewall already handles is what this avoids.
@@ -303,7 +311,7 @@ func (u *sudoUnlock) forget(id string) {
 // force is the refresh button, which means "ask again" and so goes past the
 // cache. Everything else — a tab switch, a re-render — takes what is there.
 func (a *App) HostSecurity(hostID string, elevate, force bool) (SecurityView, error) {
-	info, err := a.requireCapability(hostID, adapter.CapServices, i18n.S("보안 상태"))
+	info, err := a.requireCapability(hostID, adapter.CapFirewall, i18n.S("보안 상태"))
 	if err != nil {
 		return SecurityView{}, err
 	}
@@ -327,6 +335,25 @@ func (a *App) HostSecurity(hostID string, elevate, force bool) (SecurityView, er
 	ctx, cancel := context.WithTimeout(context.Background(), pollTimeout)
 	defer cancel()
 
+	if info.Platform == adapter.PlatformWindows {
+		// No elevate branch and no lock. Windows has no sudo — an operation
+		// that needs administrator needs a different login — so each section
+		// either answered or it did not, and says which.
+		raw, err := a.runPowerShell(ctx, conn, sshcore.CommandPoll, adapter.WindowsSecurityScript())
+		if err != nil {
+			return SecurityView{}, err
+		}
+		win := adapter.ParseWindowsSecurity(string(raw))
+		view.Windows = &win
+		view.CanElevate = false
+		view.AttackersAccess = EventAccessOK
+		if !win.HasLog {
+			view.AttackersAccess = EventAccessNoSSHLog
+		}
+		a.security.put(hostID, gen, elevate, view)
+		return view, nil
+	}
+
 	// One round trip for the whole free half. Not polled: a firewall does not
 	// change between two ticks of a timer, and the audit that came before this
 	// feature was about exactly that kind of repeat.
@@ -335,7 +362,12 @@ func (a *App) HostSecurity(hostID string, elevate, force bool) (SecurityView, er
 		return SecurityView{}, err
 	}
 	units, ufwConf, jails, modules := adapter.SplitSecurityOutput(string(res.Stdout))
-	view.Units = adapter.ParseSecurityUnits(units)
+	// Assigned only when the parser found something. A nil slice crosses to the
+	// webview as `null`, and the screen reads it as `units.find of null` —
+	// which is what a Windows host did before CapFirewall existed.
+	if got := adapter.ParseSecurityUnits(units); got != nil {
+		view.Units = got
+	}
 	view.UfwEnabled, view.UfwConfFound = adapter.ParseUfwConf(ufwConf)
 	if got := adapter.ParseFail2banJails(jails); got != nil {
 		view.Jails = got

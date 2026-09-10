@@ -126,10 +126,9 @@ const (
 	// the network tab was the one view with no gate at all and kept polling a
 	// host that could not answer.
 	CapNetwork Capability = "network"
-	// CapSessions needs ps, which every POSIX host has. Windows has SSH logins
-	// too, but sshd there does not produce the "sshd: user@pts/N" process the
-	// parser reads, so it stays off until something reads Get-CimInstance
-	// Win32_LogonSession instead.
+	// CapSessions is who is logged in. Read from ps on POSIX and from the sshd
+	// process tree plus the OpenSSH event log on Windows — the two platforms
+	// answer the same question with completely different evidence.
 	CapSessions Capability = "sessions"
 	// CapEvents is the event timeline. It needs the journal, so it follows
 	// systemd — but being able to *reach* the journal is a second question that
@@ -137,6 +136,18 @@ const (
 	// capability cannot say "yes, but empty unless you escalate", so the tab is
 	// enabled here and the view explains the rest.
 	CapEvents Capability = "events"
+	// CapFirewall is the security tab. Both platforms have one now, and they
+	// share nothing but the question: ufw, fail2ban and nftables on Linux;
+	// Windows Firewall profiles, account lockout and Defender on Windows.
+	//
+	// This used to ride on CapServices, on the reasoning that "systemd is here"
+	// is what the free half of the read needs. That is true on Linux and wrong
+	// everywhere else: Windows reports CapServices for Win32_Service, so the
+	// tab appeared there and ran `sh -c` against cmd. The parser then got an
+	// empty string, returned a nil slice, and the screen died on
+	// `units.find of null`. A capability that means two things is a capability
+	// that will be read as the wrong one.
+	CapFirewall Capability = "firewall"
 )
 
 // Capabilities reports which tabs this server supports (§3.3).
@@ -155,6 +166,7 @@ func (i ServerInfo) Capabilities() map[Capability]bool {
 			CapNetwork:    false,
 			CapSessions:   false,
 			CapEvents:     false,
+			CapFirewall:   false,
 		}
 	}
 	if i.Platform == PlatformWindows {
@@ -166,10 +178,19 @@ func (i ServerInfo) Capabilities() map[Capability]bool {
 			// parser applies unchanged when the binary is present.
 			CapContainers: i.HasDocker,
 			CapNetwork:    true, // Get-NetIPAddress, Get-NetAdapter, Get-Net{TCP,UDP}
-			CapSessions:   false,
+			// Not ps — Windows OpenSSH does not write the "sshd: user@pts/0"
+			// process the POSIX parser reads. The session is the sshd child
+			// owned by the account that logged in, and the address comes from
+			// the OpenSSH event log. See windows_sessions.go.
+			CapSessions: true,
 			// The Windows event log sits where journald does, but nothing reads
 			// it yet.
 			CapEvents: false,
+			// A different thing with a different vocabulary, read on its own
+			// terms: profiles and rules rather than ufw, account lockout rather
+			// than fail2ban, and no ban list or drop counter at all. See
+			// windows_security.go.
+			CapFirewall: true,
 		}
 	}
 	return map[Capability]bool{
@@ -180,6 +201,7 @@ func (i ServerInfo) Capabilities() map[Capability]bool {
 		CapNetwork:    true, // iproute2; the tab degrades per-command if partial
 		CapSessions:   true, // ps; w/ss/loginctl only enrich
 		CapEvents:     i.HasSystemd,
+		CapFirewall:   i.HasSystemd,
 	}
 }
 

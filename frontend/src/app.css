@@ -328,6 +328,45 @@
   border-top-color: transparent;
 }
 
+/* Shown while a terminal is being opened. A WSL virtual machine that has idled
+   out takes ten to twenty seconds to come back, and a strip that says nothing
+   for that long is a strip somebody clicks again. */
+.term-opening {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: var(--sp-3);
+  white-space: nowrap;
+}
+
+/* The new-terminal button, and the shell menu it drops on a host that has
+   more than one.
+   
+   It sits beside .term-tabs rather than inside it. That strip is
+   `overflow-x: auto` so many tabs can scroll, and an overflow that is not
+   `visible` clips its descendants — the menu was not being drawn behind the
+   terminal, it was being cut off by the scroll box it lived in. Out here it
+   also stays put when the tabs scroll, which is where a "new tab" button
+   should be anyway. */
+.term-new {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+.term-shell-menu {
+  position: absolute;
+  top: calc(100% + var(--sp-1));
+  left: 0;
+  /* Above the terminal, which paints its own canvas. */
+  z-index: 50;
+  min-width: 180px;
+  padding: var(--sp-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-2);
+}
+
 /* The lock. Same control in the security tab and the network tab, because it
    is the same lock. */
 .lock-btn,
@@ -2875,11 +2914,16 @@ button.danger {
    things rather than one row. */
 .login-row {
   display: grid;
-  grid-template-columns: 120px 80px minmax(0, 200px) 150px 90px;
+  /* Without a terminal column. wtmp has one and the Windows event log has no
+     equivalent, so the list drops it rather than printing a dash per row. */
+  grid-template-columns: 120px minmax(0, 200px) 150px 90px;
   gap: var(--sp-3);
   align-items: baseline;
   padding: 3px 0;
   border-bottom: 1px solid var(--border);
+}
+.login-list[data-tty] .login-row {
+  grid-template-columns: 120px 80px minmax(0, 200px) 150px 90px;
 }
 /* A restart is not a person logging in. It is the row people actually look for
    in this file, so it is marked rather than blended in. */
@@ -3754,3 +3798,79 @@ button.events-unit {
 
 /* A newer release exists. A link, not a button: what it opens is a page in the
    browser, and nothing about the update happens inside this app. */
+
+/* The Windows security screen (§4.7).
+   A different shape from the Linux one because the platform is: three firewall
+   profiles rather than one front end, and no ban list or drop counter to give
+   the numbers a home. */
+.win-sec-block {
+  padding: var(--sp-4) 0;
+  border-bottom: 1px solid var(--border);
+}
+.win-sec-block:last-of-type {
+  border-bottom: none;
+}
+.win-sec-block > h3 {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+.win-profiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 220px));
+  gap: var(--sp-3);
+}
+.win-profile {
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  /* Off is the state worth seeing from across the room, so it is the one that
+     gets a colour. On is the expected case and stays quiet. */
+  border-left: 3px solid var(--danger);
+}
+.win-profile[data-on] {
+  border-left-color: var(--ok);
+}
+/* Two of the three are switched on and deciding nothing. The one the live
+   network is in is the one that matters today. */
+.win-profile[data-active] {
+  background: var(--panel-bg);
+}
+.win-profile-name {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-weight: 600;
+}
+.win-profile-state {
+  margin-top: 2px;
+  font-size: var(--text-sm);
+}
+.win-sec-warn {
+  margin: var(--sp-3) 0 0;
+  color: var(--warn);
+  font-size: var(--text-sm);
+}
+.win-rules .thead,
+.win-rules .trow {
+  display: grid;
+  grid-template-columns: 110px 90px minmax(0, 1fr) 90px;
+  gap: var(--sp-3);
+}
+/* This list is short and read top to bottom, so it is not virtualised — and
+   the shared `.trow` is absolutely positioned for the virtualiser that the
+   other tables use. Left as it is, all 56 rules stack on top of each other at
+   the top of the box and the table looks empty. */
+.win-rules .tbody {
+  position: static;
+  contain: none;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.win-rules .trow {
+  position: static;
+  width: auto;
+  height: auto;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
