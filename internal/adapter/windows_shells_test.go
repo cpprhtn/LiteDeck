@@ -203,3 +203,41 @@ func TestWindowsShellCommandRefusesInjection(t *testing.T) {
 		t.Errorf("powershell carried the injection through: %q", got)
 	}
 }
+
+// The probe is inline, not Start-Process.
+//
+// Start-Process + WaitForExit never returns for wsl.exe on Windows 10 19045 —
+// measured, both with a new window and with the console inherited — and killing
+// the hung child is itself what wedges LxssManager. The inline call is the one
+// that comes back.
+func TestWSLProbeIsInline(t *testing.T) {
+	script := WSLProbeScript("Ubuntu-24.04", 10)
+	if strings.Contains(script, "Start-Process") {
+		t.Errorf("uses Start-Process, which does not return for wsl.exe:\n%s", script)
+	}
+	if strings.Contains(script, "Kill()") {
+		t.Errorf("kills the child, which is what wedges the service:\n%s", script)
+	}
+	for _, want := range []string{`wsl.exe -d 'Ubuntu-24.04' -- true`, "WSL=ready", "WSL=broken"} {
+		if !strings.Contains(script, want) {
+			t.Errorf("script has no %q:\n%s", want, script)
+		}
+	}
+}
+
+func TestParseWSLProbe(t *testing.T) {
+	for _, tc := range []struct {
+		raw  string
+		want WSLProbeState
+	}{
+		{"WSL=ready\r\n", WSLReady},
+		{"WSL=hung\r\n", WSLHung},
+		{"WSL=broken\r\n", WSLBroken},
+		{"", WSLBroken},
+		{"something else entirely", WSLBroken},
+	} {
+		if got := ParseWSLProbe(tc.raw); got != tc.want {
+			t.Errorf("%q → %v, want %v", tc.raw, got, tc.want)
+		}
+	}
+}

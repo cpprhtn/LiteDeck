@@ -216,3 +216,54 @@ func WindowsShellCommand(sh Shell, dir string) string {
 		return `cmd.exe /K cd /d "` + dir + `"`
 	}
 }
+
+// WSLProbeState is what the probe below found.
+type WSLProbeState int
+
+const (
+	// WSLBroken is anything that answered and said no.
+	WSLBroken WSLProbeState = iota
+	// WSLReady means the distribution ran a command and exited zero.
+	WSLReady
+	// WSLHung is what a context expiry means: nothing answered. On this
+	// platform that is LxssManager stuck, and only a reboot clears it.
+	WSLHung
+)
+
+// WSLProbeScript asks whether a distribution can still run a command.
+//
+// Inline, and deliberately not Start-Process. Three shapes were measured on
+// Windows 10 19045:
+//
+//	inline in PowerShell        works — 3626, 123, 85, 85, 84, 121 ms over six runs
+//	`wsl … -- true` over Exec   works on a healthy box, but Windows sshd does not
+//	                            kill the child when the channel closes, so an
+//	                            abandoned probe keeps running and holds LxssManager
+//	Start-Process + WaitForExit never returns, whatever the window style — and
+//	                            killing the hung child is itself what wedges the
+//	                            service
+//
+// So there is no way to put a hard stop on it from the Windows side. The inline
+// call is the one that comes back, and it is bounded by the caller's context
+// instead. On a machine whose WSL has already stopped answering nothing here
+// helps; that is what the message tells the user to fix.
+func WSLProbeScript(distro string, seconds int) string {
+	_ = seconds // the bound is the caller's context; see above
+	return strings.Join([]string{
+		`$ErrorActionPreference = 'SilentlyContinue'`,
+		`wsl.exe -d '` + distro + `' -- true 2>&1 | Out-Null`,
+		`if ($LASTEXITCODE -eq 0) { Write-Output 'WSL=ready' } else { Write-Output 'WSL=broken' }`,
+	}, "\n")
+}
+
+// ParseWSLProbe reads what WSLProbeScript printed.
+func ParseWSLProbe(raw string) WSLProbeState {
+	switch {
+	case strings.Contains(raw, "WSL=ready"):
+		return WSLReady
+	case strings.Contains(raw, "WSL=hung"):
+		return WSLHung
+	default:
+		return WSLBroken
+	}
+}

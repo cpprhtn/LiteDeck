@@ -523,32 +523,33 @@ func (a *App) pickShell(hostID, id string) (adapter.Shell, bool) {
 // wslWarmTimeout bounds the check below.
 //
 // Measured on Windows 10 19045 with the virtual machine down: 3.6 seconds to
-// answer, and 0.1 once it is up. Ten is three times the slow case.
-//
-// It was forty, which was worse than useless: when WSL is wedged nothing ever
-// answers, so forty seconds bought no extra chance of success and cost the user
-// forty seconds of a frozen window before being told no.
-const wslWarmTimeout = 10 * time.Second
+// answer, and 0.1 once it is up. Eight is more than twice the slow case, and
+// the wait is enforced on the server rather than here — see warmWSL.
+const wslWarmSeconds = 10
 
 // warmWSL makes sure the distribution can answer before a terminal is attached
 // to it.
 //
-// Two things go wrong without it, both of them silent.
+// # Why there is a check at all
 //
-// The first is timing. A cold WSL2 machine spends ten to twenty seconds
-// starting its virtual machine, and during that the terminal pane is simply
-// blank — which reads as "it did not work", so people press the button again.
-// This does the waiting in the mode that is safe to wait in.
+// A cold WSL2 machine spends about three and a half seconds starting its
+// virtual machine, and `wsl.exe` asked for an interactive session on a
+// distribution that cannot start does not fail — it hangs, holding LxssManager
+// open. The service goes to StopPending and WSL is then broken for every
+// program on that machine until it reboots. A terminal that will not open is a
+// small problem; a terminal that breaks a system service is not.
 //
-// The second is worse. `wsl.exe` asked for an interactive session on a
-// distribution that cannot start does not fail: it hangs, and a hung wsl.exe
-// holds LxssManager open. The service goes to StopPending and stays there —
-// WSL is then broken for every program on that machine until it reboots. A
-// terminal that will not open is a small problem; a terminal that breaks a
-// system service is not, and this app does not get to do that.
+// # Why it goes through PowerShell and kills its own child
 //
-// `-- true` is the non-interactive path, which is the one that reports failure
-// instead of hanging.
+// The obvious version — run `wsl.exe -d X -- true` over the Exec channel and
+// let the context expire — was worse than nothing. Windows sshd does not kill
+// the child when the channel closes, so every timed-out probe left a wsl.exe
+// running forever. Caught in the act: two of them, aged one and one and a half
+// minutes, both `wsl.exe -d Ubuntu-24.04 -- true`, on a machine whose WSL had
+// stopped answering. The check meant to protect WSL was piling onto it.
+//
+// So the timeout is enforced where the process is. PowerShell starts it, waits,
+// and kills it if it does not finish — the probe cannot outlive its own answer.
 func (a *App) warmWSL(hostID string, sh adapter.Shell) error {
 	distro := strings.TrimPrefix(sh.ID, "wsl:")
 	if distro == sh.ID {
@@ -558,23 +559,26 @@ func (a *App) warmWSL(hostID string, sh adapter.Shell) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), wslWarmTimeout)
+	// The only bound there is. Measured cold: 3.6 seconds; warm: 0.1. Ten is
+	// nearly three times the slow case, and when WSL is wedged no amount of
+	// waiting produces an answer.
+	ctx, cancel := context.WithTimeout(context.Background(), wslWarmSeconds*time.Second)
 	defer cancel()
 
-	res, err := conn.ExecOpts(ctx, sshcore.ExecOptions{Kind: sshcore.CommandPoll},
-		"wsl.exe", "-d", distro, "--", "true")
-	if err != nil {
-		// Almost always a wedged LxssManager: WSL that cannot start does not
-		// refuse, it stops answering, and it stays that way until the machine
-		// reboots. Saying so beats repeating the Go error, because the thing
-		// the person needs to know is that pressing the button again will not
-		// help.
+	out, err := a.runPowerShell(ctx, conn, sshcore.CommandPoll,
+		adapter.WSLProbeScript(distro, wslWarmSeconds))
+	state := adapter.WSLHung
+	if err == nil {
+		state = adapter.ParseWSLProbe(string(out))
+	}
+	switch state {
+	case adapter.WSLReady:
+		return nil
+	case adapter.WSLHung:
 		return i18n.Errorf(
 			"%s 가 응답하지 않습니다. 서버에서 `wsl --shutdown` 을 실행하거나, 그래도 안 되면 서버를 재시작해야 합니다.",
 			distro)
-	}
-	if !res.OK() {
+	default:
 		return i18n.Errorf("%s 를 시작하지 못했습니다 — 서버에서 `wsl -d %s` 가 되는지 확인해 주세요.", distro, distro)
 	}
-	return nil
 }
