@@ -57,7 +57,7 @@ export function LockButton({
   if (!state.available) {
     // Not a control. Offering a lock that cannot open is worse than saying so.
     return (
-      <span className="muted small lock-none" title={t('이 계정에는 sudo 가 없습니다')}>
+      <span className="muted small lock-none" title={t('이 계정에는 sudo가 없습니다')}>
         <Icon name="lock" />
         {t('잠김')}
       </span>

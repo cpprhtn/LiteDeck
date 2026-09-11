@@ -58,7 +58,7 @@ func TestOneshotFirewallCountsAsActive(t *testing.T) {
 			continue
 		}
 		if !u.Active {
-			t.Error("SubState=exited 인 oneshot 을 비활성으로 읽었다")
+			t.Error("SubState=exited인 oneshot을 비활성으로 읽었다")
 		}
 		if u.SubState != "exited" {
 			t.Errorf("SubState %q, 기대 exited — 도구설명에 그대로 써야 한다", u.SubState)
@@ -77,12 +77,12 @@ func TestUfwConfIsWhatSaysWhetherItIsOn(t *testing.T) {
 		t.Fatal("ENABLED 줄을 못 찾았다")
 	}
 	if on {
-		t.Error("ENABLED=no 인데 켜졌다고 읽었다")
+		t.Error("ENABLED=no인데 켜졌다고 읽었다")
 	}
 
 	yes, found := ParseUfwConf("ENABLED=yes\nLOGLEVEL=low\n")
 	if !found || !yes {
-		t.Error("ENABLED=yes 를 못 읽었다")
+		t.Error("ENABLED=yes를 못 읽었다")
 	}
 	if _, found := ParseUfwConf("LOGLEVEL=low\n"); found {
 		t.Error("ENABLED 줄이 없는데 찾았다고 했다")
@@ -114,7 +114,7 @@ enabled = false
 enabled = true
 `)
 	if len(multi) != 2 || multi[0] != "sshd" || multi[1] != "postfix" {
-		t.Errorf("jail %v, 기대 [sshd postfix] — DEFAULT 는 jail 이 아니고 false 는 빠져야 한다", multi)
+		t.Errorf("jail %v, 기대 [sshd postfix] — DEFAULT는 jail이 아니고 false는 빠져야 한다", multi)
 	}
 }
 
@@ -145,12 +145,12 @@ func TestSplitSecurityOutputHandlesMissingFiles(t *testing.T) {
 func TestSecurityScriptIsAConstantWithNoHoles(t *testing.T) {
 	for _, bad := range []string{"%s", "%v", "$1", "${"} {
 		if strings.Contains(SecurityScript, bad) {
-			t.Errorf("스크립트에 %q 가 있다 — 무엇이든 끼워 넣을 자리가 생기면 안 된다", bad)
+			t.Errorf("스크립트에 %q가 있다 — 무엇이든 끼워 넣을 자리가 생기면 안 된다", bad)
 		}
 	}
 	for _, u := range SecurityUnits {
 		if !strings.Contains(SecurityScript, u) {
-			t.Errorf("%s 를 묻지 않는다", u)
+			t.Errorf("%s를 묻지 않는다", u)
 		}
 	}
 }
@@ -160,7 +160,7 @@ func TestSecurityScriptIsAConstantWithNoHoles(t *testing.T) {
 func TestParseUfwStatus(t *testing.T) {
 	s := ParseUfwStatus(golden(t, "ubuntu-24.04-ufw-status.txt"))
 	if !s.Active {
-		t.Error("Status: active 인데 비활성으로 읽었다")
+		t.Error("Status: active인데 비활성으로 읽었다")
 	}
 	if s.Incoming != "deny" || s.Outgoing != "allow" {
 		t.Errorf("기본 정책 in=%q out=%q, 기대 deny/allow", s.Incoming, s.Outgoing)
@@ -174,7 +174,7 @@ func TestParseUfwStatus(t *testing.T) {
 		t.Errorf("첫 규칙 %+v", first)
 	}
 	if !first.V4 || !first.V6 {
-		t.Error("22/tcp 는 v4·v6 둘 다인데 한쪽만으로 읽었다")
+		t.Error("22/tcp는 v4·v6 둘 다인데 한쪽만으로 읽었다")
 	}
 	// A rule can open several ports at once, and the cross-reference below
 	// needs each of them, not the string.
@@ -185,7 +185,7 @@ func TestParseUfwStatus(t *testing.T) {
 		}
 	}
 	if len(nginx.Ports) != 2 || nginx.Ports[0] != "80" || nginx.Ports[1] != "443" {
-		t.Errorf("80,443 을 포트 목록으로 못 갈랐다: %+v", nginx)
+		t.Errorf("80,443을 포트 목록으로 못 갈랐다: %+v", nginx)
 	}
 	if nginx.Comment != "Nginx Full" {
 		t.Errorf("프로필 이름 %q, 기대 %q", nginx.Comment, "Nginx Full")
@@ -196,7 +196,7 @@ func TestParseUfwStatus(t *testing.T) {
 func TestParseUfwStatusInactive(t *testing.T) {
 	s := ParseUfwStatus("Status: inactive\n")
 	if s.Active {
-		t.Error("inactive 를 활성으로 읽었다")
+		t.Error("inactive를 활성으로 읽었다")
 	}
 	if len(s.Rules) != 0 {
 		t.Errorf("규칙이 없는데 %d개 나왔다", len(s.Rules))
@@ -214,7 +214,7 @@ func TestParseUfwStatusInactive(t *testing.T) {
 func TestFirewallModulesReadTheKernelNotTheUnit(t *testing.T) {
 	k := ParseFirewallModules(golden(t, "ubuntu-24.04-modules.txt"))
 	if !k.NFTables {
-		t.Error("nf_tables 가 올라와 있는데 못 봤다")
+		t.Error("nf_tables가 올라와 있는데 못 봤다")
 	}
 	if k.NFTablesRefs != 814 {
 		t.Errorf("nf_tables 참조 %d, 기대 814", k.NFTablesRefs)
@@ -228,7 +228,7 @@ func TestFirewallModulesReadTheKernelNotTheUnit(t *testing.T) {
 		t.Errorf("ip_tables 참조 %d, 기대 0 — 올라와 있는 것과 쓰이는 것은 다르다", k.IPTablesRefs)
 	}
 	if !k.InUse() {
-		t.Error("참조 814 인데 안 쓰인다고 했다")
+		t.Error("참조 814인데 안 쓰인다고 했다")
 	}
 }
 
@@ -321,12 +321,12 @@ func TestParseNftSetsSeparatesFail2banFromHandMade(t *testing.T) {
 		t.Errorf("원소 %d개, 기대 9개: %v", len(mine.Elements), mine.Elements)
 	}
 	if mine.Ranges != 2 {
-		t.Errorf("대역 %d개, 기대 2개 — /24 는 개별 주소와 다르게 세야 한다", mine.Ranges)
+		t.Errorf("대역 %d개, 기대 2개 — /24는 개별 주소와 다르게 세야 한다", mine.Ranges)
 	}
 
 	f2b := by["f2b-table"]
 	if !f2b.Fail2ban {
-		t.Error("f2b-table 을 사람이 만든 것으로 봤다")
+		t.Error("f2b-table을 사람이 만든 것으로 봤다")
 	}
 	if len(f2b.Elements) != 2 {
 		t.Errorf("f2b 원소 %d개, 기대 2개", len(f2b.Elements))
@@ -420,7 +420,7 @@ func TestSubnetClustersAreFoundOnlyByGrouping(t *testing.T) {
 func TestParseBanLogCountsDistinctAddresses(t *testing.T) {
 	h := ParseBanLog(golden(t, "ubuntu-24.04-fail2ban-bans.txt"))
 	if len(h.Bans) != 10 {
-		t.Fatalf("밴 %d건, 기대 10건 — Unban 은 빼야 한다", len(h.Bans))
+		t.Fatalf("밴 %d건, 기대 10건 — Unban은 빼야 한다", len(h.Bans))
 	}
 	if h.Unique != 5 {
 		t.Errorf("고유 주소 %d개, 기대 5개", h.Unique)
@@ -483,12 +483,12 @@ func TestParseFailureBucketsIgnoresRubbish(t *testing.T) {
 func TestOnlyRefusingVerdictsCountAsDropped(t *testing.T) {
 	for _, v := range []string{"drop", "reject", "DROP", " reject "} {
 		if !IsBlockingVerdict(v) {
-			t.Errorf("%q 는 막는 것이다", v)
+			t.Errorf("%q는 막는 것이다", v)
 		}
 	}
 	for _, v := range []string{"accept", "masquerade", "dnat", "return", "snat", ""} {
 		if IsBlockingVerdict(v) {
-			t.Errorf("%q 를 막는 것으로 셌다", v)
+			t.Errorf("%q를 막는 것으로 셌다", v)
 		}
 	}
 }

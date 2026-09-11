@@ -211,7 +211,7 @@ func (a *App) ServiceLogTail(hostID, unit string, lines int, since, priority str
 		return "", err
 	}
 	if !info.HasSystemd {
-		return "", i18n.Errorf("%s 에는 읽을 저널이 없습니다", hostID)
+		return "", i18n.Errorf("%s에는 읽을 저널이 없습니다", hostID)
 	}
 	if !info.CanReadJournal {
 		return "", fmt.Errorf("%w: %s", ErrJournalUnreadable,

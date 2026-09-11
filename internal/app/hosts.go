@@ -240,7 +240,7 @@ func (a *App) authMethods(h config.Host) ([]ssh.AuthMethod, error) {
 			am, err := sshcore.PublicKeyFile(
 				h.IdentityFile,
 				a.prompts.secretFunc(h.ID, secret.KindPassphrase,
-					i18n.T("%s 의 패스프레이즈", h.IdentityFile)),
+					i18n.T("%s의 패스프레이즈", h.IdentityFile)),
 			)
 			if err != nil {
 				return nil, err
@@ -282,7 +282,7 @@ func (a *App) explainConnectError(h config.Host, err error) error {
 		// permission problem with the account, and people go looking in the
 		// wrong place — it is one line in the bastion's sshd_config.
 		return i18n.Errorf(
-			"%s: 경유 서버 %s 가 TCP 포워딩을 허용하지 않습니다 — 그 서버의 sshd_config 에서 AllowTcpForwarding 을 켜야 합니다",
+			"%s: 경유 서버 %s가 TCP 포워딩을 허용하지 않습니다 — 그 서버의 sshd_config에서 AllowTcpForwarding을 켜야 합니다",
 			h.Label(), h.ProxyJump)
 	default:
 		return fmt.Errorf("%s (%s): %w", h.Label(), h.Addr(), err)

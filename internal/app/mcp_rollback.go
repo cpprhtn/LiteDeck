@@ -57,7 +57,7 @@ func (a *App) RestoreMCPChange(id string) ActionResult {
 		return failResult(i18n.Errorf("되돌릴 기록을 찾을 수 없습니다: %s", id))
 	}
 	if !entry.Undoable() {
-		return failResult(i18n.Errorf("%s 는 사본을 남기기에 너무 커서 되돌릴 수 없습니다", entry.Path))
+		return failResult(i18n.Errorf("%s는 사본을 남기기에 너무 커서 되돌릴 수 없습니다", entry.Path))
 	}
 
 	inPlace := false

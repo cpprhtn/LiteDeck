@@ -378,10 +378,10 @@ func (a *App) endWindowsSession(ctx context.Context, conn *sshcore.Conn, pid int
 		// Either it ended on its own or that number is something else now.
 		// Killing it either way is how a session list turns into a way to end
 		// arbitrary processes.
-		return failResult(errors.New(i18n.T("PID %d 는 더 이상 SSH 세션이 아닙니다", pid)))
+		return failResult(errors.New(i18n.T("PID %d는 더 이상 SSH 세션이 아닙니다", pid)))
 	}
 	if target.Self {
-		return failResult(errors.New(i18n.T("이 세션은 LiteDeck 이 쓰고 있는 연결입니다")))
+		return failResult(errors.New(i18n.T("이 세션은 LiteDeck이 쓰고 있는 연결입니다")))
 	}
 	out, err := a.runPowerShell(ctx, conn, sshcore.CommandAction, adapter.WindowsEndSessionScript(pid))
 	if err != nil {

@@ -71,7 +71,7 @@ func TestSecurityReadsTheFreeHalfWithoutElevation(t *testing.T) {
 	}
 	// Never nil: the frontend maps over both.
 	if view.Jails == nil {
-		t.Error("Jails 가 nil 이다")
+		t.Error("Jails가 nil 이다")
 	}
 	t.Logf("fixture: units=%d ufwFound=%v ufwEnabled=%v jails=%v canElevate=%v free=%v",
 		len(view.Units), view.UfwConfFound, view.UfwEnabled, view.Jails,
@@ -88,7 +88,7 @@ func TestElevatedReadWithoutUnlockSaysSoAndKeepsTheRest(t *testing.T) {
 		t.Fatalf("DetectHost: %v", err)
 	}
 	if info.SudoNoPasswd {
-		t.Skip("이 픽스처는 sudo 가 무암호라 잠금이 필요 없다")
+		t.Skip("이 픽스처는 sudo가 무암호라 잠금이 필요 없다")
 	}
 
 	view, err := a.HostSecurity("fixture", true, true)
@@ -230,7 +230,7 @@ func TestAttackerAccessIsReportedApartFromTheList(t *testing.T) {
 		}
 	case info.HasSudo:
 		if view.AttackersAccess != EventAccessNeedsSudo {
-			t.Errorf("sudo 가 있는데 %q — 권한을 올릴 수 있다고 말해야 한다", view.AttackersAccess)
+			t.Errorf("sudo가 있는데 %q — 권한을 올릴 수 있다고 말해야 한다", view.AttackersAccess)
 		}
 		if len(view.Attackers) != 0 {
 			t.Error("못 읽었는데 목록이 채워졌다")
@@ -253,10 +253,10 @@ func TestAttackerAccessIsReportedApartFromTheList(t *testing.T) {
 func TestElevatedScriptReadsUfwAndTheRulesetBoth(t *testing.T) {
 	script := securityRulesScript
 	if !strings.Contains(script, "ufw status") {
-		t.Error("ufw status 를 안 읽는다")
+		t.Error("ufw status를 안 읽는다")
 	}
 	if !strings.Contains(script, "nft list ruleset") {
-		t.Error("nft list ruleset 을 안 읽는다")
+		t.Error("nft list ruleset을 안 읽는다")
 	}
 	// The bug in one line: chaining them means only the first that works runs.
 	for _, line := range strings.Split(script, "\n") {

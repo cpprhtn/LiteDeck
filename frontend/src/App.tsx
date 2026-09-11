@@ -624,7 +624,7 @@ function renderTab(
         return (
           <Unavailable
             title={t('이 서버의 보안 상태를 읽을 수 없습니다')}
-            detail={t('방화벽과 fail2ban 상태는 systemd 에게 묻습니다.')}
+            detail={t('방화벽과 fail2ban 상태는 systemd에게 묻습니다.')}
           />
         )
       }
@@ -652,7 +652,7 @@ function renderTab(
           <Unavailable
             title={t('이 서버에는 컨테이너 런타임이 없습니다')}
             detail={t('docker와 podman 둘 다 PATH에서 찾지 못했습니다.')}
-            hint={t('설치되어 있는데도 이렇게 나온다면, 로그인 셸의 PATH에 없을 수 있습니다 — 터미널 탭에서 `command -v docker` 로 확인해보세요.')}
+            hint={t('설치되어 있는데도 이렇게 나온다면, 로그인 셸의 PATH에 없을 수 있습니다 — 터미널 탭에서 `command -v docker`로 확인해보세요.')}
           />
         )
       }
@@ -689,8 +689,8 @@ function renderTab(
             title={t('이 서버의 SSH 접속 목록을 읽을 수 없습니다')}
             detail={
               info.platform === 'windows'
-                ? t('Windows sshd 는 세션을 "sshd: user@pts" 프로세스로 만들지 않아, 지금 파서가 읽을 것이 없습니다.')
-                : t('{os} — ps 를 실행하지 못했습니다.', { os: info.prettyName || t('이 서버') })
+                ? t('Windows sshd는 세션을 "sshd: user@pts" 프로세스로 만들지 않아, 지금 파서가 읽을 것이 없습니다.')
+                : t('{os} — ps를 실행하지 못했습니다.', { os: info.prettyName || t('이 서버') })
             }
             hint={t('다른 탭은 그대로 쓸 수 있습니다.')}
           />
@@ -703,7 +703,7 @@ function renderTab(
         return (
           <Unavailable
             title={t('이 서버의 상태를 읽을 수 없습니다')}
-            detail={t('{os} — /proc 을 읽지 못했습니다.', { os: info.prettyName || t('이 서버') })}
+            detail={t('{os} — /proc을 읽지 못했습니다.', { os: info.prettyName || t('이 서버') })}
             hint={t('다른 탭은 그대로 쓸 수 있습니다.')}
           />
         )

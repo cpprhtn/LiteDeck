@@ -145,7 +145,7 @@ func (a *App) fetchRelease() (staged, version string, err error) {
 	}
 	assetURL, sumsURL := rel.find(wanted), rel.find("SHA256SUMS.txt")
 	if assetURL == "" {
-		return "", "", fmt.Errorf(i18n.T("이 릴리스에 %s 가 없습니다"), wanted)
+		return "", "", fmt.Errorf(i18n.T("이 릴리스에 %s가 없습니다"), wanted)
 	}
 	if sumsURL == "" {
 		return "", "", errors.New(i18n.T("체크섬 파일이 없어 내려받은 것을 검증할 수 없습니다"))

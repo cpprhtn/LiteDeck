@@ -53,7 +53,7 @@ function FirewallProfiles({ win }: { win: WindowsSecurity }) {
       <div className="events-notice">
         <p>{t('방화벽 상태를 읽지 못했습니다.')}</p>
         <p className="muted small">
-          {t('Windows 에는 sudo 가 없습니다. 이 계정으로는 읽을 수 없으니, 방화벽을 볼 수 있는 계정으로 접속해야 합니다.')}
+          {t('Windows에는 sudo가 없습니다. 이 계정으로는 읽을 수 없으니, 방화벽을 볼 수 있는 계정으로 접속해야 합니다.')}
         </p>
       </div>
     )
@@ -222,7 +222,7 @@ function Knocking({ win }: { win: WindowsSecurity }) {
   if (!win.hasLog) {
     return (
       <section className="win-sec-block">
-        <h3>{t('누가 두드리고 있나')}</h3>
+        <h3>{t('접속 시도')}</h3>
         <p>{t('OpenSSH 로그가 비어 있습니다. 지금 이 연결도 SSH 이므로, 기록이 없는 것이 아니라 로그가 꺼져 있거나 지워진 것입니다.')}</p>
       </section>
     )
@@ -234,7 +234,7 @@ function Knocking({ win }: { win: WindowsSecurity }) {
   return (
     <section className="win-sec-block">
       <h3>
-        {t('누가 두드리고 있나')}{' '}
+        {t('접속 시도')}{' '}
         <span className="muted small">
           {/* The log is circular and 1 MB. On the measured server that was 77
               minutes, and a chart labelled "24 hours" over it would make an

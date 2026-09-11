@@ -354,7 +354,7 @@ export function MetricsBar({ hostID }: { hostID: string }) {
           unit="%"
           note={`${fmtBytes(disk.used)} / ${fmtBytes(disk.size)}`}
           warn={disk.percent >= 90}
-          title={t('{used} / {size} · 여유 {free}', {
+          title={t('{used} / {size} · 사용 가능 {free}', {
             used: fmtBytes(disk.used),
             size: fmtBytes(disk.size),
             free: fmtBytes(disk.available),
@@ -366,7 +366,7 @@ export function MetricsBar({ hostID }: { hostID: string }) {
           instead of as a figure that was never available. */}
       {m.hasLoad && (
         <Stat
-          label={t('로드')}
+          label={t('시스템 부하')}
           p={3}
           value={`${m.load1.toFixed(2)}`}
           title={t('1분 {a} · 5분 {b} · 15분 {c}', { a: m.load1, b: m.load5, c: m.load15 })}

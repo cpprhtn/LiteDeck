@@ -897,7 +897,7 @@ func safeLocalName(rel string) bool {
 // to contain newlines and terminal escapes — which would otherwise be rendered
 // as-is in a message about that very server.
 func errUnsafeName(rel string) error {
-	return i18n.Errorf("서버가 보낸 이름 %q 이 받을 폴더 밖을 가리킵니다 — 전송을 중단했습니다", rel)
+	return i18n.Errorf("서버가 보낸 이름 %q이 받을 폴더 밖을 가리킵니다 — 전송을 중단했습니다", rel)
 }
 
 func walkLocalDir(ctx context.Context, root string) ([]relFile, int64, error) {

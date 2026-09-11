@@ -108,7 +108,7 @@ func (c *Conn) OpenPTY(
 		return nil, fmt.Errorf(
 			i18n.S("sshcore: 이 호스트에 열 수 있는 터미널·로그 창 수를 초과했습니다 (동시 %d개) — ")+
 				i18n.S("쓰지 않는 터미널 탭이나 로그 창을 닫으세요. ")+
-				i18n.S("서버의 sshd MaxSessions 가 기본값(10)보다 낮으면 이보다 먼저 막힐 수 있습니다"),
+				i18n.S("서버의 sshd MaxSessions가 기본값(10)보다 낮으면 이보다 먼저 막힐 수 있습니다"),
 			cap(c.longLived))
 	}
 	release := func() { <-c.longLived }

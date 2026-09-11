@@ -107,14 +107,14 @@ export function EventTimeline({
 
       {view?.truncated && (
         <div className="muted small events-note">
-          {t('가장 오래된 줄이 이 기간의 시작이 아닙니다 — 한 번에 읽는 최대 줄 수에 걸렸습니다.')}
+          {t('가장 오래된 줄이 이 기간의 시작이 아닙니다 — 한 번에 읽는 최대 조회 건수를 초과했습니다.')}
         </div>
       )}
 
       <div className="events-list">
         {view?.access === 'ok' && view.events.length === 0 && (
           <div className="placeholder small">
-            {t('이 기간에는 기록할 만한 사건이 없었습니다.')}
+            {t('이 기간에 표시할 이벤트가 없습니다.')}
           </div>
         )}
         {view?.events.map((e, i) => {
@@ -175,7 +175,7 @@ export function AccessNotice({
     return (
       <div className="events-notice">
         <p>
-          {t('이 사용자는 systemd-journal·adm 그룹에 없어 시스템 저널이 비어 보입니다. 사건이 없는 것이 아니라 보이지 않는 것입니다.')}
+          {t('이 사용자는 systemd-journal·adm 그룹에 없어 시스템 저널이 비어 보입니다. 이벤트가 없는 것이 아니라 권한이 없어 보이지 않는 것입니다.')}
         </p>
         <div className="events-notice-actions">
           <button className="primary" disabled={busy} onClick={onElevate}>
@@ -193,7 +193,7 @@ export function AccessNotice({
     return (
       <div className="events-notice">
         <p>
-          {t('이 사용자는 시스템 저널을 읽을 수 없고 sudo 도 없습니다. 목록이 비어 있는 것은 사건이 없어서가 아닙니다.')}
+          {t('이 사용자는 시스템 저널을 읽을 수 없고 sudo도 없습니다. 목록이 비어 있는 것은 이벤트가 없어서가 아니라 저널을 읽지 못해서입니다.')}
         </p>
         <p className="muted small">
           {t('서버에서 이 계정을 systemd-journal 또는 adm 그룹에 추가하세요.')}
@@ -207,7 +207,7 @@ export function AccessNotice({
       <div className="events-notice">
         <p>{t('OpenSSH 로그가 비어 있습니다. 지금 이 연결도 SSH 이므로, 기록이 없는 것이 아니라 로그가 꺼져 있거나 지워진 것입니다.')}</p>
         <p className="muted small">
-          {t('이벤트 뷰어의 응용 프로그램 및 서비스 로그 > OpenSSH > Operational 을 확인하세요.')}
+          {t('이벤트 뷰어의 응용 프로그램 및 서비스 로그 > OpenSSH > Operational을 확인하세요.')}
         </p>
       </div>
     )

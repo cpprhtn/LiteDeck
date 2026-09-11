@@ -83,17 +83,17 @@ export function McpHostBadge({ hostID }: { hostID: string }) {
         <div className="mcp-badge-menu">
           <button onClick={() => set('strict', 0)}>
             {t('전부 물어보기')}
-            <span className="muted small">{t('prod 처럼 틀리면 안 되는 서버')}</span>
+            <span className="muted small">{t('prod처럼 틀리면 안 되는 서버')}</span>
           </button>
           <button onClick={() => set('ask', 0)}>
             {t('파일 변경만 물어보기')}
             <span className="muted small">{t('기본값. 재시작 등은 그냥 실행')}</span>
           </button>
           <button onClick={() => set('bypass', MINUTE)}>
-            {t('1시간 안 묻기')}
+            {t('1시간 동안 묻지 않기')}
           </button>
           <button onClick={() => set('bypass', 8 * MINUTE)}>
-            {t('밤새 안 묻기 (8시간)')}
+            {t('8시간 동안 묻지 않기')}
             <span className="muted small">{t('자리를 비울 때')}</span>
           </button>
         </div>

@@ -239,7 +239,7 @@ func (a *App) RenamePath(hostID, from, to string) ActionResult {
 		return okResult()
 	}
 	if IsProtectedPath(src) {
-		return failResult(i18n.Errorf("%s 는 보호된 경로입니다 — 이름을 바꿀 수 없습니다", src))
+		return failResult(i18n.Errorf("%s는 보호된 경로입니다 — 이름을 바꿀 수 없습니다", src))
 	}
 	client, err := a.mgr.SFTP(hostID)
 	if err != nil {
@@ -248,7 +248,7 @@ func (a *App) RenamePath(hostID, from, to string) ActionResult {
 
 	// Overwriting silently is how a rename becomes data loss.
 	if _, err := client.Lstat(dst); err == nil {
-		return failResult(i18n.Errorf("%s 가 이미 있습니다", dst))
+		return failResult(i18n.Errorf("%s가 이미 있습니다", dst))
 	}
 
 	// PosixRename is the atomic form, but it is an OpenSSH extension that older
@@ -621,7 +621,7 @@ func (a *App) SaveTextFile(hostID string, req SaveRequest) SaveResult {
 		if req.BaseModTime != 0 && !req.Force {
 			return SaveResult{
 				Conflict:     true,
-				ActionResult: ActionResult{Error: i18n.T("%s 가 서버에서 사라졌습니다", cleaned)},
+				ActionResult: ActionResult{Error: i18n.T("%s가 서버에서 사라졌습니다", cleaned)},
 			}
 		}
 	default:
@@ -745,7 +745,7 @@ func stageAndRename(
 	if err := client.Rename(tmp, target); err != nil {
 		// tmp is deliberately left behind: it holds the complete new content,
 		// and it is now the only copy.
-		return i18n.Errorf("%v — 새 내용은 %s 에 남아 있습니다", err, tmp)
+		return i18n.Errorf("%v — 새 내용은 %s에 남아 있습니다", err, tmp)
 	}
 	return nil
 }

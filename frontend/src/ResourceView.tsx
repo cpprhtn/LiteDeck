@@ -169,7 +169,7 @@ export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFact
         )}
         {m.hasLoad && (
           <TopStat
-            label={t('로드')}
+            label={t('시스템 부하')}
             value={m.load1.toFixed(2)}
             sub={t('1분 평균')}
             warn={cores.length > 0 && m.load1 > cores.length}
@@ -205,13 +205,13 @@ export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFact
               // cores is busy, 8 on two is drowning. Three figures because one
               // says nothing — the shape is the reading.
               [
-                t('로드'),
+                t('시스템 부하'),
                 m.hasLoad
                   ? `${m.load1.toFixed(2)} · ${m.load5.toFixed(2)} · ${m.load15.toFixed(2)}`
                   : '—',
               ],
               [t('실행 대기'), String(m.runnable ?? 0)],
-              [t('IO 블록'), String(m.blocked ?? 0)],
+              [t('I/O 블록'), String(m.blocked ?? 0)],
             ]}
           />
           {cores.length > 1 && <CoreDie cores={cores} />}
@@ -572,9 +572,9 @@ function PressureLine({ kind, p }: { kind: 'cpu' | 'memory' | 'io'; p: Pressure 
   // centimetres from the CPU split's "IO 대기" — two different numbers wearing
   // almost the same name, with nothing on screen saying so.
   const hint = {
-    cpu: t('작업이 CPU 를 얻지 못해 멈춰 있던 시간의 비율입니다. 사용률과는 다릅니다 — 100% 로 일하는 기계는 멀쩡한 것이고, 이 값이 오르면 일이 밀리고 있는 것입니다.'),
+    cpu: t('작업이 CPU를 얻지 못해 멈춰 있던 시간의 비율입니다. 사용률과는 다릅니다 — 100%로 일하는 기계는 멀쩡한 것이고, 이 값이 오르면 처리 대기 작업이 증가하고 있다는 뜻입니다.'),
     memory: t('작업이 메모리를 기다리느라 멈춰 있던 시간의 비율입니다. 회수와 스왑이 여기 들어갑니다. 여유가 남아 보여도 이 값이 오르면 실제로는 모자란 것입니다.'),
-    io: t('작업이 저장장치를 기다리느라 멈춰 있던 시간의 비율입니다. CPU 분해의 「IO 대기」 와는 다른 값입니다 — 그쪽은 CPU 시간에서 차지하는 몫이고, 이쪽은 작업이 실제로 멈춰 있던 시간의 몫입니다.')
+    io: t('작업이 저장장치를 기다리느라 멈춰 있던 시간의 비율입니다. CPU 분해의 「I/O 대기」와는 다른 값입니다 — 그쪽은 전체 CPU 시간에서 차지하는 비율이고, 이쪽은 작업이 실제로 멈춰 있던 시간의 비율입니다.')
   }[kind]
   return (
     <div
@@ -681,8 +681,8 @@ function SplitBar({ split }: { split: CPUSplit }) {
   const parts = [
     { key: 'user', label: t('사용자 시간'), v: split.user, hint: t('프로그램이 직접 쓴 시간') },
     { key: 'system', label: t('커널 시간'), v: split.system, hint: t('커널이 그 프로그램을 대신해 쓴 시간') },
-    { key: 'iowait', label: t('IO 대기'), v: split.iowait, hint: t('CPU 가 할 일 없이 디스크를 기다린 시간의 몫입니다. 높으면 CPU 가 아니라 디스크가 문제입니다. 디스크 패널의 「압력」 과는 다른 값입니다 — 그쪽은 작업이 실제로 멈춰 있던 시간의 몫입니다.') },
-    { key: 'steal', label: t('뺏김'), v: split.steal, hint: t('하이퍼바이저가 다른 손님에게 넘긴 시간 — 이 서버가 느린 이유가 이 서버 밖에 있습니다') },
+    { key: 'iowait', label: t('I/O 대기'), v: split.iowait, hint: t('CPU가 할 일 없이 디스크를 기다린 시간이 전체 CPU 시간에서 차지하는 비율입니다. 높으면 CPU가 아니라 디스크가 문제입니다. 디스크 패널의 「압력」과는 다른 값입니다 — 그쪽은 작업이 실제로 멈춰 있던 시간의 비율입니다.') },
+    { key: 'steal', label: t('스틸 시간'), v: split.steal, hint: t('하이퍼바이저가 다른 가상 머신에 할당한 CPU 시간 — 이 서버가 느린 이유가 이 서버 밖에 있습니다') },
   ]
   return (
     <>
@@ -711,7 +711,7 @@ function SplitBar({ split }: { split: CPUSplit }) {
             key: 'idle',
             label: t('유휴'),
             text: `${Math.max(0, 100 - parts.reduce((a, p) => a + p.v, 0)).toFixed(0)}%`,
-            hint: t('아무 일도 하지 않은 시간의 몫입니다.'),
+            hint: t('전체 CPU 시간에서 아무 일도 하지 않은 비율입니다.'),
           },
         ]}
       />
@@ -828,7 +828,7 @@ function FilesystemTable({ rows, shown }: { rows: Filesystem[]; shown: Filesyste
             <th>{t('장치')}</th>
             <th className="num">{t('사용')}</th>
             <th className="num">{t('전체')}</th>
-            <th className="num">{t('여유')}</th>
+            <th className="num">{t('사용 가능')}</th>
             <th className="num">inode</th>
             <th className="res-bar-col" />
           </tr>

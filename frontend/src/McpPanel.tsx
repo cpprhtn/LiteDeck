@@ -110,7 +110,7 @@ export function McpPanel({
         <h2>{t('MCP 연동')}</h2>
         <p className="muted small">
           {t(
-            'Claude Code·Claude Desktop 같은 MCP 클라이언트가 이 앱을 통해 서버를 다룹니다. 같은 어댑터·SSH 연결·Command Log 를 씁니다.',
+            'Claude Code·Claude Desktop 같은 MCP 클라이언트가 이 앱을 통해 서버를 다룹니다. 같은 어댑터·SSH 연결·Command Log를 씁니다.',
           )}
         </p>
 
@@ -128,7 +128,7 @@ export function McpPanel({
               void loadChanges()
             }}
           >
-            {t('바뀐 파일')}
+            {t('변경된 파일')}
             {changes.length > 0 && <span className="badge">{changes.length}</span>}
           </button>
         </nav>
@@ -152,7 +152,7 @@ export function McpPanel({
                   <label className="muted small">{t('주소')}</label>
                   <code className="mono selectable">{state.url}</code>
                   <span className="muted small">
-                    {t('127.0.0.1 에만 열립니다. 외부 인터페이스로 여는 설정은 없습니다.')}
+                    {t('127.0.0.1에만 열립니다. 외부 인터페이스로 여는 설정은 없습니다.')}
                   </span>
                   {/* The address moving is invisible from the client side — it
                       just stops connecting. Saying it here is the whole fix for
@@ -249,7 +249,7 @@ export function McpPanel({
                   {client === 'codex' && (
                     <span className="muted small">
                       {t(
-                        'Codex 는 토큰을 값이 아니라 환경변수 이름으로 받습니다. 두 줄을 함께 붙여넣으세요.',
+                        'Codex는 토큰을 값이 아니라 환경변수 이름으로 받습니다. 두 줄을 함께 붙여넣으세요.',
                       )}
                     </span>
                   )}
@@ -260,7 +260,7 @@ export function McpPanel({
                     tool looks missing until it reconnects. */}
                 <p className="muted small">
                   {t(
-                    'LiteDeck 을 업데이트한 뒤에는 MCP 클라이언트도 다시 시작하세요. 클라이언트는 접속할 때 받은 도구 목록을 계속 쓰기 때문에, 새로 생긴 도구가 없는 것처럼 보입니다.',
+                    'LiteDeck을 업데이트한 뒤에는 MCP 클라이언트도 다시 시작하세요. 클라이언트는 접속할 때 받은 도구 목록을 계속 쓰기 때문에, 새로 생긴 도구가 없는 것처럼 보입니다.',
                   )}
                 </p>
               </>
@@ -307,7 +307,7 @@ export function McpPanel({
                       >
                         <option value="strict">{t('전부 물어보기')}</option>
                         <option value="ask">{t('파일 변경만 물어보기')}</option>
-                        <option value="bypass">{t('밤새 안 묻기 (8시간)')}</option>
+                        <option value="bypass">{t('8시간 동안 묻지 않기')}</option>
                       </select>
 
                       {/* Separate from the approval mode on purpose: whether the
@@ -374,7 +374,7 @@ export function McpPanel({
                   </span>
                   <span className="muted small">
                     {c.at} ·{' '}
-                    {c.action === 'delete' ? t('지워짐') : c.created ? t('새로 만듦') : t('덮어씀')}
+                    {c.action === 'delete' ? t('삭제됨') : c.created ? t('생성됨') : t('덮어씀')}
                   </span>
                   <button
                     className="ghost small-btn"

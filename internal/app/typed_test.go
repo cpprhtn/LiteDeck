@@ -78,7 +78,7 @@ func TestTerminalFollowsWhatTheReplayFollows(t *testing.T) {
 		l.setCwd("h", "t", "/start")
 		got := l.enter("h", "t", tc.line, false)
 		if got == nil {
-			t.Fatalf("%q 가 아예 기록되지 않았다", tc.line)
+			t.Fatalf("%q가 아예 기록되지 않았다", tc.line)
 		}
 		if got.PWD != tc.wantPWD {
 			t.Errorf("%q → %q, 기대 %q", tc.line, got.PWD, tc.wantPWD)

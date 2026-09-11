@@ -29,7 +29,7 @@ const ACTIONS = [
   { verb: 'start', label: k('시작') },
   { verb: 'stop', label: k('중지') },
   { verb: 'restart', label: k('재시작') },
-  { verb: 'reload', label: k('리로드') },
+  { verb: 'reload', label: k('설정 다시 불러오기') },
   { verb: 'enable', label: 'enable' },
   { verb: 'disable', label: 'disable' },
 ] as const

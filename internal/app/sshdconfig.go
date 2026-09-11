@@ -96,7 +96,7 @@ func (a *App) SSHDConfig(hostID string) (adapter.SSHDReport, error) {
 	visit(sshdConfigPath, 0)
 
 	if len(files) == 0 {
-		return adapter.SSHDReport{}, i18n.Errorf("%s 를 읽지 못했습니다", sshdConfigPath)
+		return adapter.SSHDReport{}, i18n.Errorf("%s를 읽지 못했습니다", sshdConfigPath)
 	}
 	return adapter.BuildSSHDReport(files, directives, unreadable), nil
 }
