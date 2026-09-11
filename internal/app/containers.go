@@ -77,7 +77,7 @@ func (a *App) listContainers(hostID string, args []string) ([]adapter.Container,
 		// three times running — a figure that steady is something inside the
 		// daemon waiting on its own timeout, not work that takes a while.
 		if errors.Is(err, context.DeadlineExceeded) {
-			return nil, i18n.Errorf("컨테이너 목록이 %.0f초 안에 오지 않았습니다 — 다른 탭이 멀쩡하다면 서버가 느린 것이 아니라 %s 데몬이 무언가를 기다리는 것입니다. 서버에서 `time %s ps` 와 `time %s ps -a` 를 비교해 보세요", pollTimeout.Seconds(), runtime, runtime, runtime)
+			return nil, i18n.Errorf("컨테이너 목록이 %.0f초 안에 오지 않았습니다 — 다른 탭이 멀쩡하다면 서버가 느린 것이 아니라 %s 데몬이 무언가를 기다리는 것입니다. 서버에서 `time %s ps`와 `time %s ps -a`를 비교해 보세요", pollTimeout.Seconds(), runtime, runtime, runtime)
 		}
 		return nil, err
 	}
@@ -129,7 +129,7 @@ func (a *App) ComposeAction(hostID, project, service, action string, elevate boo
 		return failResult(err)
 	}
 	if !info.HasCompose {
-		return failResult(i18n.Errorf("이 서버에 Compose 가 없습니다"))
+		return failResult(i18n.Errorf("이 서버에 Compose가 없습니다"))
 	}
 	return a.runContainerCommand(hostID, elevate, adapter.ComposeArgs(project, service, action)...)
 }

@@ -102,12 +102,12 @@ func TestTokenContrast(t *testing.T) {
 		for _, p := range contrastPairs {
 			fg, ok := resolve(theme.tokens, p.fg)
 			if !ok {
-				t.Errorf("%s: %s 를 못 찾았다 — 토큰 이름이 바뀌었으면 이 표도 고쳐야 한다", theme.name, p.fg)
+				t.Errorf("%s: %s를 못 찾았다 — 토큰 이름이 바뀌었으면 이 표도 고쳐야 한다", theme.name, p.fg)
 				continue
 			}
 			bg, ok := resolve(theme.tokens, p.bg)
 			if !ok {
-				t.Errorf("%s: %s 를 못 찾았다", theme.name, p.bg)
+				t.Errorf("%s: %s를 못 찾았다", theme.name, p.bg)
 				continue
 			}
 			got := contrast(fg, bg)
@@ -126,10 +126,10 @@ func TestTokenContrast(t *testing.T) {
 // same arithmetic and requires it to be rejected.
 func TestTokenContrastCatchesARegression(t *testing.T) {
 	if got := contrast("#a1a1a6", "#ffffff"); got >= contrastFloor {
-		t.Fatalf("예전 --fg-faint 가 %.2f 로 통과했다 — 계산이 틀렸다", got)
+		t.Fatalf("예전 --fg-faint가 %.2f로 통과했다 — 계산이 틀렸다", got)
 	}
 	if got := contrast("#0a84ff", "#ffffff"); got >= contrastFloor {
-		t.Fatalf("예전 라이트 --accent 가 %.2f 로 통과했다 — 계산이 틀렸다", got)
+		t.Fatalf("예전 라이트 --accent가 %.2f로 통과했다 — 계산이 틀렸다", got)
 	}
 }
 
@@ -147,7 +147,7 @@ func parseThemes(t *testing.T, src string) (light, dark map[string]string) {
 
 	root := rootBlock.FindStringSubmatch(src)
 	if root == nil {
-		t.Fatal("tokens.css 에서 :root 블록을 못 읽었다 — 형식이 바뀌었다")
+		t.Fatal("tokens.css에서 :root 블록을 못 읽었다 — 형식이 바뀌었다")
 	}
 	light = declarations(root[1])
 	if len(light) < 20 {
@@ -156,7 +156,7 @@ func parseThemes(t *testing.T, src string) (light, dark map[string]string) {
 
 	over := darkBlock.FindStringSubmatch(src)
 	if over == nil {
-		t.Fatal("tokens.css 에서 다크 블록을 못 읽었다")
+		t.Fatal("tokens.css에서 다크 블록을 못 읽었다")
 	}
 	dark = map[string]string{}
 	for k, v := range light {

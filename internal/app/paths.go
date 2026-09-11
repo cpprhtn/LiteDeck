@@ -128,7 +128,7 @@ func CheckDelete(paths []string, recursive bool, typed string) ([]string, error)
 	}
 	if strings.TrimSpace(typed) != cleaned[0] {
 		return nil, fmt.Errorf(
-			i18n.S("%s 는 보호된 경로입니다 — 삭제하려면 경로를 정확히 입력해야 합니다"),
+			i18n.S("%s는 보호된 경로입니다 — 삭제하려면 경로를 정확히 입력해야 합니다"),
 			cleaned[0])
 	}
 	return cleaned, nil

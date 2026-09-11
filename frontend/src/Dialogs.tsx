@@ -248,13 +248,13 @@ export function McpWriteDialog({
           <button onClick={() => answer(false)}>{t('거부')}</button>
           <span className="spacer" />
           <button className="ghost" onClick={() => allowFor(60)}>
-            {t('허용하고 1시간 안 묻기')}
+            {t('허용 후 1시간 동안 묻지 않기')}
           </button>
           {/* The overnight option exists because that is when people actually
               leave an agent running. An hour expiring at 3am blocks everything
               until morning, which reads as the feature being broken. */}
           <button className="ghost" onClick={() => allowFor(8 * 60)}>
-            {t('허용하고 밤새 안 묻기')}
+            {t('허용 후 8시간 동안 묻지 않기')}
           </button>
           <button ref={ok} className="danger" onClick={() => answer(true)}>
             {t('이번만 허용')}
@@ -265,8 +265,8 @@ export function McpWriteDialog({
             and said for a while that it did not exist. */}
         <p className="muted small">
           {isExec
-            ? t('안 묻기는 이 호스트에만 적용되고 시간이 지나면 스스로 돌아옵니다. 다만 명령 실행은 되돌릴 수 없습니다 — 이 서버에서 아예 끄는 것은 MCP 패널에서 합니다.')
-            : t('안 묻기는 이 호스트에만 적용되고 시간이 지나면 스스로 돌아옵니다. 파일 변경은 MCP 패널의 바뀐 파일 탭에서 되돌릴 수 있습니다.')}
+            ? t('묻지 않기는 이 호스트에만 적용되고 시간이 지나면 스스로 돌아옵니다. 다만 명령 실행은 되돌릴 수 없습니다 — 이 서버에서 아예 끄는 것은 MCP 패널에서 합니다.')
+            : t('묻지 않기는 이 호스트에만 적용되고 시간이 지나면 스스로 돌아옵니다. 파일 변경은 MCP 패널의 변경된 파일 탭에서 되돌릴 수 있습니다.')}
         </p>
       </div>
     </Scrim>

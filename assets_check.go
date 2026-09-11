@@ -20,6 +20,6 @@ import "log"
 func requireAssets() {
 	if _, err := assets.Open("frontend/dist/index.html"); err != nil {
 		log.Fatal("litedeck: 프론트엔드 애셋이 바이너리에 없습니다. " +
-			"`go build` 는 frontend/dist 를 만들지 않습니다 — `wails build` 또는 `wails dev` 를 쓰세요.")
+			"`go build`는 frontend/dist를 만들지 않습니다 — `wails build` 또는 `wails dev`를 쓰세요.")
 	}
 }

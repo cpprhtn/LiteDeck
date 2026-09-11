@@ -177,7 +177,7 @@ func timedOut(line string, err error, queued, budget time.Duration) error {
 	if budget > 0 && queued > budget/2 {
 		// One literal, not a concatenation: the i18n coverage test reads these
 		// out of the syntax tree and a split string is invisible to it.
-		note := i18n.T(" — 세션 슬롯을 기다리는 데 %s 를 써서 실행할 시간이 남지 않았습니다 (동시 실행 %d개 제한). 서버가 느린 것이 아닐 수 있습니다",
+		note := i18n.T(" — 세션 슬롯을 기다리는 데 %s를 써서 실행할 시간이 남지 않았습니다 (동시 실행 %d개 제한). 서버가 느린 것이 아닐 수 있습니다",
 			queued.Round(time.Millisecond), DefaultMaxSessions)
 		return fmt.Errorf("sshcore: %q: %w"+note, line, err)
 	}
@@ -348,7 +348,7 @@ func explainAuthFailure(err error) error {
 	if !strings.Contains(strings.ToLower(err.Error()), "too many authentication failures") {
 		return err
 	}
-	return fmt.Errorf("%w — %s", err, i18n.S("ssh-agent 가 가진 키를 차례로 시도하다 서버의 인증 시도 한도를 넘겼습니다. 비밀번호는 시도되지도 않았습니다 — 호스트 편집기에서 인증 방법의 에이전트를 끄거나, 에이전트에 올려둔 키를 줄이세요"))
+	return fmt.Errorf("%w — %s", err, i18n.S("ssh-agent가 가진 키를 차례로 시도하다 서버의 인증 시도 한도를 넘겼습니다. 비밀번호는 시도되지도 않았습니다 — 호스트 편집기에서 인증 방법의 에이전트를 끄거나, 에이전트에 올려둔 키를 줄이세요"))
 }
 
 // SetObserver installs the Command Log sink. Pass nil to detach.

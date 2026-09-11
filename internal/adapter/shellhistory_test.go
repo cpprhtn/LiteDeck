@@ -122,7 +122,7 @@ func TestUnanchoredReplayKeepsTheTailAndNotTheClaim(t *testing.T) {
 	got := ReplayCd(ParseBashHistory("ls\ndocker ps\ncd sub\nls\n"), "")
 	for _, c := range got[:2] {
 		if c.PWD != "" {
-			t.Errorf("%q 는 아직 아무 근거도 없는데 경로 %q 를 받았다", c.Command, c.PWD)
+			t.Errorf("%q는 아직 아무 근거도 없는데 경로 %q를 받았다", c.Command, c.PWD)
 		}
 	}
 	for _, c := range got[2:] {
@@ -133,7 +133,7 @@ func TestUnanchoredReplayKeepsTheTailAndNotTheClaim(t *testing.T) {
 			t.Errorf("조각인데 절대경로처럼 보인다: %q", c.PWD)
 		}
 		if c.PWDCertain {
-			t.Errorf("%q 의 경로가 조각인데 확신한다고 되어 있다", c.Command)
+			t.Errorf("%q의 경로가 조각인데 확신한다고 되어 있다", c.Command)
 		}
 	}
 }

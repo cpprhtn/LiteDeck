@@ -255,7 +255,7 @@ export function SecurityView({
             <h3>{t('설정 불일치')}</h3>
             <div className="security-mismatch">
               <p className="small">
-                {t('설정 파일과 실제로 도는 값이 다릅니다 — fail2ban 을 다시 시작해야 파일이 읽힙니다.')}
+                {t('설정 파일의 값과 현재 적용된 값이 다릅니다 — fail2ban을 다시 시작해야 파일이 읽힙니다.')}
               </p>
               {view.mismatches.map((m) => (
                 <p key={m.key} className="mono small">

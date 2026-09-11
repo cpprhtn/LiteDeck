@@ -63,7 +63,7 @@ tailscale ip -4          # 100.x.y.z 형태로 나옵니다
 
 MagicDNS를 켜두었다면 IP 대신 `mypc` 같은 이름을 그대로 써도 됩니다.
 
-> 둘 중 하나로 정해서 쓰세요. LiteDeck의 `known_hosts` 는 주소 문자열로 항목을 잡으므로,
+> 둘 중 하나로 정해서 쓰세요. LiteDeck의 `known_hosts`는 주소 문자열로 항목을 잡으므로,
 > IP로 한 번 붙고 이름으로 또 붙으면 **같은 기계인데 지문을 두 번 묻습니다.** 틀린 동작은
 > 아니지만 두 번 확인할 이유도 없습니다.
 
@@ -94,13 +94,13 @@ ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
 ## Tailscale SSH를 켜 두었다면
 
 Tailscale에는 자체 SSH 기능이 있습니다. 켜면 **tailnet으로 들어오는 22번만** tailscaled가
-가로채고, 그 연결은 서버의 sshd가 아니라 tailscaled가 직접 받습니다. `sshd_config` 도
-`authorized_keys` 도 건드리지 않고, tailnet 외부에서 오는 연결은 그대로 원래 sshd로 갑니다.
+가로채고, 그 연결은 서버의 sshd가 아니라 tailscaled가 직접 받습니다. `sshd_config`도
+`authorized_keys`도 건드리지 않고, tailnet 외부에서 오는 연결은 그대로 원래 sshd로 갑니다.
 
 LiteDeck에게는 이게 **다른 서버에 붙는 것과 같습니다.** 인증을 tailnet 정책이 하므로 키나
 비밀번호를 묻지 않고 붙고, 호스트 키도 sshd 것이 아니라 tailscaled 것이 옵니다. 그래서:
 
-- **호스트 키 지문이 서버의 `ssh_host_ed25519_key.pub` 과 다릅니다.** 위 4번의 대조 방법이
+- **호스트 키 지문이 서버의 `ssh_host_ed25519_key.pub`과 다릅니다.** 위 4번의 대조 방법이
   이 경우에는 맞지 않습니다. 틀린 것이 아니라 상대가 다른 것입니다
 - **Tailscale SSH를 켰다 껐다 하면 호스트 키가 바뀝니다.** LiteDeck은 기록된 키와 다른 키가
   오면 연결을 끊고, 넘어가는 선택지를 주지 않습니다. 이건 의도된 동작입니다 — 저장된 항목을
@@ -111,7 +111,7 @@ LiteDeck에게는 이게 **다른 서버에 붙는 것과 같습니다.** 인증
 
 ## Claude(MCP)와 같이 쓸 때
 
-이 조합이 실제로 편해지는 지점입니다. LiteDeck의 MCP 엔드포인트는 **`127.0.0.1` 에만
+이 조합이 실제로 편해지는 지점입니다. LiteDeck의 MCP 엔드포인트는 **`127.0.0.1`에만
 열립니다.** 그래서 구조가 이렇게 됩니다.
 
 ```

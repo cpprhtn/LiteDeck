@@ -283,7 +283,7 @@ function SSHDSection({ hostID, visible }: { hostID: string; visible: boolean }) 
 
           {(report.unreadable?.length ?? 0) > 0 && (
             <p className="warn-text small">
-              {t('sshd 가 읽는 파일 중 이 계정이 열 수 없는 것이 있습니다 — 아래 내용은 완전하지 않습니다: {files}', {
+              {t('sshd가 읽는 파일 중 이 계정이 열 수 없는 것이 있습니다 — 아래 내용은 완전하지 않습니다: {files}', {
                 files: report.unreadable!.join(', '),
               })}
             </p>
@@ -326,7 +326,7 @@ function SSHDSection({ hostID, visible }: { hostID: string; visible: boolean }) 
 function noteText(n: SSHDNote): string {
   switch (n.code) {
     case 'permit-root-login':
-      return t('root 로 직접 로그인할 수 있습니다 (PermitRootLogin yes).')
+      return t('root로 직접 로그인할 수 있습니다 (PermitRootLogin yes).')
     case 'permit-empty-passwords':
       return t('빈 비밀번호로 로그인할 수 있습니다 (PermitEmptyPasswords yes).')
     case 'max-sessions-low':
@@ -334,13 +334,13 @@ function noteText(n: SSHDNote): string {
       // channel, up to five for terminals and log tails, and three for
       // commands. Below ten, tabs start failing to open for a reason that
       // looks like a bug in the app.
-      return t('MaxSessions 가 {value} 입니다 — LiteDeck 은 한 서버에 채널을 최대 9개 씁니다. 터미널이나 로그 창이 열리지 않는다면 이것이 원인입니다.', {
+      return t('MaxSessions가 {value} 입니다 — LiteDeck은 한 서버에 채널을 최대 9개 씁니다. 터미널이나 로그 창이 열리지 않는다면 이것이 원인입니다.', {
         value: n.value,
       })
     case 'password-authentication':
       return t('비밀번호 인증이 켜져 있습니다 (PasswordAuthentication yes).')
     case 'port':
-      return t('sshd 가 {value} 번 포트에서 듣습니다.', { value: n.value })
+      return t('sshd가 {value} 번 포트에서 듣습니다.', { value: n.value })
     case 'x11-forwarding':
       return t('X11 전달이 켜져 있습니다 (X11Forwarding yes).')
     case 'access-list':

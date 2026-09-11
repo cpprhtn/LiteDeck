@@ -72,7 +72,7 @@ export function ShellControls({
   let label = t('새 버전 확인')
   let onClick: (() => void) | undefined = check
   let title = t(
-    'github.com 에 새 릴리스가 있는지 묻습니다. 이 앱이 사용자가 지정하지 않은 곳에 보내는 유일한 요청입니다.',
+    'github.com에 새 릴리스가 있는지 묻습니다. 이 앱이 사용자가 지정하지 않은 곳에 보내는 유일한 요청입니다.',
   )
   let busy = checking
   let primary = false
@@ -83,7 +83,7 @@ export function ShellControls({
     label = install.percent >= 0 ? `${install.percent}%` : t('받는 중')
     onClick = undefined
     busy = true
-    title = t('릴리스를 내려받아 SHA256SUMS.txt 와 대조합니다.')
+    title = t('릴리스를 내려받아 SHA256SUMS.txt와 대조합니다.')
   } else if (install.stage === 'ready') {
     label = t('업데이트 적용')
     onClick = () => void ApplyUpdate().catch(() => {})

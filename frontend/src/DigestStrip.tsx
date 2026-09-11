@@ -49,7 +49,7 @@ export function DigestStrip({ hostID }: { hostID: string }) {
   const parts: string[] = []
   if (view.boots > 0) parts.push(t('재부팅 {n}회', { n: view.boots }))
   if (view.unitFailures > 0) parts.push(t('유닛 실패 {n}건', { n: view.unitFailures }))
-  if (view.sudoCommands > 0) parts.push(t('권한 명령 {n}건', { n: view.sudoCommands }))
+  if (view.sudoCommands > 0) parts.push(t('sudo 명령 {n}건', { n: view.sudoCommands }))
   if (view.authFailures > 0) parts.push(t('접속 실패 {n}건', { n: view.authFailures }))
   if (parts.length === 0) return null
 

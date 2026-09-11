@@ -83,7 +83,7 @@ func TestDirCheckAsksOncePerParent(t *testing.T) {
 		t.Errorf("한 부모 아래 다섯 번 물었는데 목록을 %d번 읽었다 — 한 번이어야 한다", f.reads)
 	}
 	if f.stats != 0 {
-		t.Errorf("목록으로 답할 수 있는데 Stat 을 %d번 했다", f.stats)
+		t.Errorf("목록으로 답할 수 있는데 Stat을 %d번 했다", f.stats)
 	}
 }
 
@@ -117,7 +117,7 @@ func TestDirCheckFallsBackToStatWhenTheParentWillNotList(t *testing.T) {
 		t.Error("목록을 못 읽는다고 있는 폴더를 없다고 했다")
 	}
 	if f.stats == 0 {
-		t.Error("목록이 막혔는데 Stat 으로 되묻지 않았다")
+		t.Error("목록이 막혔는데 Stat으로 되묻지 않았다")
 	}
 	// And it must not keep retrying the listing for every sibling.
 	d.exists("/home/deploy/web")

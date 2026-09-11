@@ -313,7 +313,7 @@ func (a *App) PinMCPPort(port int) MCPStatus {
 	// 0 means "stop pinning", which is how somebody undoes this.
 	if port != 0 && (port < 1024 || port > 65535) {
 		s := a.MCPState()
-		s.Error = i18n.S("포트는 1024 에서 65535 사이여야 합니다")
+		s.Error = i18n.S("포트는 1024에서 65535 사이여야 합니다")
 		return s
 	}
 	m := a.settings.Get().MCP

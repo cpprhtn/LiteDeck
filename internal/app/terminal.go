@@ -423,7 +423,7 @@ func (a *App) reveal(hostID, p string) RevealRequest {
 		out.New = true
 		return out
 	}
-	out.Error = i18n.T("%s 를 찾을 수 없습니다", cleaned)
+	out.Error = i18n.T("%s를 찾을 수 없습니다", cleaned)
 	return out
 }
 
@@ -593,7 +593,7 @@ func (a *App) warmWSL(hostID string, sh adapter.Shell) error {
 		// Not a failure, and pressing the button again is now safe: the script
 		// waits for the wake-up in flight instead of starting another.
 		return i18n.Errorf(
-			"%s 가 아직 켜지는 중입니다. 잠시 뒤에 다시 눌러 주세요.", distro)
+			"%s가 아직 켜지는 중입니다. 잠시 뒤에 다시 눌러 주세요.", distro)
 	case adapter.WSLHung:
 		// Not "run wsl --shutdown", which is what this used to say. Measured on
 		// a machine in this state: the shutdown ran for 242 seconds, exited -1,
@@ -601,8 +601,8 @@ func (a *App) warmWSL(hostID string, sh adapter.Shell) error {
 		// there. Sending somebody to a four-minute command that does not work
 		// is worse than sending them nowhere.
 		return i18n.Errorf(
-			"서버의 WSL 서비스가 멈춰 있습니다. 서버를 재시작해야 합니다 — `wsl --shutdown` 으로는 풀리지 않는 상태입니다.")
+			"서버의 WSL 서비스가 멈춰 있습니다. 서버를 재시작해야 합니다 — `wsl --shutdown`으로는 풀리지 않는 상태입니다.")
 	default:
-		return i18n.Errorf("%s 를 시작하지 못했습니다 — 서버에서 `wsl -d %s` 가 되는지 확인해 주세요.", distro, distro)
+		return i18n.Errorf("%s를 시작하지 못했습니다 — 서버에서 `wsl -d %s`가 되는지 확인해 주세요.", distro, distro)
 	}
 }

@@ -340,7 +340,7 @@ export function ContainerView({
                     {/* The group header already names the project, so the only
                         thing left to say is that Compose will skip this one. */}
                     {c.compose?.oneOff && (
-                      <span className="badge" title={t('compose run 으로 만들어진 컨테이너입니다. 프로젝트 전체 동작에 포함되지 않습니다.')}>
+                      <span className="badge" title={t('compose run으로 만들어진 컨테이너입니다. 프로젝트 전체 동작에 포함되지 않습니다.')}>
                         {t('일회성')}
                       </span>
                     )}

@@ -11,7 +11,7 @@ cd LiteDeck
 wails dev
 ```
 
-go.mod 이 **Go 1.26+** 를 요구합니다(`golang.org/x/crypto` 가 그 버전을 요구합니다). 설치된 Go가 1.21 이상이면 `go build`가
+go.mod이 **Go 1.26+** 를 요구합니다(`golang.org/x/crypto`가 그 버전을 요구합니다). 설치된 Go가 1.21 이상이면 `go build`가
 필요한 툴체인을 스스로 받아오므로(`GOTOOLCHAIN=auto`) 대개 신경 쓸 것이 없습니다.
 
 Linux에서는 `build-essential`과 webkit 개발 헤더가 필요합니다 — 웹뷰가 cgo로
@@ -38,7 +38,7 @@ go test ./... -race     # 통합 포함 (Docker 필요, 1분 남짓)
 - **macOS 서버** — `launchctl`
 - **FreeBSD** — `service`
 
-기존 어댑터 둘 중 가까운 쪽을 본뜨면 됩니다. 필요한 것은 명령어 매핑, 출력 파서, 그리고 **그 OS에서 실제로 캡처한 골든 파일**입니다. Windows 쪽은 `testdata/windows/capture.sh` 가 캡처와 익명화를 함께 해주니 참고하세요.
+기존 어댑터 둘 중 가까운 쪽을 본뜨면 됩니다. 필요한 것은 명령어 매핑, 출력 파서, 그리고 **그 OS에서 실제로 캡처한 골든 파일**입니다. Windows 쪽은 `testdata/windows/capture.sh`가 캡처와 익명화를 함께 해주니 참고하세요.
 
 ## 규칙 — 협상 불가
 

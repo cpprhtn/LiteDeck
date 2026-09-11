@@ -59,7 +59,7 @@ type EventsView struct {
 // elevate is the user answering the "retry as administrator" the view offers
 // after EventAccessNeedsSudo. It is never chosen automatically — §7.2.
 func (a *App) HostEvents(hostID string, rng adapter.EventRange, elevate bool) (EventsView, error) {
-	info, err := a.requireCapability(hostID, adapter.CapEvents, i18n.S("사건 기록"))
+	info, err := a.requireCapability(hostID, adapter.CapEvents, i18n.S("이벤트 기록"))
 	if err != nil {
 		return EventsView{}, err
 	}

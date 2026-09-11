@@ -389,7 +389,7 @@ func (a *App) HostSecurity(hostID string, elevate, force bool) (SecurityView, er
 		return view, nil
 	}
 	if !info.HasSudo {
-		view.RulesError = i18n.T("이 계정에는 sudo 가 없습니다")
+		view.RulesError = i18n.T("이 계정에는 sudo가 없습니다")
 		a.security.put(hostID, gen, elevate, view)
 		return view, nil
 	}
@@ -656,7 +656,7 @@ func (a *App) UnlockSecurity(hostID string) (bool, error) {
 		return false, err
 	}
 	if !info.HasSudo {
-		return false, i18n.Errorf("이 계정에는 sudo 가 없습니다")
+		return false, i18n.Errorf("이 계정에는 sudo가 없습니다")
 	}
 	if info.SudoNoPasswd {
 		// Nothing to hold. `sudo -n` works and asking would train the user to
