@@ -64,7 +64,16 @@ function pct(v: number): string {
   return v < 0 ? '—' : `${Math.round(v)}%`
 }
 
-export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFacts }) {
+export function ResourceView({
+  hostID,
+  visible,
+  facts,
+}: {
+  hostID: string
+  /** Whether this pane is on screen. */
+  visible: boolean
+  facts: SysFacts
+}) {
   // Read once per host, like the detection facts beside it. Both files change
   // when apt runs, which is not while somebody is reading this screen — and a
   // poller for it would be two SFTP stats a second for a number that moves
@@ -88,7 +97,14 @@ export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFact
   // for this host, and asking again would be a second round trip for the same
   // answer.
   const m = useMetrics(hostID)
-  const history = useMetricsHistory(hostID)
+  // Frozen while the tab is elsewhere. The store keeps collecting — the
+  // summary bar needs it — but rebuilding twelve to sixteen polylines out of up
+  // to 1,800 points every two seconds, for a pane nobody is looking at, is work
+  // paid for with the frame rate of whatever the user *is* looking at.
+  const live = useMetricsHistory(hostID)
+  const frozen = useRef<Sample[]>(live)
+  if (visible) frozen.current = live
+  const history = visible ? live : frozen.current
   // Errors and drops are lifetime totals, and the rule for them is written on
   // IfaceList below: they only matter when they climb. Alarming on the total
   // meant any host that had ever dropped a packet sat red forever — which is

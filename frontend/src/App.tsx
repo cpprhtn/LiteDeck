@@ -738,6 +738,7 @@ function renderTab(
       return (
         <MonitorView
           hostID={hostID}
+          visible={visible}
           hasEvents={!!info.capabilities?.events}
           facts={{
             prettyName: info.prettyName,

@@ -523,7 +523,18 @@ func (c *Conn) SFTP() (*sftp.Client, error) {
 	// No semaphore: this runs under c.mu with the c.sftp != nil check above, so
 	// there is exactly one of these per connection for its whole life. It is
 	// accounted for in the budget arithmetic, not policed by a counter.
-	cl, err := sftp.NewClient(c.client)
+	// UseConcurrentWrites: without it every write is one request and one reply,
+	// so an upload waits a full round trip per 32 KB buffer — about 640 KB/s at
+	// 50 ms of latency, whatever the link can do. Downloads were already fast
+	// because pkg/sftp reads ahead by default; this is the other direction
+	// catching up.
+	//
+	// The documented caveat is that a failed concurrent write can leave a hole
+	// rather than a clean truncation. Every upload here goes to a temporary
+	// name and is renamed into place on success, so a failure leaves the
+	// temporary file and never the destination — which is the case the caveat
+	// is about.
+	cl, err := sftp.NewClient(c.client, sftp.UseConcurrentWrites(true))
 	if err != nil {
 		return nil, fmt.Errorf("sshcore: start sftp subsystem: %w", err)
 	}

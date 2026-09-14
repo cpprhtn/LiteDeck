@@ -18,6 +18,7 @@ import (
 
 	"github.com/cpprhtn/LiteDeck/internal/i18n"
 	"github.com/pkg/sftp"
+	"sync"
 )
 
 // The file explorer (§4.2).
@@ -120,14 +121,65 @@ func (a *App) ListDir(hostID, dir string) (DirListing, error) {
 		listing.Truncated = true
 	}
 
-	listing.Entries = make([]FileEntry, 0, len(infos))
-	for _, fi := range infos {
-		listing.Entries = append(listing.Entries, a.entry(client, cleaned, fi))
+	listing.Entries = make([]FileEntry, len(infos))
+	for i, fi := range infos {
+		listing.Entries[i] = a.entry(cleaned, fi)
 	}
+	resolveLinks(client, listing.Entries)
 	return listing, nil
 }
 
-func (a *App) entry(client *sftp.Client, dir string, fi os.FileInfo) FileEntry {
+// linkWorkers is how many symlinks are resolved at once.
+//
+// Each one costs a ReadLink and a Stat, and done in sequence that is two round
+// trips per entry: /usr/bin, /etc/alternatives and node_modules/.bin are
+// hundreds of links each, so a directory that should open at once took several
+// seconds on a link with any latency. Sixteen is enough to hide the latency and
+// few enough not to flood the one SFTP channel the connection has.
+const linkWorkers = 16
+
+// resolveLinks fills in the symlink fields, in parallel.
+func resolveLinks(client *sftp.Client, entries []FileEntry) {
+	idx := make([]int, 0, len(entries))
+	for i := range entries {
+		if entries[i].IsSymlink {
+			idx = append(idx, i)
+		}
+	}
+	if len(idx) == 0 {
+		return
+	}
+
+	work := make(chan int)
+	var wg sync.WaitGroup
+	for w := 0; w < linkWorkers && w < len(idx); w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range work {
+				e := &entries[i]
+				if target, err := client.ReadLink(e.Path); err == nil {
+					e.LinkTarget = target
+				}
+				// The target's attributes, not the link's: what double-clicking
+				// it does depends on what it points at.
+				if st, err := client.Stat(e.Path); err == nil {
+					e.IsDir = st.IsDir()
+					e.Size = st.Size()
+				} else {
+					e.Broken = true
+				}
+			}
+		}()
+	}
+	for _, i := range idx {
+		work <- i
+	}
+	close(work)
+	wg.Wait()
+}
+
+func (a *App) entry(dir string, fi os.FileInfo) FileEntry {
 	full := path.Join(dir, fi.Name())
 	e := FileEntry{
 		Name:    fi.Name(),
@@ -144,18 +196,9 @@ func (a *App) entry(client *sftp.Client, dir string, fi os.FileInfo) FileEntry {
 
 	// ReadDir reports link attributes, not the target's, so a symlink has to be
 	// resolved separately to know whether double-clicking it opens a directory.
-	if fi.Mode()&os.ModeSymlink != 0 {
-		e.IsSymlink = true
-		if target, err := client.ReadLink(full); err == nil {
-			e.LinkTarget = target
-		}
-		if st, err := client.Stat(full); err == nil {
-			e.IsDir = st.IsDir()
-			e.Size = st.Size()
-		} else {
-			e.Broken = true
-		}
-	}
+	// The resolving itself is resolveLinks' job — two round trips each, and a
+	// directory of them is worth doing at once rather than in a queue.
+	e.IsSymlink = fi.Mode()&os.ModeSymlink != 0
 	return e
 }
 
