@@ -8,17 +8,26 @@ import (
 )
 
 // The web transport reflects over the App to expose its bindings, so the danger
-// is a method becoming remotely reachable that never should be. A full pin of
-// the exposed set (there are ~86) would break on every ordinary new binding and
-// train people to update it without thinking — the opposite of a review gate.
-// The bindings are, after all, exactly what the desktop UI already does; a new
-// one is not a new risk. What IS a risk is narrow and structural, so that is
-// what this floor guards:
+// is a method becoming remotely reachable that never should be.
 //
-//   - lifecycle methods (Startup/Shutdown), caught by the "takes a
-//     context.Context" rule, must stay unreachable — /rpc/Shutdown would tear
-//     down every connection;
-//   - the Bench* render-benchmark spike must stay unreachable.
+// # Why the whole set is pinned
+//
+// This used to be a floor — "at least sixty methods, and never Startup,
+// Shutdown or Bench*" — on the reasoning that a full pin breaks on every
+// ordinary new binding and trains people to update it without thinking.
+//
+// That reasoning had a hole, and the hole shipped. In server mode /rpc runs on
+// the server box, so a binding that reaches "the local filesystem" reaches the
+// server's own disk: its keys, its settings.json with the MCP token, its
+// hosts.json. StartUpload, StartDownload and ImportSSHConfig all did, and no
+// floor could have said so, because each of them was an ordinary new binding
+// that the desktop UI already used. The thing that makes a binding dangerous is
+// not its name and not how many there are — it is a question somebody has to
+// answer once, when it is added.
+//
+// So the set is pinned and the failure asks the question. Updating the list is
+// still a one-line edit; what changed is that the edit happens while the two
+// questions below are on the screen.
 //
 // Run against the real App, not a stand-in, so a real method that slips the net
 // is caught here rather than in production.
@@ -52,11 +61,35 @@ func TestWebRPCExposureFloor(t *testing.T) {
 		}
 	}
 
-	// A catastrophic drop (the reflection walk breaks, exposing nothing or
-	// almost nothing) should fail loudly rather than silently shipping a UI
-	// that cannot call anything.
-	if n := len(exposed); n < 60 {
-		t.Errorf("only %d methods exposed — the binding surface looks broken", n)
+	// The pin. Sorted, so a new entry lands next to its neighbours and the diff
+	// shows one line.
+	pinned := map[string]bool{}
+	for _, m := range webRPCPinned {
+		pinned[m] = true
+	}
+	for m := range exposed {
+		if !pinned[m] {
+			t.Errorf(`%s is newly reachable over /rpc and is not in webRPCPinned.
+
+Two questions before you add it:
+
+  1. Does it touch the machine running the app — its disk, its clipboard, its
+     OS dialogs, its process? On the desktop that is the user's own laptop and
+     it is an ordinary feature. In server mode it is the server box, and /rpc
+     hands it to anyone who can log into the web UI. If the answer is yes, it
+     needs an a.headless guard and a line in
+     TestLocalFilesystemBindingsRefuseInServerMode.
+  2. Does it tear anything down, or is it dev-only spike infrastructure? Then
+     it must not be bound at all.
+
+If neither applies it is an ordinary binding: add it to webRPCPinned.`, m)
+		}
+	}
+	for _, m := range webRPCPinned {
+		if !exposed[m] {
+			t.Errorf("%s is pinned but no longer reachable over /rpc — "+
+				"if the binding was removed on purpose, drop it from webRPCPinned", m)
+		}
 	}
 }
 
@@ -107,3 +140,38 @@ func TestLocalFilesystemBindingsRefuseInServerMode(t *testing.T) {
 
 func mustErr(_ []string, err error) error            { return err }
 func errOf(_ ImportSSHConfigResult, err error) error { return err }
+
+// webRPCPinned is every method the web transport exposes today.
+//
+// Maintained by hand. TestWebRPCExposureFloor says what to ask before adding a
+// line, and the failure it prints asks it again at the moment it matters.
+var webRPCPinned = []string{
+	"AnswerHostKey", "AnswerMCPWrite", "AnswerSecret", "ApplyLanguage",
+	"ApplyUpdate", "Bootstrap", "CancelPrompt", "CancelTransfer",
+	"CheckForUpdate", "Chmod", "ClearCommandLog", "ClearFinishedTransfers",
+	"CloseTerminal", "ColdStartMs", "CommandLog", "ComposeAction",
+	"ConnectHost", "ContainerAction", "ContainerLogs", "DeleteHost",
+	"DeletePaths", "DetectHost", "DisconnectHost", "DownloadUpdate",
+	"EndSSHSession", "FollowContainerLog", "FollowServiceLog", "ForgetSecrets",
+	"HomeDir", "HostCommandHistory", "HostDigest", "HostEvents",
+	"HostLogins", "HostMetrics", "HostNetwork", "HostSecurity",
+	"HostShellHistory", "HostShells", "HostState", "HostSudoState",
+	"HostUpdates", "ImportSSHConfig", "KillProcess", "ListContainers",
+	"ListDir", "ListHosts", "ListImages", "ListProcesses",
+	"ListRunningContainers", "ListSSHSessions", "ListServices", "ListTerminals",
+	"ListTimers", "ListVolumes", "LockSecurity", "MCPChanges",
+	"MCPState", "MakeDir", "MarkHostSeen", "OpenTerminal",
+	"PendingPrompts", "PickLocalDir", "PickLocalFiles", "PickLocalUploadDir",
+	"PinMCPPort", "Platform", "PreviewFile", "ProcessExists",
+	"PruneImages", "ReadClipboard", "ReadTextFile", "RefreshHostNetwork",
+	"RememberSecurityLogins", "RemoveContainer", "RemoveImage", "RemoveVolume",
+	"RenamePath", "Renice", "ReportSample", "ResizeTerminal",
+	"RestoreMCPChange", "ResumeTransfer", "RevealFromTerminal", "RotateMCPToken",
+	"SSHDConfig", "SaveHost", "SaveTextFile", "SecurityLogins",
+	"ServiceAction", "ServiceLogTail", "SetLanguage", "SetMCPEnabled",
+	"SetMCPHost", "SetMCPHostDelete", "SetMCPHostExec", "SetMCPWritePolicy",
+	"SetShellHistoryAllowed", "StartDownload", "StartUpload", "StatPath",
+	"StopLogStream", "SudoUnlocked", "TerminalCwd", "Transfers",
+	"TypedEntered", "TypedHistory", "UnlockSecurity", "UpdateStatus",
+	"UploadFile", "WriteTerminal", "WriteTextFile",
+}

@@ -371,13 +371,13 @@ func TestParseNftOnEmptyOutput(t *testing.T) {
 // most recent line was fifty minutes old, already blocked and quiet since.
 func TestTopAttackersDropsWhatIsAlreadyBlocked(t *testing.T) {
 	counts := map[string]int{
-		"45.128.232.9":  931, // inside a banned /24
-		"92.118.39.85":  412, // banned individually by fail2ban
+		"198.18.4.9":    931, // inside a banned /24
+		"198.18.10.85":  412, // banned individually by fail2ban
 		"203.0.113.77":  388, // not blocked
 		"203.0.113.78":  201, // not blocked, same /24
 		"198.51.100.31": 12,  // not blocked
 	}
-	blocked := []string{"45.128.232.0/24", "92.118.39.85"}
+	blocked := []string{"198.18.4.0/24", "198.18.10.85"}
 
 	got := TopAttackers(counts, blocked, 10)
 	if len(got) != 3 {
@@ -387,26 +387,26 @@ func TestTopAttackersDropsWhatIsAlreadyBlocked(t *testing.T) {
 		t.Errorf("가장 많은 것이 %+v", got[0])
 	}
 	for _, a := range got {
-		if a.Address == "45.128.232.9" {
+		if a.Address == "198.18.4.9" {
 			t.Error("이미 대역째 막힌 주소가 남았다 — 대역 안에 있는지도 봐야 한다")
 		}
 	}
 }
 
 // Three or more from one /24 is a pattern that only shows when they are put
-// together. Measured: seven hosts from 109.160.32.0/24 on one server and eight
-// from 213.209.159.0/24 on another, each invisible one address at a time.
+// together. Measured: seven hosts from 198.18.0.0/24 on one server and eight
+// from 198.18.9.0/24 on another, each invisible one address at a time.
 func TestSubnetClustersAreFoundOnlyByGrouping(t *testing.T) {
 	got := SubnetClusters([]Attacker{
-		{Address: "109.160.32.11", Count: 90},
-		{Address: "109.160.32.12", Count: 80},
-		{Address: "109.160.32.13", Count: 70},
+		{Address: "198.18.0.11", Count: 90},
+		{Address: "198.18.0.12", Count: 80},
+		{Address: "198.18.0.13", Count: 70},
 		{Address: "203.0.113.77", Count: 400},
 	}, 3)
 	if len(got) != 1 {
 		t.Fatalf("군집 %d개, 기대 1개: %+v", len(got), got)
 	}
-	if got[0].CIDR != "109.160.32.0/24" || got[0].Hosts != 3 || got[0].Count != 240 {
+	if got[0].CIDR != "198.18.0.0/24" || got[0].Hosts != 3 || got[0].Count != 240 {
 		t.Errorf("%+v", got[0])
 	}
 }
@@ -426,7 +426,7 @@ func TestParseBanLogCountsDistinctAddresses(t *testing.T) {
 		t.Errorf("고유 주소 %d개, 기대 5개", h.Unique)
 	}
 	// Newest first: the screen reads downward from now.
-	if h.Bans[0].Address != "201.81.240.158" {
+	if h.Bans[0].Address != "198.18.3.158" {
 		t.Errorf("첫 줄이 %+v — 최신이 위여야 한다", h.Bans[0])
 	}
 	if h.Bans[0].At.Format("2006-01-02 15:04") != "2026-09-08 23:15" {
