@@ -276,6 +276,16 @@ type sudoUnlock struct {
 type sudoUnlockEntry struct {
 	gen      uint64
 	password string
+	// turned is whether the user opened the lock on purpose, as opposed to
+	// answering a password dialog for one action.
+	//
+	// The two need different answers. A password that worked once should not be
+	// asked for again on the same connection — that was the friction: restart a
+	// unit with the password, ask to read its log, and the same dialog came
+	// back a second later. But a read that happened to elevate must not make
+	// the security tab report itself as unlocked, or a poll could open the
+	// privileged half of a screen nobody asked to open.
+	turned bool
 }
 
 func newSudoUnlock() *sudoUnlock { return &sudoUnlock{byID: map[string]sudoUnlockEntry{}} }
@@ -290,10 +300,39 @@ func (u *sudoUnlock) get(id string, gen uint64) (string, bool) {
 	return e.password, true
 }
 
+// put stores a password the user turned the lock with.
 func (u *sudoUnlock) put(id string, gen uint64, password string) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
+	u.byID[id] = sudoUnlockEntry{gen: gen, password: password, turned: true}
+}
+
+// remember stores a password that worked for one action, so the next action on
+// the same connection does not ask again. It does not turn the lock.
+func (u *sudoUnlock) remember(id string, gen uint64, password string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if e, ok := u.byID[id]; ok && e.gen == gen && e.turned {
+		return // already open; do not downgrade it
+	}
 	u.byID[id] = sudoUnlockEntry{gen: gen, password: password}
+}
+
+// getTurned is get, but only for a lock the user opened on purpose.
+func (u *sudoUnlock) getTurned(id string, gen uint64) (string, bool) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	e, ok := u.byID[id]
+	if !ok || e.gen != gen || !e.turned {
+		return "", false
+	}
+	return e.password, true
+}
+
+// isTurned reports whether the lock was opened on purpose.
+func (u *sudoUnlock) isTurned(id string, gen uint64) bool {
+	_, ok := u.getTurned(id, gen)
+	return ok
 }
 
 func (u *sudoUnlock) forget(id string) {
@@ -495,7 +534,10 @@ func (a *App) securityRules(
 	if info.SudoNoPasswd {
 		res, err = conn.Exec(ctx, "sudo", "-n", "--", "sh", "-c", script)
 	} else {
-		password, ok := a.unlocked.get(hostID, a.connGeneration(hostID))
+		// The lock, not a password remembered from some other action. This
+		// half of the tab opens because somebody asked it to; a read that
+		// happened to elevate elsewhere is not that request.
+		password, ok := a.unlocked.getTurned(hostID, a.connGeneration(hostID))
 		if !ok {
 			return "", "", "", "", "", i18n.Errorf("잠겨 있습니다")
 		}
@@ -666,7 +708,15 @@ func (a *App) UnlockSecurity(hostID string) (bool, error) {
 	// Already open on this connection. Turning the lock in one tab and then
 	// turning it in another asked for the password twice for the same
 	// permission, which is exactly the thing this lock exists to avoid.
-	if _, ok := a.unlocked.get(hostID, a.connGeneration(hostID)); ok {
+	//
+	// A password merely remembered from an earlier action opens it without
+	// asking again: the user has already proved they know it, and making them
+	// type it a second time for the same connection is the friction this lock
+	// was built to remove.
+	gen := a.connGeneration(hostID)
+	if pw, ok := a.unlocked.get(hostID, gen); ok {
+		a.unlocked.put(hostID, gen, pw)
+		a.emitSudoState(hostID)
 		return true, nil
 	}
 	// Deliberately not secretFunc: that one reads the keychain and offers to
@@ -698,7 +748,10 @@ func (a *App) LockSecurity(hostID string) {
 // somebody who has already proved they may have it should not be asked again to
 // see process names.
 func (a *App) SudoUnlocked(hostID string) bool {
-	if _, ok := a.unlocked.get(hostID, a.connGeneration(hostID)); ok {
+	// Turned, not merely remembered. A read that elevated to fetch attackers
+	// must not report the tab as unlocked — a poll would then open the
+	// privileged half of a screen nobody asked to open.
+	if a.unlocked.isTurned(hostID, a.connGeneration(hostID)) {
 		return true
 	}
 	// Only what detection already found. Calling DetectHost here would probe —

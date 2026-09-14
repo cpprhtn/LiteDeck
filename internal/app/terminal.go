@@ -186,7 +186,14 @@ func (a *App) OpenTerminal(hostID string, opts TerminalOptions) (TerminalInfo, e
 		InitialDir: opts.Dir,
 		Windows:    a.isWindows(hostID),
 	}
+	// The host's display name, not its id. The id is a timestamp with a prefix
+	// — `host-1789270558280816000` — and it was the tab title for every POSIX
+	// terminal opened without a directory, a container or a Windows shell,
+	// which is most of them.
 	title := hostID
+	if h, ok := a.hosts.Get(hostID); ok {
+		title = h.Label()
+	}
 	// Windows hands out whatever sshd's DefaultShell says, and that is usually
 	// cmd. Which shell the user asked for decides the whole command line,
 	// including how "start in this directory" is spelled — the three shells do

@@ -68,17 +68,23 @@ export function ImagesVolumes({
     void refresh()
   }, [visible, refresh])
 
-  const run = async (key: string, fn: (elevate: boolean) => Promise<ActionResult>) => {
+  // The elevated retry goes back through here — see ContainerView for what a
+  // bare `fn(true)` swallowed.
+  const run = async (
+    key: string,
+    fn: (elevate: boolean) => Promise<ActionResult>,
+    elevate = false,
+  ) => {
     setPending(key)
     setNeedsRoot(null)
     setConfirm(null)
     try {
-      const res = await fn(false)
+      const res = await fn(elevate)
       if (!res.ok) {
-        if (res.needsElevation) {
+        if (res.needsElevation && !elevate) {
           setNeedsRoot({
             message: res.error ?? t('권한이 필요합니다'),
-            retry: () => void fn(true).then(() => refresh()),
+            retry: () => void run(key, fn, true),
           })
         } else {
           onError(res.error ?? t('실패했습니다'))
