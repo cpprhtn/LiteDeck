@@ -40,7 +40,11 @@ function exists(path) {
   }
 }
 
-const browser = await chromium.launch({ channel: process.env.LITEDECK_E2E_CHANNEL ?? 'chrome' })
+// The browser already on the machine, by default. Setting the variable to an
+// empty string asks for whatever Playwright itself has downloaded, which is how
+// this runs where Chrome is not installed.
+const channel = process.env.LITEDECK_E2E_CHANNEL ?? 'chrome'
+const browser = await chromium.launch(channel ? { channel } : {})
 // A light desktop, pinned. The theme checks below move the picker back to
 // "follow the OS" and assert the colours do not move, which needs the OS half
 // of that to be a known quantity rather than whatever the machine running this
