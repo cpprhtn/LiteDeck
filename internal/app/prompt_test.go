@@ -366,3 +366,26 @@ func TestConcurrentPromptsDoNotCrossWires(t *testing.T) {
 		}
 	}
 }
+
+// The handshake must give up before the server does.
+//
+// sshd's LoginGraceTime is two minutes by default and both prompts this bounds
+// are answered from inside the handshake, so a longer wait is a wait on a
+// connection the server has already closed. From OpenSSH 9.8 it also earns the
+// source address a penalty — measured on CentOS Stream 9 with OpenSSH 9.9,
+// where `persourcepenalties` includes `grace-exceeded:10 … max:600` and the box
+// then refused every connection from this machine, ssh-keyscan included.
+func TestPromptTimeoutIsUnderLoginGraceTime(t *testing.T) {
+	// The stock default, which is what almost every server runs.
+	const loginGraceTime = 2 * time.Minute
+	if PromptTimeout >= loginGraceTime {
+		t.Errorf("PromptTimeout is %s, which sshd's default LoginGraceTime of %s "+
+			"beats — the connection is gone before the dialog times out, and on "+
+			"OpenSSH 9.8+ the address is penalised for it", PromptTimeout, loginGraceTime)
+	}
+	// Room for the key exchange and the round trip to the frontend, and enough
+	// left over for somebody to actually read a fingerprint.
+	if PromptTimeout < 60*time.Second {
+		t.Errorf("PromptTimeout is %s — too short to read a fingerprint and answer", PromptTimeout)
+	}
+}
