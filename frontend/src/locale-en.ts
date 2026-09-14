@@ -756,7 +756,4 @@ export const en: Record<string, string> = {
   '테마': 'Theme',
   '라이트': 'Light',
   '다크': 'Dark',
-  '운영체제 설정을 따릅니다': 'Follows the operating system',
-  '항상 밝게': 'Always light',
-  '항상 어둡게': 'Always dark',
 }

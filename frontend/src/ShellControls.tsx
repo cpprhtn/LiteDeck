@@ -165,10 +165,10 @@ export function ShellControls({
       <button className="ghost small-btn" onClick={onOpenMCP} title={t('MCP 연동 설정')}>
         MCP
       </button>
-      {/* Three positions, because "follow the OS" is the only one that keeps
-          being right — a desktop that switches at sunset should take the app
-          with it. A two-position switch cannot say that, and once you have
-          clicked either half you are pinned until you find the control again.
+      {/* Two positions. Before the first pick there is a third state — nothing
+          stored — but it has no position here: the control shows what the theme
+          resolved to, which on a fresh install is whatever the desktop is set
+          to. Picking either half pins it.
 
           Applied before it is stored: the colours change on the same frame as
           the click, and Go hears about it afterwards. */}
@@ -184,7 +184,7 @@ export function ShellControls({
         }}
       >
         {THEMES.map((th) => (
-          <option key={th.id || 'system'} value={th.id} title={t(th.title)}>
+          <option key={th.id} value={th.id}>
             {t(th.label)}
           </option>
         ))}

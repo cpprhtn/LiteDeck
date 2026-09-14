@@ -3,14 +3,18 @@ import { k } from './i18n'
 
 // Light and dark (§8).
 //
-// # Three positions, not two
+// # Two positions, and a default that is not one of them
 //
-// "Follow the OS" is the default and has to stay reachable, because it is the
-// only setting that keeps being right — somebody whose desktop switches at
-// sunset wants the app to switch with it. A two-position switch cannot express
-// it: once you have clicked either half you are pinned until you find the
-// setting again. So the stored value has three states and the empty one is the
-// default, exactly as the language preference does it.
+// The picker offers light and dark and nothing else. Underneath, the stored
+// value has a third state — empty, meaning nobody has chosen yet — which is
+// simply what settings.json says on a fresh install. It is resolved against
+// the OS and never shown: the control displays the resolved answer, so a new
+// user finds it already sitting on whatever their desktop is set to.
+//
+// Until the first pick the app does follow the OS, and after it the choice is
+// pinned. That is the whole of the difference, and it is deliberately not a
+// third position on the control: "follow the OS" is a state people end up in
+// rather than one they go looking for.
 //
 // # Where the choice lives
 //
@@ -27,19 +31,18 @@ import { k } from './i18n'
 // dark palette instead of two, at the cost of this module having to resolve
 // "follow the OS" itself and re-resolve it when the OS changes underneath.
 
-/** What the user chose. Empty is the default: follow the OS. */
+/** What is stored. Empty means nobody has picked yet. */
 export type Theme = '' | 'light' | 'dark'
 
-/** What that resolves to. What the attribute is actually set to. */
+/** What that resolves to, and what the attribute is set to. */
 export type ResolvedTheme = 'light' | 'dark'
 
 // k(), not t(): this table is built once at module load and the picker
 // translates each label as it renders, so a language change redraws it without
 // the table having to be rebuilt.
-export const THEMES: { id: Theme; label: string; title: string }[] = [
-  { id: '', label: k('시스템'), title: k('운영체제 설정을 따릅니다') },
-  { id: 'light', label: k('라이트'), title: k('항상 밝게') },
-  { id: 'dark', label: k('다크'), title: k('항상 어둡게') },
+export const THEMES: { id: ResolvedTheme; label: string }[] = [
+  { id: 'light', label: k('라이트') },
+  { id: 'dark', label: k('다크') },
 ]
 
 const KEY = 'litedeck.theme'
@@ -61,22 +64,26 @@ export function resolvedTheme(): ResolvedTheme {
   return systemIsDark() ? 'dark' : 'light'
 }
 
-export function getTheme(): Theme {
-  return current
-}
-
-/** Puts the resolved answer on the root element, which is all the CSS reads. */
+/**
+ * Puts the resolved answer on the root element, which is all the CSS reads.
+ *
+ * Silent when the answer has not moved. The terminal rebuilds its palette on
+ * every notification, and an OS event that resolves to the colours already on
+ * screen is not worth that.
+ */
 function stamp() {
-  document.documentElement.dataset.theme = resolvedTheme()
+  const next = resolvedTheme()
+  if (document.documentElement.dataset.theme === next) return
+  document.documentElement.dataset.theme = next
   emit()
 }
 
 export function setTheme(theme: Theme) {
   current = theme
   try {
-    // Written even for the default, so a machine that was pinned to dark and is
-    // then set back to "follow the OS" does not open dark once more before the
-    // bootstrap arrives.
+    // The empty case is cleared rather than left alone: it arrives from the
+    // bootstrap when Go has no stored theme, and a stale copy here would paint
+    // the next launch from a choice that is no longer recorded anywhere.
     if (theme) localStorage.setItem(KEY, theme)
     else localStorage.removeItem(KEY)
   } catch {
@@ -96,9 +103,8 @@ export function setTheme(theme: Theme) {
 export function initTheme(stored: string) {
   setTheme(stored === 'light' || stored === 'dark' ? stored : '')
 
-  // Only matters while following the OS, but subscribing unconditionally is
-  // simpler than subscribing and unsubscribing as the choice changes, and
-  // `stamp` is a no-op when the answer has not moved.
+  // Only matters before the first pick, but subscribing unconditionally is
+  // simpler than subscribing and unsubscribing as the choice changes.
   window
     .matchMedia?.('(prefers-color-scheme: dark)')
     .addEventListener('change', () => {
@@ -107,30 +113,28 @@ export function initTheme(stored: string) {
 }
 
 /**
- * The current choice, as React state.
+ * The theme in effect, as React state.
  *
- * The picker has to read it through this and not through getTheme(). Its
- * <select> is controlled, and React restores a controlled input to its last
- * rendered value when the change handler produces no re-render — the choice
- * lives in a module variable, which React cannot see. Picking a theme changed
- * the colours and then snapped the control back to where it was, visibly or
- * not depending on whether something else happened to re-render the rail in
- * the same tick. It looked fine with the sidebar idle and wrong with a
- * terminal open.
+ * The picker has to read it through this rather than by calling
+ * resolvedTheme(). Its <select> is controlled, and React restores a controlled
+ * input to its last rendered value when the change handler produces no
+ * re-render. The value lives in a module variable, which React cannot see, so
+ * picking a theme changed the colours and then snapped the control back to
+ * where it was — visibly or not depending on whether something else happened to
+ * re-render the rail in the same tick. It looked right with the sidebar idle
+ * and wrong with a terminal open.
  *
- * The choice and not the resolved value, which is a distinction with a case
- * behind it: moving from "light" back to "follow the OS" on a light desktop
- * leaves the resolved value where it was, so a component watching that one
- * never re-renders and the picker stays on "light".
+ * The resolved value, not the stored one: the stored one has an empty state
+ * that the control has no position for.
  */
-export function useTheme(): Theme {
+export function useTheme(): ResolvedTheme {
   return useSyncExternalStore(
     (fn) => {
       listeners.add(fn)
       return () => listeners.delete(fn)
     },
-    getTheme,
-    () => '',
+    resolvedTheme,
+    () => 'light',
   )
 }
 
