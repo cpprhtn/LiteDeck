@@ -170,3 +170,53 @@ func TestImportSSHConfigDanglingInclude(t *testing.T) {
 		t.Error("hosts after a dangling Include were lost")
 	}
 }
+
+// A Match block ends the Host block before it.
+//
+// Everything inside one is conditional on things this importer cannot evaluate
+// — the final hostname, the local user, the exit status of a command — so its
+// directives used to be attached to whichever Host came last. A `Match host
+// bastion` carrying a ProxyJump then put that ProxyJump on an unrelated server,
+// and the import looked right until somebody tried to connect.
+func TestMatchBlockDoesNotLeakIntoTheHostAbove(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config")
+	body := `Host prod
+  HostName prod.example.com
+  User deploy
+
+Match host bastion
+  ProxyJump jump@gateway:22
+  User someone-else
+
+Host staging
+  HostName staging.example.com
+`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	hosts, err := ImportSSHConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]Host{}
+	for _, h := range hosts {
+		byName[h.Name] = h
+	}
+
+	prod, ok := byName["prod"]
+	if !ok {
+		t.Fatal("prod was not imported")
+	}
+	if prod.ProxyJump != "" {
+		t.Errorf("prod picked up the Match block's ProxyJump: %q", prod.ProxyJump)
+	}
+	if prod.User != "deploy" {
+		t.Errorf("prod user = %q, want deploy", prod.User)
+	}
+	// And the Host after the Match block is still read.
+	if s, ok := byName["staging"]; !ok || s.Hostname != "staging.example.com" {
+		t.Errorf("staging = %+v", s)
+	}
+}
