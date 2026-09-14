@@ -252,6 +252,22 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The whole history, for the tag below. A shallow checkout sees one
+          # commit and no tags, so the compare link would have nothing to
+          # point back at.
+          fetch-depth: 0
+
+      # The previous release, for the "전체 변경 내역" link at the foot of the
+      # notes. Sorted by version rather than by date: a patch cut after a
+      # later minor would otherwise become everyone's idea of "previous".
+      - name: Previous tag
+        id: prev
+        run: |
+          prev=$(git tag --list 'v*' --sort=-version:refname \
+            | grep -vx "$GITHUB_REF_NAME" | head -1)
+          echo "tag=$prev" >> "$GITHUB_OUTPUT"
+          echo "previous release: ${prev:-(none)}"
 
       - uses: actions/download-artifact@v4
         with:
@@ -283,72 +299,113 @@ jobs:
           # Latest. A constant that happens to be right for a while is a constant
           # that will be wrong the first time it matters.
           prerelease: ${{ contains(github.ref_name, '-') }}
-          generate_release_notes: true
+          # The notes are written here rather than generated, and they are
+          # almost all installation instructions. Every build is unsigned, so
+          # the first thing anyone downloading meets is a Gatekeeper or
+          # SmartScreen warning — telling them what it is and how to get past it
+          # safely is the release note's actual job. What changed is one link at
+          # the bottom, because somebody who cares reads the commits.
+          #
+          # generate_release_notes is off: it appends an English "What's Changed"
+          # block under a Korean page, and the contributor list it builds is this
+          # one repository's author every time.
+          generate_release_notes: false
           files: release/*
           body: |
-            ## 설치
+            ## 설치 전 확인
 
-            **이 빌드는 서명되어 있지 않습니다.** macOS는 Gatekeeper가, Windows는
-            SmartScreen이 경고를 띄웁니다. 서명·공증에는 비용이 들어 초기 릴리스는
-            미서명으로 배포합니다.
+            이 릴리스의 실행 파일은 코드 서명 및 공증이 적용되지 않았습니다. 따라서 macOS에서는 Gatekeeper 경고가, Windows에서는 Microsoft Defender SmartScreen 경고가 표시될 수 있습니다.
 
-            받은 파일이 온전한지는 각 자산 옆의 SHA-256 값으로 확인할 수 있고,
-            리눅스·macOS 에서는 `sha256sum -c SHA256SUMS.txt` 로 한 번에
-            검증합니다. 체크섬은 전송 중 손상을 잡을 뿐 서명의 대체물은 아닙니다.
+            다운로드한 파일은 릴리스 자산에 포함된 `SHA256SUMS.txt`를 사용하여 무결성을 확인할 수 있습니다.
 
-            ### macOS
+            Linux:
 
-            `litedeck-desktop-macos.zip` 압축 해제 후 `litedeck.app`.
-            Intel·Apple Silicon 공용 바이너리입니다.
-
-            첫 실행에서 `Apple could not verify "litedeck" is free of malware…`
-            가 뜹니다. **시스템 설정 → 개인정보 보호 및 보안** 에서 아래로
-            내려가면 **"그래도 열기"** 가 있습니다. 또는:
-
+            ```bash
+            sha256sum -c SHA256SUMS.txt
             ```
+
+            macOS:
+
+            ```bash
+            shasum -a 256 -c SHA256SUMS.txt
+            ```
+
+            SHA-256 체크섬은 다운로드 과정에서 파일이 손상되거나 변경되지 않았는지 확인하기 위한 값입니다. 개발자 신원을 확인하는 코드 서명을 대신하지는 않습니다.
+
+            ## macOS
+
+            `litedeck-desktop-macos.zip`의 압축을 해제한 후 `litedeck.app`을 실행합니다. Intel 및 Apple Silicon을 모두 지원하는 Universal Binary입니다.
+
+            첫 실행 시 개발자를 확인할 수 없다는 경고가 표시될 수 있습니다.
+
+            1. `litedeck.app`을 한 번 실행합니다.
+            2. **시스템 설정 → 개인정보 보호 및 보안**으로 이동합니다.
+            3. 보안 항목에서 LiteDeck에 대한 **그래도 열기**를 선택합니다.
+            4. 확인 창에서 다시 **열기**를 선택합니다.
+
+            `그래도 열기` 버튼은 앱 실행을 시도한 후 일정 시간 동안만 표시될 수 있습니다.
+
+            위 방법으로 실행할 수 없는 경우, 파일의 SHA-256 값을 먼저 확인한 후 다음 명령으로 격리 속성을 제거할 수 있습니다.
+
+            ```bash
             xattr -d com.apple.quarantine litedeck.app
             ```
 
-            우클릭 → 열기는 macOS 15부터 Apple이 없앴습니다 — 14 이하에서만 됩니다.
+            이 명령은 macOS의 다운로드 파일 보호 속성을 제거하므로, 공식 릴리스에서 받은 파일인지 반드시 확인한 후 사용하세요.
 
-            ### Windows
+            ## Windows
 
-            `litedeck-desktop-windows-amd64.zip` 압축을 풀면 `litedeck.exe` 하나입니다.
-            설치 관리자는 없습니다 — 원하는 곳에 두고 쓰시고, 지울 때는 파일만
-            지우면 됩니다. WebView2가 없으면 설치 프롬프트가 뜹니다.
+            `litedeck-desktop-windows-amd64.zip`의 압축을 해제한 후 `litedeck.exe`를 실행합니다.
 
-            **Windows Defender가 파일을 삭제할 수 있습니다.** 서명되지 않은
-            새 실행 파일에는 평판 정보가 없어서, 다운로드 직후 경고 없이
-            격리되는 경우가 있습니다. 바이러스가 아니라 **서명이 없기
-            때문**이며, 서명·공증에는 비용이 들어 초기 릴리스는 미서명입니다.
+            별도의 설치 프로그램은 제공하지 않습니다. 원하는 폴더에 압축을 풀어 사용하고, 제거할 때는 해당 파일과 폴더를 삭제하면 됩니다.
 
-            지워졌다면 **Windows 보안 → 바이러스 및 위협 방지 → 보호 기록**
-            에서 해당 항목을 찾아 **작업 → 허용** 을 누르면 복원됩니다.
-            받기 전에 미리 막으려면 같은 화면의 **설정 관리 → 제외 항목 추가**
-            에 압축 푼 폴더를 등록하세요.
+            Microsoft Edge WebView2 Runtime이 설치되어 있지 않은 경우 설치 안내가 표시될 수 있습니다.
 
-            SmartScreen 경고는 **추가 정보 → 실행** 으로 넘깁니다.
+            서명되지 않은 신규 실행 파일은 평판 정보가 충분하지 않아 Microsoft Defender SmartScreen 경고가 표시될 수 있습니다. 공식 GitHub 릴리스에서 다운로드했는지와 SHA-256 값이 일치하는지 확인한 후 다음과 같이 실행할 수 있습니다.
 
-            ### Linux (데스크톱)
+            1. SmartScreen 경고 화면에서 **추가 정보**를 선택합니다.
+            2. 게시자와 파일 이름을 확인합니다.
+            3. 계속하려면 **실행**을 선택합니다.
 
-            `libwebkit2gtk`와 `libgtk-3`가 필요합니다.
+            Microsoft Defender가 파일을 격리한 경우에는 **Windows 보안 → 바이러스 및 위협 방지 → 보호 기록**에서 탐지 내용을 확인하세요. 오탐이라고 판단되는 경우에만 해당 항목의 허용 또는 복원 여부를 결정하시기 바랍니다.
 
+            ## Linux 데스크톱
+
+            Linux 데스크톱 버전을 실행하려면 WebKitGTK와 GTK 3 라이브러리가 필요합니다. 배포판에 따라 패키지 이름이 다를 수 있습니다.
+
+            ```bash
+            tar xzf litedeck-desktop-linux-amd64.tar.gz
+            chmod +x litedeck
+            ./litedeck
             ```
-            tar xzf litedeck-desktop-linux-amd64.tar.gz && chmod +x litedeck && ./litedeck
-            ```
 
-            ## 서버 모드 (브라우저로 접근 · 선택)
+            ## 서버 모드
 
-            데스크톱 앱과는 **다른 별개 바이너리**입니다. 웹킷·GTK 의존이 없는
-            정적 단일 바이너리로, 서버에 올려두고 브라우저로 씁니다(그라파나 방식).
-            위의 `litedeck-desktop-linux-amd64.tar.gz`(데스크톱 GUI)와 혼동하지 마세요.
+            서버 모드는 데스크톱 앱과 별도로 제공되는 바이너리입니다. GUI 관련 WebKitGTK 및 GTK 의존성 없이 서버에서 실행하고, 웹 브라우저를 통해 접속할 수 있습니다.
 
-            `litedeck-server-linux-amd64.tar.gz` · `litedeck-server-linux-arm64.tar.gz`
+            데스크톱용 `litedeck-desktop-linux-amd64.tar.gz`와 혼동하지 않도록 주의하세요.
 
-            ```
+            제공 파일:
+
+            * `litedeck-server-linux-amd64.tar.gz`
+            * `litedeck-server-linux-arm64.tar.gz`
+
+            AMD64 환경에서 실행하는 예시는 다음과 같습니다.
+
+            ```bash
             tar xzf litedeck-server-linux-amd64.tar.gz
-            ./litedeck-server            # 127.0.0.1:8765, 로그인 기본 비밀번호: litedeck
+            chmod +x litedeck-server
+            ./litedeck-server
             ```
 
-            띄운 뒤 브라우저로 그 주소를 엽니다. 바깥 노출·리버스 프록시·비밀번호
-            변경은 [docs/server-mode.md](https://github.com/cpprhtn/LiteDeck/blob/main/docs/server-mode.md) 를 보세요.
+            실행 후 브라우저에서 다음 주소로 접속합니다.
+
+            ```text
+            http://127.0.0.1:8765
+            ```
+
+            초기 로그인 비밀번호는 `litedeck`입니다. 서버를 외부에 공개하기 전에 반드시 비밀번호를 변경하세요.
+
+            외부 접속, 리버스 프록시 구성 및 비밀번호 변경 방법은 [서버 모드 안내](https://github.com/cpprhtn/LiteDeck/blob/main/docs/server-mode.md) 를 참고하세요.
+
+            **전체 변경 내역:** [${{ steps.prev.outputs.tag }}...${{ github.ref_name }}](https://github.com/cpprhtn/LiteDeck/compare/${{ steps.prev.outputs.tag }}...${{ github.ref_name }})
