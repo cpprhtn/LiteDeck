@@ -27,7 +27,7 @@
  */
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 
   /* ── 1. Primitives ─────────────────────────────────────────────────────
      A neutral ramp plus four hues. Steps are not evenly spaced; they are
@@ -196,63 +196,78 @@
   --btn-h-sm: 22px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: var(--p-n900);
-    --bg-sunken: var(--p-n950);
-    --bg-raised: var(--p-n850);
-    --bg-hover: #ffffff0d;
-    --bg-selected: #4da3ff26;
-    --bg-overlay: #00000073;
+/* ── Dark ────────────────────────────────────────────────────────────────
+   One copy, reached one way: something has written data-theme="dark" onto the
+   root element. That is done by the inline script in index.html, before the
+   first paint, and afterwards by theme.ts whenever the choice or the OS
+   changes.
 
-    --border: #ffffff14;
-    --border-strong: #ffffff2e;
+   Not `@media (prefers-color-scheme: dark)`. The app has a picker with three
+   positions — follow the OS, light, dark — and a media query can only answer
+   the first. Keeping both would mean two copies of these fifty lines and a
+   slow drift between them; resolving "follow the OS" in script and stamping
+   the answer keeps one.
 
-    --fg: #f5f5f7;
-    --fg-muted: #9d9da5;
-    --fg-faint: #8b8b94;
-    --fg-on-accent: var(--p-n950);
+   The inline script is what makes that safe: the attribute is on the element
+   before the stylesheet is applied, so there is no flash of the wrong theme.
+   TestTokenContrast reads this block by its selector. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
 
-    --accent: var(--p-blue-400);
-    --accent-bg: var(--p-blue-900);
-    --accent-border: var(--p-blue-800);
+  --bg: var(--p-n900);
+  --bg-sunken: var(--p-n950);
+  --bg-raised: var(--p-n850);
+  --bg-hover: #ffffff0d;
+  --bg-selected: #4da3ff26;
+  --bg-overlay: #00000073;
 
-    --ok: var(--p-green-400);
-    --ok-bg: var(--p-green-900);
-    --ok-border: var(--p-green-800);
+  --border: #ffffff14;
+  --border-strong: #ffffff2e;
 
-    --warn: var(--p-amber-400);
-    --warn-bg: var(--p-amber-900);
-    --warn-border: var(--p-amber-800);
+  --fg: #f5f5f7;
+  --fg-muted: #9d9da5;
+  --fg-faint: #8b8b94;
+  --fg-on-accent: var(--p-n950);
 
-    --danger: var(--p-red-400);
-    --danger-bg: var(--p-red-900);
-    --danger-border: var(--p-red-800);
+  --accent: var(--p-blue-400);
+  --accent-bg: var(--p-blue-900);
+  --accent-border: var(--p-blue-800);
 
-    /* Dark surfaces do not take shadow the way light ones do — the contrast is
-       not there. Depth is carried by --bg-raised instead, and the shadows stay
-       only to seat floating things against the window. */
-    --shadow-1: 0 1px 2px #00000052;
-    --shadow-2: 0 4px 12px #0000005c;
-    --shadow-3: 0 12px 32px #00000080;
+  --ok: var(--p-green-400);
+  --ok-bg: var(--p-green-900);
+  --ok-border: var(--p-green-800);
 
-    --syn-comment: #9aa4ae;
-    --syn-keyword: #ff8b83;
-    --syn-string: #a5d6ff;
-    --syn-number: #79c0ff;
-    --syn-function: #d2a8ff;
-    --syn-def: #d2a8ff;
-    --syn-type: #ffa657;
-    --syn-property: #79c0ff;
-    --syn-variable: #f5f5f7;
-    --syn-operator: #79c0ff;
-    --syn-punct: #9d9da5;
-    --syn-meta: #7ee787;
-    --syn-heading: #79c0ff;
-    --syn-link: var(--p-blue-300);
+  --warn: var(--p-amber-400);
+  --warn-bg: var(--p-amber-900);
+  --warn-border: var(--p-amber-800);
 
-    --tree-guide: #ffffff1f;
-  }
+  --danger: var(--p-red-400);
+  --danger-bg: var(--p-red-900);
+  --danger-border: var(--p-red-800);
+
+  /* Dark surfaces do not take shadow the way light ones do — the contrast is
+     not there. Depth is carried by --bg-raised instead, and the shadows stay
+     only to seat floating things against the window. */
+  --shadow-1: 0 1px 2px #00000052;
+  --shadow-2: 0 4px 12px #0000005c;
+  --shadow-3: 0 12px 32px #00000080;
+
+  --syn-comment: #9aa4ae;
+  --syn-keyword: #ff8b83;
+  --syn-string: #a5d6ff;
+  --syn-number: #79c0ff;
+  --syn-function: #d2a8ff;
+  --syn-def: #d2a8ff;
+  --syn-type: #ffa657;
+  --syn-property: #79c0ff;
+  --syn-variable: #f5f5f7;
+  --syn-operator: #79c0ff;
+  --syn-punct: #9d9da5;
+  --syn-meta: #7ee787;
+  --syn-heading: #79c0ff;
+  --syn-link: var(--p-blue-300);
+
+  --tree-guide: #ffffff1f;
 }
 
 * {

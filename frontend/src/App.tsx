@@ -45,6 +45,7 @@ import {
   type MCPWritePrompt,
 } from './ipc'
 import { getLanguage, initLanguage, k, t, useT } from './i18n'
+import { initTheme } from './theme'
 import { isWebMode } from './webTransport'
 import { McpPanel } from './McpPanel'
 import { McpHostBadge } from './McpHostBadge'
@@ -172,6 +173,10 @@ export default function App() {
         // error banners.
         initLanguage(b.language, b.systemLanguage)
         void ApplyLanguage(getLanguage()).catch(() => {})
+        // The window is already painted in some theme — the inline script in
+        // index.html saw to that. This is the settled answer catching up with
+        // it, and correcting it where the two disagree.
+        initTheme(b.theme)
         setBoot(b)
         setHosts(b.hosts)
         if (b.startupError) setError(b.startupError)

@@ -170,8 +170,8 @@ var webRPCPinned = []string{
 	"SSHDConfig", "SaveHost", "SaveTextFile", "SecurityLogins",
 	"ServiceAction", "ServiceLogTail", "SetLanguage", "SetMCPEnabled",
 	"SetMCPHost", "SetMCPHostDelete", "SetMCPHostExec", "SetMCPWritePolicy",
-	"SetShellHistoryAllowed", "StartDownload", "StartUpload", "StatPath",
-	"StopLogStream", "SudoUnlocked", "TerminalCwd", "Transfers",
-	"TypedEntered", "TypedHistory", "UnlockSecurity", "UpdateStatus",
-	"UploadFile", "WriteTerminal", "WriteTextFile",
+	"SetShellHistoryAllowed", "SetTheme", "StartDownload", "StartUpload",
+	"StatPath", "StopLogStream", "SudoUnlocked", "TerminalCwd",
+	"Transfers", "TypedEntered", "TypedHistory", "UnlockSecurity",
+	"UpdateStatus", "UploadFile", "WriteTerminal", "WriteTextFile",
 }

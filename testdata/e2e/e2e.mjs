@@ -41,7 +41,14 @@ function exists(path) {
 }
 
 const browser = await chromium.launch({ channel: process.env.LITEDECK_E2E_CHANNEL ?? 'chrome' })
-const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+// A light desktop, pinned. The theme checks below move the picker back to
+// "follow the OS" and assert the colours do not move, which needs the OS half
+// of that to be a known quantity rather than whatever the machine running this
+// happens to be set to.
+const page = await browser.newPage({
+  viewport: { width: 1440, height: 900 },
+  colorScheme: 'light',
+})
 const consoleErrors = []
 page.on('console', (m) => {
   if (m.type() === 'error') consoleErrors.push(m.text())
@@ -200,6 +207,45 @@ try {
     await again.press('Enter')
     const relisted = await visible(row('README.md').first(), 20000)
     check('the file listing works on the second connection', relisted)
+  }
+
+  // -- the theme picker --------------------------------------------------
+  //
+  // Three positions, and the one that broke is the third. The picker is a
+  // controlled <select> over a module variable, so React restores it to its
+  // last rendered value unless the change produces a re-render — and moving
+  // from "light" back to "follow the OS" on a light desktop changes the
+  // resolved theme not at all. Subscribing to the resolved value looked right
+  // for two of the three moves and left the control stuck on the third.
+  const picker = page.locator('select[aria-label="테마"], select[aria-label="Theme"]').first()
+  if (await visible(picker, 10000)) {
+    const at = () => page.evaluate(() => document.documentElement.dataset.theme)
+    const moves = [
+      ['dark', 'dark'],
+      ['light', 'light'],
+      // Back to following the OS. The browser is told to report a light
+      // desktop, so the colours must not move — only the control.
+      ['', 'light'],
+    ]
+    let ok = true
+    for (const [choice, want] of moves) {
+      await picker.selectOption(choice)
+      await page.waitForTimeout(700)
+      const shown = await picker.inputValue()
+      const stamped = await at()
+      if (shown !== choice || stamped !== want) {
+        ok = false
+        check(
+          `the theme picker settles on ${choice || 'system'}`,
+          false,
+          `the control reads ${JSON.stringify(shown)} and the page is ${stamped}, want ` +
+            `${JSON.stringify(choice)} and ${want}`,
+        )
+      }
+    }
+    if (ok) check('the theme picker moves through all three positions', true)
+  } else {
+    check('the theme picker is on screen', false)
   }
 
   // -- the console -------------------------------------------------------

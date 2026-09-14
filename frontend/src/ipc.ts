@@ -42,6 +42,8 @@ export interface BootstrapData {
   language: string
   /** What Go read out of the environment, for when the webview cannot say. */
   systemLanguage: string
+  /** 'light', 'dark', or '' for "follow the OS". */
+  theme: string
   startupError?: string
   /** "this server" server-mode instance: one auto-connected host, no sidebar. */
   selfMode?: boolean
@@ -1093,6 +1095,7 @@ interface Bindings {
   SetMCPHostDelete(hostID: string, allowed: boolean): Promise<MCPStatus>
   SetMCPHostExec(hostID: string, allowed: boolean): Promise<MCPStatus>
   SetLanguage(tag: string): Promise<ActionResult>
+  SetTheme(theme: string): Promise<ActionResult>
   SaveHost(h: Host): Promise<void>
   DeleteHost(id: string): Promise<void>
   ImportSSHConfig(): Promise<ImportResult>
@@ -1345,6 +1348,7 @@ export const SetMCPHostDelete = (hostID: string, allowed: boolean) =>
 export const SetMCPHostExec = (hostID: string, allowed: boolean) =>
   api().SetMCPHostExec(hostID, allowed)
 export const SetLanguage = (tag: string) => api().SetLanguage(tag)
+export const SetTheme = (theme: string) => api().SetTheme(theme)
 export const SaveHost = (h: Host) => api().SaveHost(h)
 export const DeleteHost = (id: string) => api().DeleteHost(id)
 export const ImportSSHConfig = () => api().ImportSSHConfig()

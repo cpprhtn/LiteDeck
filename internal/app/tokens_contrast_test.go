@@ -134,7 +134,11 @@ func TestTokenContrastCatchesARegression(t *testing.T) {
 }
 
 var (
-	darkBlock = regexp.MustCompile(`(?s)@media \(prefers-color-scheme: dark\) \{\s*:root \{(.*?)\n  \}`)
+	// The dark palette moved out of a media query and onto an attribute when
+	// the theme picker arrived: three positions cannot be expressed by
+	// prefers-color-scheme, and resolving "follow the OS" in script keeps one
+	// copy of these values instead of two.
+	darkBlock = regexp.MustCompile(`(?ms)^:root\[data-theme='dark'\] \{(.*?)^\}`)
 	rootBlock = regexp.MustCompile("(?ms)^:root \\{(.*?)^\\}")
 	declLine  = regexp.MustCompile(`(?m)^\s*(--[a-z0-9-]+):\s*([^;]+);`)
 )
