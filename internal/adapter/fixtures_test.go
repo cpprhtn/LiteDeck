@@ -45,8 +45,17 @@ func TestFixturesCarryNoRealAddress(t *testing.T) {
 	}
 
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+		if err != nil {
 			return err
+		}
+		if d.IsDir() {
+			// Not a fixture and not committed: testdata/e2e installs
+			// playwright-core here, and a minified bundle is full of version
+			// numbers that read as addresses.
+			if d.Name() == "node_modules" {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 		b, err := os.ReadFile(path)
 		if err != nil {

@@ -95,6 +95,56 @@ jobs:
       - run: npm run build
         working-directory: frontend
 
+  e2e:
+    name: End-to-end (browser)
+    runs-on: ubuntu-latest
+    # After the frontend, because the server binary embeds frontend/dist and a
+    # stale or missing dist would serve a blank page and fail every check for
+    # the wrong reason.
+    needs: [frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+
+      # playwright-core drives a browser that is already installed rather than
+      # downloading one. The runner image ships Chrome, which is also what this
+      # is developed against.
+      - name: Check for a browser
+        run: google-chrome --version
+
+      - name: Run the harness
+        run: ./testdata/e2e/run.sh
+        env:
+          # Outside the work directory, which is removed on the way out — a
+          # screenshot that goes with the failure is no screenshot.
+          LITEDECK_E2E_ARTIFACTS: ${{ github.workspace }}/e2e-artifacts
+
+      # The screenshot is the only way to see what the page looked like when a
+      # check failed, and a failure here is usually a layout or timing question
+      # rather than a stack trace.
+      - name: Screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: e2e-artifacts/*.png
+          if-no-files-found: ignore
+
   build:
     name: Build (${{ matrix.os }})
     needs: [go, frontend]
