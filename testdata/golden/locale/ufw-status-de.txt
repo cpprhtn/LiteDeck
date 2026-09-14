@@ -1,0 +1,4 @@
+Status: Aktiv
+Protokollierung: on (low)
+Voreinstellung: deny (eingehend), allow (abgehend), deny (gesendet)
+Neue Profile: skip

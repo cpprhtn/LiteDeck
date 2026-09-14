@@ -1,0 +1,27 @@
+2026-09-14, alpine:3 컨테이너 · BusyBox v1.37.0.
+
+리뷰 1-32 도 [추정] 이었다. 이 캡처들이 확인한다.
+
+  ps-probe.*        Detect 가 procps 인지 묻는 바로 그 명령
+                    (`ps -eo pid= --no-headers`). busybox 는 종료 코드 1 과
+                    「ps: unrecognized option: no-headers」 로 답한다.
+                    stdout 은 비어 있다.
+
+  ps-session.*      세션 탭의 인자. 같은 실패.
+  ps-processes.*    프로세스 탭의 인자. 같은 실패.
+
+  date-relative.*   `date -d '7 days ago'` — busybox 의 date 에는 상대 날짜가
+                    없다. 「date: invalid date '7 days ago'」, 종료 코드 1.
+                    app/security.go 의 밴 로그 필터가 이걸 쓰고, 실패하면
+                    since="" 로 조용히 회귀한다.
+
+  ps-what-it-does-support.out
+                    busybox 의 ps 가 답하는 유일한 형태(`-o`). 「ps 가 없다」가
+                    아니라 「ps 는 있는데 이 질문에 답을 못 한다」라는 것이
+                    이 파일의 요점이다 — 그래서 탐지가 바이너리 유무가 아니라
+                    플래그로 묻는다.
+
+앞서 platform_test.go 의 스텁은 오류 문구를 「unrecognized option: e」 라고
+적어 두었다. 실제 busybox 는 마지막 인자를 짚어 「no-headers」 라고 말한다.
+종료 코드로 판정하므로 탐지는 어느 쪽이든 맞았지만, 스텁이 서버가 하지 않는
+말을 하고 있었다.

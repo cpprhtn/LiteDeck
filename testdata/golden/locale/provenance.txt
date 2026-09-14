@@ -1,0 +1,27 @@
+2026-09-14, Ubuntu 24.04 컨테이너 · util-linux 2.39.3 · ufw 0.36.2 ·
+language-pack-ko · language-pack-de 설치됨.
+
+리뷰 1-31 은 [추정] 이었다. 이 캡처들이 셋 중 둘을 확인하고 하나를 정정한다.
+
+  ufw-status-{c,ko,de}.txt    확인. ufw 는 통째로 번역된다.
+                              `Status: active` → `상태: 활성` → `Status: Aktiv`.
+                              ParseUfwStatus 는 "Status:" 라는 글자를 찾으므로
+                              한국어·독일어 서버에서 켜져 있는 방화벽을 꺼졌다고
+                              읽는다. 「못 읽었다」가 아니라 「꺼짐」이다.
+
+  renice-{c,ko,de}.txt        확인. util-linux 오류 메시지도 번역된다.
+  kill-{c,ko}.txt             확인. coreutils kill 도 마찬가지.
+
+  last-F-{c,ko}.txt           정정. `last -F` 의 날짜는 로캘을 타지 않는다.
+                              두 파일이 바이트까지 같다 — util-linux 가 이 형식을
+                              ctime 계열로 찍고, POSIX 는 ctime 을 C 로캘로 못
+                              박아 두었기 때문이다. 번역되는 것은 데이터 줄이
+                              아니라 맨 아래 "wtmp begins" 꼬리뿐이고, ParseLast
+                              는 그 줄을 읽지 않는다.
+
+번역 카탈로그가 없으면 셋 다 영어로 나온다. 처음 재본 컨테이너에서 renice 와
+kill 이 한국어 로캘에서도 영어를 뱉은 것은 이것 때문이지 번역되지 않아서가
+아니다 — language-pack-ko 를 깔자 바로 한국어가 됐다.
+
+wtmp 은 컨테이너에 로그인 기록이 없어서 `utmpdump -r` 로 네 건(부팅·로그인
+둘·로그아웃 하나)을 직접 넣었다. 주소는 RFC 5737 문서용이다.

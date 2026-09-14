@@ -1,0 +1,5 @@
+litedeck pts/1        198.51.100.31    Tue Sep  8 22:40:24 2026   gone - no logout
+deploy   pts/0        203.0.113.77     Tue Sep  8 22:30:24 2026 - Tue Sep  8 23:30:24 2026  (01:00)
+reboot   system boot  6.8.0-generic    Tue Sep  8 20:30:24 2026   still running
+
+wtmp begins Tue Sep  8 20:30:24 2026

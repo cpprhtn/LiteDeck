@@ -390,3 +390,20 @@ func TestUnlockedPasswordIsHeldWipeableAndWiped(t *testing.T) {
 		t.Error("the lock survived forget")
 	}
 }
+
+// The elevated read parses English too, and for a while it was the only script
+// that did not say so.
+//
+// `ufw status verbose` is translated in full — measured on Ubuntu 24.04 with
+// language-pack-ko installed, "Status: active" comes back as "상태: 활성" — and
+// ParseUfwStatus keys on the literal prefix. Without the pin a Korean server's
+// live firewall was reported as switched off. The fixtures are in
+// testdata/golden/locale; TestUfwStatusIsTranslated holds the other end.
+//
+// Inside the script rather than around it: this runs under sudo, which resets
+// the environment.
+func TestElevatedSecurityReadPinsTheLocale(t *testing.T) {
+	if !strings.HasPrefix(securityRulesScript, "LC_ALL=C; export LC_ALL\n") {
+		t.Error("securityRulesScript does not open by pinning the locale")
+	}
+}

@@ -1,0 +1,14 @@
+      1       0 root                                  25 sshd: /usr/sbin/sshd -D -e [listener] 0 of 10-100 startups
+     40       0 root                                  14 su - deploy -c ssh -o StrictHostKeyChecking=no -tt localhost "sleep 120" </dev/null
+     46      40 deploy                                14 -bash -c ssh -o StrictHostKeyChecking=no -tt localhost "sleep 120" </dev/null
+     49      46 deploy                                14 ssh -o StrictHostKeyChecking=no -tt localhost sleep 120
+     50       1 root                                  14 sshd-session: deploy [priv]
+     52       0 root                                  14 su - litedeck -c ssh -o StrictHostKeyChecking=no -tt localhost "sleep 120" </dev/null
+     58      52 litedeck                              14 -bash -c ssh -o StrictHostKeyChecking=no -tt localhost "sleep 120" </dev/null
+     61      58 litedeck                              14 ssh -o StrictHostKeyChecking=no -tt localhost sleep 120
+     62       1 root                                  14 sshd-session: litedeck [priv]
+     69      50 deploy                                14 sshd-session: deploy@pts/0
+     70      69 deploy                                14 sleep 120
+     76      62 litedeck                              14 sshd-session: litedeck@pts/1
+     77      76 litedeck                              14 sleep 120
+     83       0 root                                   0 ps -eo pid,ppid,user:32,etimes,args --no-headers

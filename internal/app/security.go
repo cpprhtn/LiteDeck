@@ -525,7 +525,20 @@ func (a *App) HostSecurity(hostID string, elevate, force bool) (SecurityView, er
 
 // securityRulesScript is the elevated read. A compile-time constant, like the
 // free one, so passing it to `sh -c` stays inside the argv-only rule (§3.2b).
-const securityRulesScript = `echo '#rules'
+//
+// LC_ALL=C for the same reason the five adapter scripts pin it, and this one
+// needed it most: `ufw status verbose` is fully translated. Measured on Ubuntu
+// 24.04 with language-pack-ko and language-pack-de installed —
+//
+//	Status: active     →  상태: 활성        →  Status: Aktiv
+//	Default: deny …    →  기본 설정: deny … →  Voreinstellung: deny …
+//
+// and ParseUfwStatus keys on the literal "Status:" prefix, so on a Korean or
+// German server the security tab reported a live firewall as switched off. Not
+// "could not read", which the tab knows how to say — off. sudo resets the
+// environment, so the pin has to be inside the script rather than around it.
+const securityRulesScript = `LC_ALL=C; export LC_ALL
+echo '#rules'
 ufw status verbose 2>/dev/null
 echo '#ruleset'
 nft list ruleset 2>/dev/null
