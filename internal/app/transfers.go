@@ -535,12 +535,47 @@ func (a *App) downloadOne(ctx context.Context, j *transferJob) error {
 		a.transfers.keepPartial(j)
 		return closeErr
 	}
-	if err := os.Rename(tmp, j.Local); err != nil {
+	// A file that is already there is not replaced.
+	//
+	// The rename used to land on top of whatever had that name, so downloading
+	// `backup.tar.gz` into a folder that already held one destroyed it with no
+	// question asked and no way back — the app's own delete makes somebody type
+	// the path, and this did more damage with a double-click. A free name
+	// instead, the way a browser picks one, and the queue row says which name
+	// was used.
+	final, err := freeLocalName(j.Local)
+	if err != nil {
 		_ = os.Remove(tmp)
 		return err
 	}
+	if err := os.Rename(tmp, final); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if final != j.Local {
+		a.transfers.renamed(j, final)
+	}
 	a.transfers.emit(j)
 	return nil
+}
+
+// freeLocalName returns p, or the first "p (2)", "p (3)" … that does not exist.
+//
+// Bounded: a directory with a hundred collisions is a situation to report
+// rather than to keep numbering through.
+func freeLocalName(p string) (string, error) {
+	if _, err := os.Lstat(p); errors.Is(err, os.ErrNotExist) {
+		return p, nil
+	}
+	ext := filepath.Ext(p)
+	base := strings.TrimSuffix(p, ext)
+	for i := 2; i < 100; i++ {
+		candidate := fmt.Sprintf("%s (%d)%s", base, i, ext)
+		if _, err := os.Lstat(candidate); errors.Is(err, os.ErrNotExist) {
+			return candidate, nil
+		}
+	}
+	return "", i18n.Errorf("%s 와 같은 이름이 이미 너무 많습니다", filepath.Base(p))
 }
 
 // Resuming an interrupted transfer (§4.2).
@@ -670,6 +705,14 @@ func (q *transferQueue) beginAt(j *transferJob, at int64) {
 
 // keepPartial marks a stopped transfer as one that can be picked up. The bytes
 // are left where they are; that is the whole point.
+// renamed records that the file landed under a different name than asked for,
+// because something was already there.
+func (q *transferQueue) renamed(j *transferJob, local string) {
+	q.mu.Lock()
+	j.Local = local
+	q.mu.Unlock()
+}
+
 func (q *transferQueue) keepPartial(j *transferJob) {
 	q.mu.Lock()
 	j.Resumable = !j.Dir && j.done.Load() > 0

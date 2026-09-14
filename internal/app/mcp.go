@@ -362,7 +362,9 @@ func (a *App) PinMCPPort(port int) MCPStatus {
 	a.mcp.mu.Lock()
 	a.mcp.wanted = port
 	a.mcp.mu.Unlock()
-	return a.MCPState()
+	out := a.MCPState()
+	a.emitMCPState(out)
+	return out
 }
 
 // SetMCPEnabled turns the endpoint on or off.
@@ -387,7 +389,9 @@ func (a *App) SetMCPEnabled(enabled bool) MCPStatus {
 	if enabled {
 		a.startMCP()
 	}
-	return a.MCPState()
+	out := a.MCPState()
+	a.emitMCPState(out)
+	return out
 }
 
 // SetMCPHost shares one server with AI clients, or stops sharing it.
@@ -412,7 +416,9 @@ func (a *App) SetMCPHost(hostID string, allowed bool) MCPStatus {
 		out.Error = err.Error()
 		return out
 	}
-	return a.MCPState()
+	out := a.MCPState()
+	a.emitMCPState(out)
+	return out
 }
 
 // SetMCPHostDelete decides whether file deletion is offered on one host.
@@ -434,7 +440,9 @@ func (a *App) SetMCPHostDelete(hostID string, allowed bool) MCPStatus {
 		out.Error = err.Error()
 		return out
 	}
-	return a.MCPState()
+	out := a.MCPState()
+	a.emitMCPState(out)
+	return out
 }
 
 // SetMCPHostExec decides whether arbitrary commands may be run on one host.
@@ -461,7 +469,9 @@ func (a *App) SetMCPHostExec(hostID string, allowed bool) MCPStatus {
 		out.Error = err.Error()
 		return out
 	}
-	return a.MCPState()
+	out := a.MCPState()
+	a.emitMCPState(out)
+	return out
 }
 
 // RotateMCPToken issues a new token and invalidates the old one.
@@ -490,7 +500,9 @@ func (a *App) RotateMCPToken() MCPStatus {
 		a.stopMCP()
 		a.startMCP()
 	}
-	return a.MCPState()
+	out := a.MCPState()
+	a.emitMCPState(out)
+	return out
 }
 
 // mcpSettings is a small helper for tests that need the stored shape.
@@ -499,4 +511,16 @@ func (a *App) mcpSettings() config.MCPSettings {
 		return config.MCPSettings{}
 	}
 	return a.settings.Get().MCP
+}
+
+// emitMCPState tells the open views that the integration's settings changed.
+//
+// The header badge reads this state once on mount and then only on a timer that
+// runs when a countdown is showing. So sharing a host from the panel left the
+// badge absent until something else happened to refresh it — the switch had
+// taken effect and the screen did not say so.
+func (a *App) emitMCPState(s MCPStatus) {
+	if a.emit != nil {
+		a.emit("mcp:state", s)
+	}
 }

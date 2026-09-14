@@ -128,4 +128,6 @@ var english = map[string]string{
 	"서버 모드에서는 앱을 스스로 업데이트하지 않습니다 — 패키지나 바이너리를 교체하세요":                          "Server mode does not update itself \u2014 replace the package or the binary",
 	"서버 모드에서는 서버의 ~/.ssh/config 를 읽지 않습니다":                                    "Server mode does not read the server account's ~/.ssh/config",
 	"%s: 심볼릭 링크가 너무 깊습니다":                                                     "%s: too many symbolic links",
+	"%s 에 쓸 수 없어 업데이트를 적용할 수 없습니다. 앱을 응용 프로그램 폴더로 옮기고 다시 시도해 주세요.":            "Cannot write to %s, so the update cannot be installed. Move the app to your Applications folder and try again.",
+	"%s 와 같은 이름이 이미 너무 많습니다":                                                  "Too many files are already named like %s",
 }

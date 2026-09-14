@@ -7,7 +7,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/cpprhtn/LiteDeck/internal/adapter"
 	"github.com/cpprhtn/LiteDeck/internal/mcp"
+	"time"
 )
 
 // The read-only tool set (§5.1 of the MCP design note).
@@ -886,7 +888,18 @@ func (a *App) healthSnapshot(hostID string) (map[string]any, error) {
 		out["failedUnits"] = failed
 	}
 
-	if list, err := a.ListContainers(hostID); err != nil {
+	// The full listing has to wait for the daemon to walk every container the
+	// host has ever kept. Measured on one real server: 19.8 seconds for `docker
+	// ps -a`, which turned this "answer in one round trip" tool into a
+	// twenty-second call holding one of three Exec slots the whole time.
+	//
+	// So it is given a budget. Past that the running-only listing answers —
+	// cheap, because the daemon does not walk the dead — and the snapshot says
+	// plainly that the stopped ones were not looked at. A slow answer that
+	// arrives is better than a complete one that blocks the server, and a
+	// partial answer that says so is better than either.
+	list, err := a.containersForSnapshot(hostID, out)
+	if err != nil {
 		unavailable["containers"] = err.Error()
 	} else {
 		bad := []map[string]any{}
@@ -965,4 +978,38 @@ func (a *App) mcpAllowed(hostID string) bool {
 		return false
 	}
 	return a.settings.Get().MCP.Hosts[hostID]
+}
+
+// snapshotContainerBudget is how long health_snapshot waits for the full
+// container listing before settling for the running ones.
+//
+// Four seconds: long enough for any host with a normal number of containers —
+// the measured slow case was a CI box with thousands of dead ones — and short
+// enough that the tool still reads as one round trip.
+const snapshotContainerBudget = 4 * time.Second
+
+// containersForSnapshot returns the full listing, or the running one when the
+// full listing is too slow, noting which it gave.
+func (a *App) containersForSnapshot(hostID string, out map[string]any) ([]adapter.Container, error) {
+	type result struct {
+		list []adapter.Container
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		l, err := a.ListContainers(hostID)
+		done <- result{l, err}
+	}()
+
+	select {
+	case r := <-done:
+		return r.list, r.err
+	case <-time.After(snapshotContainerBudget):
+		// The slow read is left running rather than cancelled: it holds an Exec
+		// slot either way, and abandoning it mid-flight would leave the channel
+		// accounting wrong. It fills the cache for whoever asks next.
+		out["containerNote"] = "Only running containers were checked: the full " +
+			"listing was too slow on this host. Ask container_list for the stopped ones."
+		return a.ListRunningContainers(hostID)
+	}
 }

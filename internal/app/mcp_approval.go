@@ -307,7 +307,9 @@ func (a *App) SetMCPWritePolicy(hostID, mode string, minutes int) MCPStatus {
 		out.Error = err.Error()
 		return out
 	}
-	return a.MCPState()
+	out := a.MCPState()
+	a.emitMCPState(out)
+	return out
 }
 
 // WriteApprovalTimeoutForTest shortens the wait so a test does not have to sit

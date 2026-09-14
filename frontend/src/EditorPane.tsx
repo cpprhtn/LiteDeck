@@ -224,6 +224,7 @@ export function EditorPane({
       ) : (
         <CodeEditor
           path={file.path}
+          openPaths={files.map((f) => f.path)}
           value={file.doc}
           onChange={(doc) => setDoc(hostID, file.path, doc)}
           onSave={() => latest.current && requestSave(latest.current)}

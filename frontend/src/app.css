@@ -2010,12 +2010,26 @@ button.danger {
    wrong in a way that only showed on screenshots: with the rail open the header
    is 248px narrower than the window, so at 1440px the breakpoints all said
    "plenty of room" while 스왑 was being cut in half at the right edge. */
+/* Detail goes before whole tiles do.
+   The note ("/ 7.7G", "팬 40%") and the sparkline are the widest parts of a
+   tile and the least of its meaning, so they are shed first. Dropping a tile
+   whole was the visible fault: at 980px the GPU panel vanished from a machine
+   that has a GPU, which reads as "no card" rather than as "no room". */
 @container head (max-width: 1250px) {
-  [data-p='3'] {
+  .metric-note {
     display: none;
   }
 }
 @container head (max-width: 1100px) {
+  .metric .spark,
+  .metric svg {
+    display: none;
+  }
+  [data-p='3'] {
+    display: none;
+  }
+}
+@container head (max-width: 900px) {
   [data-p='2'] {
     display: none;
   }

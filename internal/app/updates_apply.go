@@ -283,6 +283,13 @@ func (a *App) ApplyUpdate() error {
 	if err != nil {
 		return err
 	}
+	// Checked before quitting, not after. The helper can put the old build back
+	// and relaunch it, but the user still watches their window disappear and
+	// come back for no reason — and on a read-only mount it was never going to
+	// work. Refusing here keeps the app running and says why.
+	if err := canReplace(target); err != nil {
+		return err
+	}
 	script, err := writeSwapHelper(staged)
 	if err != nil {
 		return err
@@ -580,4 +587,22 @@ func helperCommand(script string, args []string) *exec.Cmd {
 		return exec.Command("cmd", append([]string{"/c", "start", "/min", "", script}, args...)...)
 	}
 	return exec.Command("/bin/sh", append([]string{script}, args...)...)
+}
+
+// canReplace reports whether the swap could succeed, without doing it.
+//
+// The directory has to take a new entry: the helper moves the old build aside
+// and the new one in, both of which are writes to the parent rather than to the
+// app itself. A read-only DMG, a /Applications the user does not own and macOS
+// App Translocation (which runs the app from a read-only mount) all fail here.
+func canReplace(target string) error {
+	dir := filepath.Dir(target)
+	probe, err := os.CreateTemp(dir, ".litedeck-write-check-*")
+	if err != nil {
+		return i18n.Errorf("%s 에 쓸 수 없어 업데이트를 적용할 수 없습니다. 앱을 응용 프로그램 폴더로 옮기고 다시 시도해 주세요.", dir)
+	}
+	name := probe.Name()
+	_ = probe.Close()
+	_ = os.Remove(name)
+	return nil
 }

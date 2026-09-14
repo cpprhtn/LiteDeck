@@ -35,6 +35,10 @@ import { isWebMode } from './webTransport'
  *  afternoon. */
 const FIRST_CHECK_MS = 10_000
 
+/** Module state, because the component is unmounted whenever the rail folds. */
+let checked = false
+let lastCheck: UpdateInfo | null = null
+
 export function ShellControls({
   version,
   onOpenMCP,
@@ -48,9 +52,16 @@ export function ShellControls({
 
   const check = () => {
     setChecking(true)
+    checked = true
     void CheckForUpdate()
-      .then(setUpdate)
-      .catch(() => setUpdate({ checked: true, reached: false }))
+      .then((u) => {
+        lastCheck = u
+        setUpdate(u)
+      })
+      .catch(() => {
+        lastCheck = { checked: true, reached: false }
+        setUpdate(lastCheck)
+      })
       .finally(() => setChecking(false))
   }
 
@@ -59,6 +70,15 @@ export function ShellControls({
     // refuses to install it there. A button that cannot work is worse than no
     // button — see DownloadUpdate.
     if (isWebMode()) return
+    // Once per launch, not once per mount. Folding the rail swaps this
+    // component for the collapsed one and unmounts it, so every fold and
+    // unfold sent another request to github and reset the result to "check for
+    // updates" for ten seconds.
+    if (checked) {
+      setUpdate(lastCheck)
+      void UpdateStatus().then(setInstall).catch(() => {})
+      return
+    }
     const timer = setTimeout(check, FIRST_CHECK_MS)
     // The installer lives in Go and outlives this component, so its state is
     // asked for on mount as well as subscribed to.

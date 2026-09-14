@@ -1326,3 +1326,49 @@ func TestDeleteRemovesEveryDirectoryItWasGiven(t *testing.T) {
 		}
 	}
 }
+
+// A download must not destroy a local file that happens to share its name.
+//
+// The rename at the end landed on whatever was already there, so pulling
+// `backup.tar.gz` into a folder that held one replaced it with no question and
+// no way back — while the app's own delete makes somebody type the path. A
+// browser picks a free name; so does this now.
+func TestDownloadDoesNotOverwriteALocalFile(t *testing.T) {
+	a := connectedApp(t)
+	dir := scratchDir(t, a, "litedeck-download-clash")
+	remote := path.Join(dir, "notes.txt")
+	if res := a.WriteTextFile("fixture", remote, "from the server\n"); !res.OK {
+		t.Fatalf("seed: %+v", res)
+	}
+
+	local := t.TempDir()
+	existing := filepath.Join(local, "notes.txt")
+	if err := os.WriteFile(existing, []byte("mine, do not lose\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ids, err := a.StartDownload("fixture", []string{remote}, local)
+	if err != nil {
+		t.Fatalf("StartDownload: %v", err)
+	}
+	for _, id := range ids {
+		waitTransfer(t, a, id, TransferDone)
+	}
+
+	// The file that was there is untouched.
+	got, err := os.ReadFile(existing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "mine, do not lose\n" {
+		t.Errorf("the local file was overwritten: %q", got)
+	}
+	// And the download landed beside it.
+	side, err := os.ReadFile(filepath.Join(local, "notes (2).txt"))
+	if err != nil {
+		t.Fatalf("the download did not land under a free name: %v", err)
+	}
+	if string(side) != "from the server\n" {
+		t.Errorf("downloaded content = %q", side)
+	}
+}

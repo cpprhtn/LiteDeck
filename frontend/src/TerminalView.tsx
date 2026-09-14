@@ -258,15 +258,27 @@ function TerminalPane({
     // a 10x6 terminal. That size went to the real PTY, the shell redrew its
     // prompt for a 10-column screen, and the screenful of output that was there
     // did not survive the trip back. Hiding a tab is not a resize.
+    // Fit locally on every observation, tell the server once the dragging
+    // stops. A window drag fires the observer per frame, and each one was an
+    // RPC and a real SIGWINCH on the far side — a shell redrawing its prompt
+    // sixty times a second while somebody resizes the window.
+    let resizeTimer = 0
     const resize = () => {
       const el = hostRef.current
       if (!el || el.clientWidth === 0 || el.clientHeight === 0) return
       try {
         fit.fit()
-        void ResizeTerminal(info.id, term.cols, term.rows).catch(() => {})
       } catch {
         /* the pane is not visible yet */
+        return
       }
+      const cols = term.cols
+      const rows = term.rows
+      if (resizeTimer) clearTimeout(resizeTimer)
+      resizeTimer = window.setTimeout(() => {
+        resizeTimer = 0
+        void ResizeTerminal(info.id, cols, rows).catch(() => {})
+      }, 120)
     }
     const observer = new ResizeObserver(resize)
     observer.observe(hostRef.current)
@@ -275,6 +287,7 @@ function TerminalPane({
 
     return () => {
       observer.disconnect()
+      if (resizeTimer) clearTimeout(resizeTimer)
       disposeInput.dispose()
       scheme?.removeEventListener('change', onScheme)
       offData()
