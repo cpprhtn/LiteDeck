@@ -327,3 +327,48 @@ func TestGenerationChangesWhenTheConnectionDoes(t *testing.T) {
 		t.Fatalf("Generation reused %d after disconnect and connect", third)
 	}
 }
+
+// Disconnecting while a dial is still waiting on a prompt used to leave the
+// connection behind: shutdown found conn and cancel nil and returned, the dial
+// then succeeded into a host the manager had already forgotten, and that
+// connection ran keepalives and reconnected forever with nothing holding it.
+func TestDisconnectDuringDialLeavesNothingBehind(t *testing.T) {
+	if sshdSkip != "" {
+		t.Skipf("sshd fixture unavailable: %s", sshdSkip)
+	}
+
+	m := fastManager(nil)
+	t.Cleanup(func() { m.Close() })
+
+	// The host key callback runs inside the handshake, which is where the
+	// fingerprint prompt lives. Blocking there puts the dial exactly where a
+	// person deciding about a fingerprint puts it.
+	inPrompt := make(chan struct{})
+	release := make(chan struct{})
+	cfg := testHostConfig("held", sshdAddr)
+	cfg.HostKeyCallback = func(string, net.Addr, ssh.PublicKey) error {
+		close(inPrompt)
+		<-release
+		return nil
+	}
+
+	errc := make(chan error, 1)
+	go func() { errc <- m.Connect(testCtx(t), cfg, nil) }()
+
+	<-inPrompt
+	if err := m.Disconnect("held"); err != nil {
+		t.Fatalf("Disconnect during dial: %v", err)
+	}
+	close(release)
+
+	if err := <-errc; err == nil {
+		t.Error("Connect reported success for a host that was disconnected mid-dial")
+	}
+	if _, err := m.Conn("held"); err == nil {
+		t.Error("the orphaned connection is still reachable")
+	}
+	// Connecting again works rather than colliding with the leftover.
+	if err := m.Connect(testCtx(t), testHostConfig("held", sshdAddr), nil); err != nil {
+		t.Errorf("reconnect after the aborted dial: %v", err)
+	}
+}

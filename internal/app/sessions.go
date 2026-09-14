@@ -118,7 +118,7 @@ func (c *portCache) forget(id string) {
 // own line, and after a reboot it would also have refused an innocent session
 // whose PID had been recycled into the stale set.
 func (a *App) freshen(hostID string) {
-	gen := a.mgr.Generation(hostID)
+	gen := a.connGeneration(hostID)
 	if gen == 0 {
 		return // never connected; nothing was cached through a connection
 	}

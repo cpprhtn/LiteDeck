@@ -164,3 +164,49 @@ func TestJournalArgsBounds(t *testing.T) {
 		t.Errorf("the since value was not passed as one argv element: %q", raw)
 	}
 }
+
+// Four of the eight kinds the timeline can name were unreachable.
+//
+// systemd writes "Startup finished", "Shutting down", "New session" and
+// "Scheduled restart job" at LOG_INFO, and the query asks for warning and
+// worse, so EventBoot, EventShutdown, EventSession and EventRestart never
+// arrived — dead code with a place in the UI. The golden capture proves it:
+// testdata/golden/journal/provenance.txt records that a restart was provoked on
+// purpose and the file contains no such message id.
+func TestJournalArgsAskForTheInformationalKinds(t *testing.T) {
+	args := strings.Join(JournalArgs("-24h", 4, 100), " ")
+
+	if !strings.Contains(args, "-p 4") {
+		t.Fatalf("the severity floor is gone: %s", args)
+	}
+	for name, id := range map[string]string{
+		"boot":     msgBootDone,
+		"shutdown": msgShutdown,
+		"session":  msgSessionNew,
+		"restart":  msgRestartSched,
+	} {
+		if !strings.Contains(args, "MESSAGE_ID="+id) {
+			t.Errorf("%s is never asked for, so its EventKind can never appear: %s", name, args)
+		}
+	}
+	// `+` is journalctl's OR. Without it the ids narrow the filter instead of
+	// widening it and the result is empty rather than larger.
+	if !strings.Contains(args, "+ MESSAGE_ID=") {
+		t.Error("the ids are ANDed with the priority filter, which matches nothing")
+	}
+
+	// Every kind the parser knows should be reachable: either it clears the
+	// severity floor or it is asked for by id.
+	asked := map[string]bool{}
+	for _, id := range informationalIDs {
+		asked[id] = true
+	}
+	for id, kind := range eventKinds {
+		switch kind {
+		case EventBoot, EventShutdown, EventSession, EventRestart:
+			if !asked[id] {
+				t.Errorf("%s is written below the floor and is not asked for by id", kind)
+			}
+		}
+	}
+}

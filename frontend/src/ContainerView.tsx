@@ -179,19 +179,24 @@ export function ContainerView({
     if (!visible) setLog(null)
   }, [visible])
 
+  // The elevated retry goes back through here rather than being a bare call.
+  // It used to be `() => void fn(true).then(() => refresh())`: no error branch,
+  // no catch, and `pending` never set — cancelling the sudo dialog did nothing
+  // visible at all.
   const run = async (
     id: string,
     fn: (elevate: boolean) => Promise<{ ok: boolean; needsElevation: boolean; error?: string }>,
+    elevate = false,
   ) => {
     setPending(id)
     setNeedsRoot(null)
     try {
-      const res = await fn(false)
+      const res = await fn(elevate)
       if (!res.ok) {
-        if (res.needsElevation) {
+        if (res.needsElevation && !elevate) {
           setNeedsRoot({
             message: res.error ?? t('권한이 필요합니다'),
-            retry: () => void fn(true).then(() => refresh()),
+            retry: () => void run(id, fn, true),
           })
         } else {
           onError(res.error ?? t('실패했습니다'))

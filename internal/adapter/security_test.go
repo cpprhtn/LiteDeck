@@ -371,13 +371,13 @@ func TestParseNftOnEmptyOutput(t *testing.T) {
 // most recent line was fifty minutes old, already blocked and quiet since.
 func TestTopAttackersDropsWhatIsAlreadyBlocked(t *testing.T) {
 	counts := map[string]int{
-		"45.128.232.9":  931, // inside a banned /24
-		"92.118.39.85":  412, // banned individually by fail2ban
+		"198.18.4.9":    931, // inside a banned /24
+		"198.18.10.85":  412, // banned individually by fail2ban
 		"203.0.113.77":  388, // not blocked
 		"203.0.113.78":  201, // not blocked, same /24
 		"198.51.100.31": 12,  // not blocked
 	}
-	blocked := []string{"45.128.232.0/24", "92.118.39.85"}
+	blocked := []string{"198.18.4.0/24", "198.18.10.85"}
 
 	got := TopAttackers(counts, blocked, 10)
 	if len(got) != 3 {
@@ -387,26 +387,26 @@ func TestTopAttackersDropsWhatIsAlreadyBlocked(t *testing.T) {
 		t.Errorf("가장 많은 것이 %+v", got[0])
 	}
 	for _, a := range got {
-		if a.Address == "45.128.232.9" {
+		if a.Address == "198.18.4.9" {
 			t.Error("이미 대역째 막힌 주소가 남았다 — 대역 안에 있는지도 봐야 한다")
 		}
 	}
 }
 
 // Three or more from one /24 is a pattern that only shows when they are put
-// together. Measured: seven hosts from 109.160.32.0/24 on one server and eight
-// from 213.209.159.0/24 on another, each invisible one address at a time.
+// together. Measured: seven hosts from 198.18.0.0/24 on one server and eight
+// from 198.18.9.0/24 on another, each invisible one address at a time.
 func TestSubnetClustersAreFoundOnlyByGrouping(t *testing.T) {
 	got := SubnetClusters([]Attacker{
-		{Address: "109.160.32.11", Count: 90},
-		{Address: "109.160.32.12", Count: 80},
-		{Address: "109.160.32.13", Count: 70},
+		{Address: "198.18.0.11", Count: 90},
+		{Address: "198.18.0.12", Count: 80},
+		{Address: "198.18.0.13", Count: 70},
 		{Address: "203.0.113.77", Count: 400},
 	}, 3)
 	if len(got) != 1 {
 		t.Fatalf("군집 %d개, 기대 1개: %+v", len(got), got)
 	}
-	if got[0].CIDR != "109.160.32.0/24" || got[0].Hosts != 3 || got[0].Count != 240 {
+	if got[0].CIDR != "198.18.0.0/24" || got[0].Hosts != 3 || got[0].Count != 240 {
 		t.Errorf("%+v", got[0])
 	}
 }
@@ -418,7 +418,7 @@ func TestSubnetClustersAreFoundOnlyByGrouping(t *testing.T) {
 // status` gives the total and how many are banned right now, and dividing by
 // the second produced 143 on a server whose real figure was about four.
 func TestParseBanLogCountsDistinctAddresses(t *testing.T) {
-	h := ParseBanLog(golden(t, "ubuntu-24.04-fail2ban-bans.txt"))
+	h := ParseBanLog(golden(t, "ubuntu-24.04-fail2ban-bans.txt"), nil)
 	if len(h.Bans) != 10 {
 		t.Fatalf("밴 %d건, 기대 10건 — Unban은 빼야 한다", len(h.Bans))
 	}
@@ -426,7 +426,7 @@ func TestParseBanLogCountsDistinctAddresses(t *testing.T) {
 		t.Errorf("고유 주소 %d개, 기대 5개", h.Unique)
 	}
 	// Newest first: the screen reads downward from now.
-	if h.Bans[0].Address != "201.81.240.158" {
+	if h.Bans[0].Address != "198.18.3.158" {
 		t.Errorf("첫 줄이 %+v — 최신이 위여야 한다", h.Bans[0])
 	}
 	if h.Bans[0].At.Format("2006-01-02 15:04") != "2026-09-08 23:15" {
@@ -440,7 +440,7 @@ func TestParseBanLogCountsDistinctAddresses(t *testing.T) {
 }
 
 func TestParseBanLogOnAnEmptyOrRotatedFile(t *testing.T) {
-	h := ParseBanLog("")
+	h := ParseBanLog("", nil)
 	if len(h.Bans) != 0 || h.Unique != 0 || h.Repeats() != 0 {
 		t.Errorf("빈 로그에서 값이 나왔다: %+v", h)
 	}
@@ -452,7 +452,7 @@ func TestParseBanLogOnAnEmptyOrRotatedFile(t *testing.T) {
 // total. Counting on the server keeps twenty thousand lines off the wire — the
 // screen wants twenty-four numbers.
 func TestParseFailureBuckets(t *testing.T) {
-	got := ParseFailureBuckets("2026-09-08 20 931\n2026-09-08 21 402\n2026-09-08 22 12\n")
+	got := ParseFailureBuckets("2026-09-08 20 931\n2026-09-08 21 402\n2026-09-08 22 12\n", nil)
 	if len(got) != 3 {
 		t.Fatalf("구간 %d개, 기대 3개", len(got))
 	}
@@ -469,7 +469,7 @@ func TestParseFailureBuckets(t *testing.T) {
 }
 
 func TestParseFailureBucketsIgnoresRubbish(t *testing.T) {
-	if got := ParseFailureBuckets("-- No entries --\n\nnonsense\n"); len(got) != 0 {
+	if got := ParseFailureBuckets("-- No entries --\n\nnonsense\n", nil); len(got) != 0 {
 		t.Errorf("쓰레기에서 구간이 나왔다: %+v", got)
 	}
 }
@@ -518,5 +518,64 @@ table ip nat {
 	}
 	if dropped != 11418 {
 		t.Errorf("버린 패킷 %d, 기대 11418 — 도커가 나른 것까지 셌다", dropped)
+	}
+}
+
+// Two shapes the set parser used to read wrong.
+//
+// A `map` in the same table ended nothing, so its elements were appended to the
+// set above it and every line after that kept accumulating into a body nothing
+// closed. And fail2ban writes its entries with a lifetime attached, so the key
+// was the whole string — an address it had already banned never matched the
+// attacker list, and the screen went on offering it as somebody to block.
+func TestParseNftSetsHandlesMapsAndTimeouts(t *testing.T) {
+	const ruleset = `table inet blackhole {
+	set banned {
+		type ipv4_addr
+		elements = { 192.0.2.9 timeout 1h expires 58m12s224ms,
+			     198.51.100.7 timeout 1h expires 12m1s }
+	}
+
+	map porthits {
+		type inet_service : verdict
+		elements = { 22 : jump ssh-in, 80 : jump web-in }
+	}
+
+	set allowlist {
+		type ipv4_addr
+		elements = { 203.0.113.4 }
+	}
+}
+`
+	got := ParseNftSets(ruleset)
+	byName := map[string]NftSet{}
+	for _, s := range got {
+		byName[s.Name] = s
+	}
+
+	banned, ok := byName["banned"]
+	if !ok {
+		t.Fatalf("no `banned` set: %+v", got)
+	}
+	want := []string{"192.0.2.9", "198.51.100.7"}
+	if len(banned.Elements) != len(want) {
+		t.Fatalf("banned = %q, want %q", banned.Elements, want)
+	}
+	for i, w := range want {
+		if banned.Elements[i] != w {
+			t.Errorf("element %d = %q, want %q — the lifetime is part of the key",
+				i, banned.Elements[i], w)
+		}
+	}
+
+	// The map's entries are not elements of the set above it.
+	for _, e := range banned.Elements {
+		if strings.Contains(e, "jump") {
+			t.Errorf("the map leaked into the set: %q", e)
+		}
+	}
+	// And the set after the map is still read.
+	if allow, ok := byName["allowlist"]; !ok || len(allow.Elements) != 1 {
+		t.Errorf("allowlist = %+v — the map swallowed the rest of the table", allow)
 	}
 }

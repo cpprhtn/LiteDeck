@@ -81,9 +81,11 @@ type gpuFeed struct {
 	// about that resolves on a retry, so the host stays on the inline query.
 	//
 	// retryAt is everything else — it worked, then it stopped.
-	noCard  bool
-	stalled bool
-	retryAt time.Time
+	noCard bool
+	// emptyRuns counts consecutive runs that named no card. See closed().
+	emptyRuns int
+	stalled   bool
+	retryAt   time.Time
 }
 
 // sample reports the current GPU rows and whether the feed is answering.
@@ -248,9 +250,22 @@ func (f *gpuFeed) closed() {
 		// driver with no card under it, or a card that could not be read, the
 		// useful conclusion is the same and retrying it every thirty seconds
 		// for the life of the connection would only be noise.
+		//
+		// Except on the first attempt. A driver that is still loading, or an
+		// nvidia-smi that lost a race with the device node at boot, answers
+		// with nothing once and with a card a moment later — and this flag is
+		// never cleared, so one unlucky moment hid the GPU panel for the whole
+		// session on a machine that has a card. One retry costs one command
+		// thirty seconds later.
+		f.emptyRuns++
+		if f.emptyRuns < 2 {
+			f.retryAt = time.Now().Add(gpuFeedRetry)
+			return
+		}
 		f.noCard = true
 		return
 	}
+	f.emptyRuns = 0
 	f.retryAt = time.Now().Add(gpuFeedRetry)
 }
 

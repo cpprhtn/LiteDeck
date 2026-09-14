@@ -210,7 +210,17 @@ func (p *PTYSession) start(opts PTYOptions) error {
 		}
 		// exec replaces the wrapper so the user gets their real login shell
 		// rather than a subshell whose exit leaves them somewhere unexpected.
-		if err := p.sess.Start("cd " + dir + " && exec \"${SHELL:-/bin/sh}\" -l"); err != nil {
+		//
+		// `-l` is not universal: fish takes `--login` and rejects `-l`, and csh
+		// and tcsh read `-l` only as the first argument. The login flag buys a
+		// login shell's profile, which matters far less than the terminal
+		// opening at all — so it is dropped where the shell is one of those,
+		// and the shell's own interactive startup files still run.
+		const startShell = `case "${SHELL:-/bin/sh}" in ` +
+			`*/fish) exec "$SHELL" --login ;; ` +
+			`*/csh|*/tcsh) exec "$SHELL" ;; ` +
+			`*) exec "${SHELL:-/bin/sh}" -l ;; esac`
+		if err := p.sess.Start("cd " + dir + " && " + startShell); err != nil {
 			return fmt.Errorf("sshcore: start shell: %w", err)
 		}
 

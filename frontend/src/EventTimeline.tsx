@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { shortStamp } from './datetime'
 import { HostEvents, type EventsView, type ServerEvent } from './ipc'
 import { k, t } from './i18n'
@@ -65,15 +65,23 @@ export function EventTimeline({
   const [view, setView] = useState<EventsView | null>(null)
   const [busy, setBusy] = useState(false)
 
+  // Which read the screen is waiting for. Seven days is slow and 24 hours is
+  // quick, so clicking 7d and then 24h used to end with the 7d answer landing
+  // last and overwriting the one that was asked for second.
+  const latest = useRef(0)
+
   const load = useCallback(
     async (elevate: boolean) => {
+      const mine = ++latest.current
       setBusy(true)
       try {
-        setView(await HostEvents(hostID, range, elevate))
+        const got = await HostEvents(hostID, range, elevate)
+        if (mine !== latest.current) return
+        setView(got)
       } catch (e) {
-        onError(String(e))
+        if (mine === latest.current) onError(String(e))
       } finally {
-        setBusy(false)
+        if (mine === latest.current) setBusy(false)
       }
     },
     [hostID, range, onError],

@@ -10,17 +10,17 @@ package secret
 // package cannot reach; it becomes garbage immediately and is freed on the next
 // collection, but it is not zeroed on demand.
 //
-// Status: NOT WIRED UP. The auth and sudo paths still carry the password as a
-// plain string end to end, so nothing is wiped on demand today — the README's
-// security section says exactly this rather than implying otherwise. This type
-// exists for the paths that will hold a secret long enough to be worth wiping;
-// until one uses it, do not read the comment above as a guarantee.
+// Status: used for the one copy whose lifetime is long enough to matter — the
+// sudo password held by a turned lock, which lives from the moment the user
+// types it until the connection ends. That is minutes or hours, and a heap dump
+// or a core file taken any time in between used to carry it as a plain string.
+// app.sudoUnlock holds it here now and wipes it on forget.
 //
-// What Buffer does achieve when it is used: the app's own long-lived copy — the one sitting in
-// a struct between the user typing it and the handshake finishing, and the one
-// that would otherwise appear in a heap dump or a core file minutes later — is
-// held as bytes and wiped deterministically. That is the copy whose lifetime is
-// long enough to matter.
+// Every other copy is still a string and still out of reach: the one
+// x/crypto/ssh takes at the moment of authentication, and the one made here to
+// hand it over. Those exist for the length of one call and become garbage
+// immediately. The README's security section says this rather than implying the
+// stronger thing.
 
 import "crypto/subtle"
 

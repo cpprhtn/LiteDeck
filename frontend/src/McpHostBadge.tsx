@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { MCPState, SetMCPWritePolicy, type MCPStatus } from './ipc'
+import { MCPState, SetMCPWritePolicy, on, type MCPStatus } from './ipc'
 import { t } from './i18n'
 
 // The per-host AI write mode, in the header beside the server it applies to.
@@ -40,6 +40,12 @@ export function McpHostBadge({ hostID }: { hostID: string }) {
   useEffect(() => {
     void load()
   }, [load, hostID])
+
+  // Go says when the settings change. Without this the badge read the state
+  // once on mount and then only on the countdown timer, so sharing a host from
+  // the panel took effect and the header did not say so until something else
+  // happened to refresh it.
+  useEffect(() => on<MCPStatus>('mcp:state', setState), [])
 
   // A countdown that does not count down is worse than no countdown: it would
   // still read "7 hours left" an hour after the window closed.

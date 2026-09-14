@@ -1,0 +1,20 @@
+2026-09-14, debian:trixie 컨테이너 · OpenSSH_10.0p2 · procps ps.
+
+리뷰 1-26 이 말한 서버가 이것이다. OpenSSH 9.8 이 세션 처리를 별도 바이너리로
+떼어 내면서 프로세스 타이틀도 같이 옮겨 갔다. 계정 둘이 각각 로그인한 상태에서
+찍었다.
+
+  ps-sshd-session.txt        `ps -eo pid,ppid,user:32,etimes,args --no-headers`.
+                             리스너만 `sshd: /usr/sbin/sshd -D -e [listener]` 이고
+                             나머지는 전부 `sshd-session:` 이다 —
+                             `sshd-session: deploy [priv]`,
+                             `sshd-session: deploy@pts/0`.
+                             기존 ps-sshd.txt 는 구형 타이틀뿐이라 이 회귀를
+                             잡을 수 없었다.
+
+  ancestors-sshd-session.txt SelfAncestorsScript 를 세션 안에서 돌린 결과.
+                             둘만 나온다. 컨테이너에서는 리스너가 PID 1 이고
+                             스크립트가 `while [ "$p" -gt 1 ]` 로 도니 PID 1 을
+                             보기 전에 멈추기 때문이다. 실제 서버에서는 리스너가
+                             1 이 아니라 셋이 나온다. /proc/*/comm 은 리스너가
+                             `sshd`, 세션이 `sshd-session` 으로 확인했다.

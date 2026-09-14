@@ -123,4 +123,11 @@ var english = map[string]string{
 	"세션이 끝나지 않았습니다. 다른 계정의 세션은 관리자 권한이 필요할 수 있습니다.":                           "The session did not end. Ending another account's session may need administrator rights.",
 	"%s가 아직 켜지는 중입니다. 잠시 뒤에 다시 눌러 주세요.":                                       "%s is still starting up. Try again in a moment.",
 	"서버의 WSL 서비스가 멈춰 있습니다. 서버를 재시작해야 합니다 — `wsl --shutdown`으로는 풀리지 않는 상태입니다.": "The WSL service on the server is stuck. It needs a reboot — `wsl --shutdown` does not clear this state.",
+	"서버 모드에서는 서버의 로컬 파일을 올릴 수 없습니다 — 브라우저에서 업로드하세요":                           "Server mode will not upload the server's own files \u2014 upload from the browser instead",
+	"서버 모드에서는 서버의 로컬 디스크로 받을 수 없습니다 — 브라우저에서 내려받으세요":                          "Server mode will not download onto the server's own disk \u2014 download from the browser instead",
+	"서버 모드에서는 앱을 스스로 업데이트하지 않습니다 — 패키지나 바이너리를 교체하세요":                          "Server mode does not update itself \u2014 replace the package or the binary",
+	"서버 모드에서는 서버의 ~/.ssh/config 를 읽지 않습니다":                                    "Server mode does not read the server account's ~/.ssh/config",
+	"%s: 심볼릭 링크가 너무 깊습니다":                                                     "%s: too many symbolic links",
+	"%s 에 쓸 수 없어 업데이트를 적용할 수 없습니다. 앱을 응용 프로그램 폴더로 옮기고 다시 시도해 주세요.":            "Cannot write to %s, so the update cannot be installed. Move the app to your Applications folder and try again.",
+	"%s 와 같은 이름이 이미 너무 많습니다":                                                  "Too many files are already named like %s",
 }

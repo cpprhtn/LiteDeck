@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"net"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -31,8 +32,12 @@ const (
 //
 // Letting the OS choose looks tidier and is wrong: the port lands in the line
 // the user pasted into their MCP client, and a new one on every launch means
-// that line is dead by tomorrow. Whatever is actually bound is written back to
-// settings, so it stays put even when this preference was unavailable.
+// that line is dead by tomorrow.
+//
+// What is bound is *not* written back. Remembering it on the user's behalf is
+// what broke everyone whose preferred port was briefly taken — the fallback
+// became permanent. Pinning is a button now, and the panel says which port
+// actually answered.
 const defaultMCPPort = 8779
 
 type mcpState struct {
@@ -241,6 +246,37 @@ func clipArg(s string) string {
 	return s
 }
 
+// codexSnippet is the two lines that register this app with Codex.
+//
+// # Why there is an environment variable at all
+//
+// `--bearer-token-env-var` takes the variable's *name*, not its value: Codex
+// reads the variable when it connects, so the token never lands in its config
+// file. There is no flag that takes the token directly, so the line that sets
+// the variable has to come first — and that line is shell syntax, which is
+// where the platforms part company.
+//
+// # Why goos decides the first line
+//
+// `export` is bash. On Windows it is not a command at all, so the snippet this
+// used to hand out could not work on the machine it was copied from: Codex
+// would register and then fail to authenticate, which reads as our bug rather
+// than as a snippet for the wrong shell.
+//
+// PowerShell rather than cmd for the Windows form. `set NAME=value` works in
+// cmd and does not in PowerShell, while `$env:NAME` works in PowerShell and not
+// in cmd; PowerShell is what Windows opens by default from Terminal and what
+// Codex's own documentation shows. The cmd form is in docs/mcp.md for whoever
+// wants it.
+func codexSnippet(token, url, goos string) string {
+	set := fmt.Sprintf("export LITEDECK_MCP_TOKEN=%q", token)
+	if goos == "windows" {
+		set = fmt.Sprintf("$env:LITEDECK_MCP_TOKEN = %q", token)
+	}
+	return set + fmt.Sprintf(
+		"\ncodex mcp add litedeck --url %s --bearer-token-env-var LITEDECK_MCP_TOKEN", url)
+}
+
 /* ------------------------------------------------------------- bindings */
 
 // MCPState reports the integration's current state.
@@ -287,12 +323,7 @@ func (a *App) MCPState() MCPStatus {
 		out.Snippet = fmt.Sprintf(
 			"claude mcp add --transport http litedeck %s --header \"Authorization: Bearer %s\"",
 			out.URL, out.Token)
-		// Codex reads the token from the environment and wants the variable's
-		// name, not its value. Handing it the header form produces a server that
-		// registers and then fails to authenticate, which reads as our bug.
-		out.CodexSnippet = fmt.Sprintf(
-			"export LITEDECK_MCP_TOKEN=%s\ncodex mcp add litedeck --url %s --bearer-token-env-var LITEDECK_MCP_TOKEN",
-			out.Token, out.URL)
+		out.CodexSnippet = codexSnippet(out.Token, out.URL, runtime.GOOS)
 	}
 	return out
 }
@@ -323,7 +354,17 @@ func (a *App) PinMCPPort(port int) MCPStatus {
 		s.Error = err.Error()
 		return s
 	}
-	return a.MCPState()
+	// The panel draws "8779 was busy, so X was used" by comparing the wanted
+	// port with the bound one. Leaving `wanted` at the old number meant that
+	// line stayed on screen beside "pinned to X" — the panel saying the port
+	// was both a fallback and the choice. The bind itself still waits for the
+	// next start, which the panel says separately.
+	a.mcp.mu.Lock()
+	a.mcp.wanted = port
+	a.mcp.mu.Unlock()
+	out := a.MCPState()
+	a.emitMCPState(out)
+	return out
 }
 
 // SetMCPEnabled turns the endpoint on or off.
@@ -348,7 +389,9 @@ func (a *App) SetMCPEnabled(enabled bool) MCPStatus {
 	if enabled {
 		a.startMCP()
 	}
-	return a.MCPState()
+	out := a.MCPState()
+	a.emitMCPState(out)
+	return out
 }
 
 // SetMCPHost shares one server with AI clients, or stops sharing it.
@@ -373,7 +416,9 @@ func (a *App) SetMCPHost(hostID string, allowed bool) MCPStatus {
 		out.Error = err.Error()
 		return out
 	}
-	return a.MCPState()
+	out := a.MCPState()
+	a.emitMCPState(out)
+	return out
 }
 
 // SetMCPHostDelete decides whether file deletion is offered on one host.
@@ -395,7 +440,9 @@ func (a *App) SetMCPHostDelete(hostID string, allowed bool) MCPStatus {
 		out.Error = err.Error()
 		return out
 	}
-	return a.MCPState()
+	out := a.MCPState()
+	a.emitMCPState(out)
+	return out
 }
 
 // SetMCPHostExec decides whether arbitrary commands may be run on one host.
@@ -422,7 +469,9 @@ func (a *App) SetMCPHostExec(hostID string, allowed bool) MCPStatus {
 		out.Error = err.Error()
 		return out
 	}
-	return a.MCPState()
+	out := a.MCPState()
+	a.emitMCPState(out)
+	return out
 }
 
 // RotateMCPToken issues a new token and invalidates the old one.
@@ -451,7 +500,9 @@ func (a *App) RotateMCPToken() MCPStatus {
 		a.stopMCP()
 		a.startMCP()
 	}
-	return a.MCPState()
+	out := a.MCPState()
+	a.emitMCPState(out)
+	return out
 }
 
 // mcpSettings is a small helper for tests that need the stored shape.
@@ -460,4 +511,16 @@ func (a *App) mcpSettings() config.MCPSettings {
 		return config.MCPSettings{}
 	}
 	return a.settings.Get().MCP
+}
+
+// emitMCPState tells the open views that the integration's settings changed.
+//
+// The header badge reads this state once on mount and then only on a timer that
+// runs when a countdown is showing. So sharing a host from the panel left the
+// badge absent until something else happened to refresh it — the switch had
+// taken effect and the screen did not say so.
+func (a *App) emitMCPState(s MCPStatus) {
+	if a.emit != nil {
+		a.emit("mcp:state", s)
+	}
 }

@@ -43,7 +43,13 @@ func (a *App) SaveHost(h config.Host) error {
 
 // DeleteHost removes a host, disconnecting it first and forgetting its secrets.
 func (a *App) DeleteHost(id string) error {
-	_ = a.mgr.Disconnect(id)
+	// Through DisconnectHost, not straight to the manager. This used to call
+	// mgr.Disconnect on its own and skip everything DisconnectHost does after
+	// it — the detection cache, the CPU baseline, the interface list, the
+	// digest, the sudo unlock, the shell list and the host's terminals. Adding
+	// a new host that happened to reuse the id then found the deleted one's
+	// answers waiting for it.
+	_ = a.DisconnectHost(id)
 	for _, k := range []secret.Kind{secret.KindPassword, secret.KindPassphrase, secret.KindSudo} {
 		_ = a.secrets.Delete(id, k)
 	}
@@ -62,6 +68,11 @@ type ImportSSHConfigResult struct {
 // Entries the user has already edited are left alone: a re-import must not
 // silently undo their changes. Only rows this importer created are refreshed.
 func (a *App) ImportSSHConfig() (ImportSSHConfigResult, error) {
+	if a.headless {
+		// Reads ~/.ssh/config of whoever runs the process. In server mode that
+		// is the server's account, not the person at the browser.
+		return ImportSSHConfigResult{}, i18n.Errorf("서버 모드에서는 서버의 ~/.ssh/config 를 읽지 않습니다")
+	}
 	var res ImportSSHConfigResult
 
 	path, err := config.DefaultSSHConfigPath()

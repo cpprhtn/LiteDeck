@@ -119,12 +119,18 @@ function baseExtensions(
 
 export function CodeEditor({
   path,
+  openPaths,
   value,
   onChange,
   onSave,
   onCursor,
 }: {
   path: string
+  /** Every tab currently open. A state kept for a tab that is gone is an
+   *  undo history for a file that may have changed on the server since —
+   *  reopening it and pressing ⌘Z restored the previous session's text over
+   *  whatever is there now. */
+  openPaths: string[]
   value: string
   onChange: (doc: string) => void
   onSave: () => void
@@ -150,8 +156,23 @@ export function CodeEditor({
   cb.current = { onChange, onSave, onCursor }
 
   useEffect(() => {
+    // The document is stringified on a timer, not on every keystroke.
+    //
+    // `doc.toString()` copies the whole file — up to 2 MB here — and the
+    // consumer then compares it against the saved text to decide whether the
+    // tab is dirty, which copies it again. Four passes over two megabytes per
+    // character typed is enough to be felt on a large config.
+    //
+    // 150 ms: below what anybody notices in a dirty marker, above the interval
+    // between keystrokes of somebody typing quickly.
+    let changeTimer = 0
+    const flushChange = () => {
+      changeTimer = 0
+      const v = view.current
+      if (v) cb.current.onChange(v.state.doc.toString())
+    }
     const listen = EditorView.updateListener.of((u) => {
-      if (u.docChanged) cb.current.onChange(u.state.doc.toString())
+      if (u.docChanged && !changeTimer) changeTimer = window.setTimeout(flushChange, 150)
       if (u.selectionSet || u.docChanged) {
         const head = u.state.selection.main.head
         const line = u.state.doc.lineAt(head)
@@ -180,6 +201,11 @@ export function CodeEditor({
     factory.current = make
 
     return () => {
+      // Anything typed in the last 150 ms has not reached the store yet.
+      if (changeTimer) {
+        clearTimeout(changeTimer)
+        cb.current.onChange(v.state.doc.toString())
+      }
       v.destroy()
       view.current = null
       states.current.clear()
@@ -188,6 +214,14 @@ export function CodeEditor({
     // starting document, and every later change is handled by the effects below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Closed tabs lose their parked state.
+  useEffect(() => {
+    const open = new Set(openPaths)
+    for (const p of [...states.current.keys()]) {
+      if (!open.has(p)) states.current.delete(p)
+    }
+  }, [openPaths])
 
   // Tab switch: park the outgoing state, restore or build the incoming one.
   useEffect(() => {

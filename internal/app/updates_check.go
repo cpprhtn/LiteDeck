@@ -52,7 +52,9 @@ type UpdateInfo struct {
 	Latest string `json:"latest,omitempty"`
 	// Newer reports that Latest is ahead of this build.
 	Newer bool `json:"newer,omitempty"`
-	// URL is the release page. The app never fetches the asset itself.
+	// URL is the release page. This check never fetches the asset — the
+	// download is a separate, deliberate step in updates_apply.go, and keeping
+	// them apart is what makes "check" safe to run on a timer.
 	URL string `json:"url,omitempty"`
 }
 

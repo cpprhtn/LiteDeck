@@ -204,6 +204,9 @@ func TestDetectLinuxStillWorks(t *testing.T) {
 		"id -u":               {ExitCode: 0, Stdout: []byte("1000\n")},
 		"id -nG":              {ExitCode: 0, Stdout: []byte("litedeck adm sudo\n")},
 		"command -v docker":   {ExitCode: 0, Stdout: []byte("/usr/bin/docker\n")},
+		// procps answers these flags; busybox rejects them, which is the whole
+		// point of asking.
+		"ps -eo pid= --no-headers": {ExitCode: 0, Stdout: []byte("    1\n  700\n")},
 	}}
 
 	info, err := Detect(context.Background(), r)
@@ -215,6 +218,9 @@ func TestDetectLinuxStillWorks(t *testing.T) {
 	}
 	if info.PrettyName != "Ubuntu 22.04.5 LTS" || info.SystemdVersion != 249 || !info.SystemdJSON {
 		t.Errorf("linux probes did not run: %+v", info)
+	}
+	if !info.HasProcps {
+		t.Error("procps not detected on a host whose ps answered")
 	}
 	if !info.HasDocker || info.IsRoot || !info.CanReadJournal {
 		t.Errorf("capability probes wrong: docker=%v root=%v journal=%v",
@@ -231,5 +237,40 @@ func TestDetectLinuxStillWorks(t *testing.T) {
 		if strings.HasPrefix(asked, "cmd ") {
 			t.Errorf("probed %q on a host that answered uname", asked)
 		}
+	}
+}
+
+// busybox has a `ps` and it answers none of the flags these two tabs send:
+// `-eo`, `user:32`, `etimes` and `--no-headers` are all procps. Alpine and most
+// container images ship busybox, and the capabilities used to be unconditional,
+// so both tabs opened and then printed "unrecognized option" on every poll.
+func TestBusyboxPsTurnsOffTheTabsThatNeedProcps(t *testing.T) {
+	r := &fakeRunner{replies: map[string]sshcore.Result{
+		"uname -s":            {ExitCode: 0, Stdout: []byte("Linux\n")},
+		"cat /etc/os-release": {ExitCode: 0, Stdout: []byte("PRETTY_NAME=\"Alpine Linux v3.20\"\n")},
+		// What busybox actually does with them.
+		"ps -eo pid= --no-headers": {
+			ExitCode: 1,
+			Stderr:   []byte("ps: unrecognized option: e\nBusyBox v1.36.1\n"),
+		},
+	}}
+
+	info, err := Detect(context.Background(), r)
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	if info.HasProcps {
+		t.Fatal("busybox ps was taken for procps")
+	}
+	caps := info.Capabilities()
+	for _, c := range []Capability{CapProcesses, CapSessions} {
+		if caps[c] {
+			t.Errorf("%q is on, so the tab opens and then fails on every poll", c)
+		}
+	}
+	// The tabs that do not need it are unaffected — a capability turning off
+	// must not take the rest of the app with it.
+	if !caps[CapMetrics] || !caps[CapNetwork] {
+		t.Error("turning off the ps tabs also turned off tabs that read /proc")
 	}
 }

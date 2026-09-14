@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"fmt"
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
 	"github.com/cpprhtn/LiteDeck/internal/config"
 )
@@ -40,7 +41,7 @@ func TestUnlockDiesWithTheConnection(t *testing.T) {
 // to see that is to look.
 func TestDisconnectDropsTheHeldPassword(t *testing.T) {
 	a := connectedApp(t)
-	a.unlocked.put("fixture", a.mgr.Generation("fixture"), "hunter2")
+	a.unlocked.put("fixture", a.connGeneration("fixture"), "hunter2")
 
 	if err := a.DisconnectHost("fixture"); err != nil {
 		t.Fatalf("DisconnectHost: %v", err)
@@ -365,5 +366,44 @@ func TestSudoUnlockIsPerConnection(t *testing.T) {
 	u.forget("h")
 	if _, ok := u.get("h", 1); ok {
 		t.Error("잠갔는데 그대로였다")
+	}
+}
+
+// The sudo password a turned lock holds is the one copy in this app that lives
+// long enough to be worth wiping: from the moment somebody types it until the
+// connection ends, which is minutes or hours. It used to be a plain string in a
+// struct, so a heap dump or a core file taken any time in between carried it.
+func TestUnlockedPasswordIsHeldWipeableAndWiped(t *testing.T) {
+	u := newSudoUnlock()
+	u.put("h", 1, "hunter2")
+
+	if got, ok := u.get("h", 1); !ok || got != "hunter2" {
+		t.Fatalf("get = %q, %v", got, ok)
+	}
+	// Not a string in the struct: printing the entry must not print the secret.
+	if s := fmt.Sprintf("%v", u.byID["h"]); strings.Contains(s, "hunter2") {
+		t.Errorf("the password prints with the struct: %s", s)
+	}
+
+	u.forget("h")
+	if _, ok := u.get("h", 1); ok {
+		t.Error("the lock survived forget")
+	}
+}
+
+// The elevated read parses English too, and for a while it was the only script
+// that did not say so.
+//
+// `ufw status verbose` is translated in full — measured on Ubuntu 24.04 with
+// language-pack-ko installed, "Status: active" comes back as "상태: 활성" — and
+// ParseUfwStatus keys on the literal prefix. Without the pin a Korean server's
+// live firewall was reported as switched off. The fixtures are in
+// testdata/golden/locale; TestUfwStatusIsTranslated holds the other end.
+//
+// Inside the script rather than around it: this runs under sudo, which resets
+// the environment.
+func TestElevatedSecurityReadPinsTheLocale(t *testing.T) {
+	if !strings.HasPrefix(securityRulesScript, "LC_ALL=C; export LC_ALL\n") {
+		t.Error("securityRulesScript does not open by pinning the locale")
 	}
 }

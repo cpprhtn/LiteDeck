@@ -80,6 +80,8 @@ func asksAbout(mode, tool string) bool {
 		// fully described by the call the client already displayed, and a shell
 		// line is not — the schema bounds the first and says nothing about the
 		// second.
+		// fs_edit is not registered and has not been; it is here so a tool by
+		// that name could not arrive later and default to silent.
 		return tool == "fs_write" || tool == "fs_edit" || tool == "fs_delete" ||
 			tool == "run_command"
 	}
@@ -155,6 +157,9 @@ type approvalBridge struct {
 	mu      sync.Mutex
 	seq     int
 	waiting map[string]chan bool
+	// pending keeps the payload of every approval still waiting, so a web
+	// client that lost its socket can ask for them again. See PendingPrompts.
+	pending map[string]MCPWritePrompt
 }
 
 func newApprovalBridge(a *App) *approvalBridge {
@@ -171,6 +176,9 @@ func (a *App) policyFor(hostID string) config.MCPWritePolicy {
 	if p.Mode == "" {
 		return config.MCPWritePolicy{Mode: WriteAsk}
 	}
+	// Until == 0 means "does not expire", which is what strict is stored with.
+	// The condition already required a non-zero Until, so this is unchanged
+	// behaviour for it — the bug was on the writing side.
 	if p.Mode != WriteAsk && p.Until > 0 && time.Now().Unix() >= p.Until {
 		// Expiry is enforced on read rather than by a timer: a timer that does
 		// not fire because the app was asleep would leave the window open.
@@ -196,6 +204,7 @@ func (a *App) approveWrite(req writeRequest) (approvalOutcome, error) {
 	defer func() {
 		a.approvals.mu.Lock()
 		delete(a.approvals.waiting, id)
+		delete(a.approvals.pending, id)
 		a.approvals.mu.Unlock()
 	}()
 
@@ -203,11 +212,18 @@ func (a *App) approveWrite(req writeRequest) (approvalOutcome, error) {
 	if h, ok := a.hosts.Get(req.hostID); ok {
 		host = h.Label()
 	}
-	a.emit("prompt:mcpwrite", MCPWritePrompt{
+	payload := MCPWritePrompt{
 		ID: id, HostID: req.hostID, Host: host, Tool: req.tool,
 		Summary: req.summary, Command: req.command,
 		Path: req.path, Before: req.before, After: req.after,
-	})
+	}
+	a.approvals.mu.Lock()
+	if a.approvals.pending == nil {
+		a.approvals.pending = map[string]MCPWritePrompt{}
+	}
+	a.approvals.pending[id] = payload
+	a.approvals.mu.Unlock()
+	a.emit("prompt:mcpwrite", payload)
 
 	select {
 	case approved := <-ch:
@@ -273,9 +289,21 @@ func (a *App) SetMCPWritePolicy(hostID, mode string, minutes int) MCPStatus {
 	if s.Write == nil {
 		s.Write = map[string]config.MCPWritePolicy{}
 	}
-	if mode == WriteAsk {
+	switch mode {
+	case WriteAsk:
 		delete(s.Write, hostID) // the default needs no entry
-	} else {
+
+	case WriteStrict:
+		// No expiry. The window exists so a relaxation cannot outlive the
+		// session that wanted it; strict is the opposite of a relaxation, and
+		// expiring it turned the most careful setting into a temporary one that
+		// quietly became the *less* careful default overnight. Somebody who
+		// marks a production box "ask about everything" and comes back in the
+		// morning would have found svc_control restarting services without a
+		// word. A policy must not relax itself.
+		s.Write[hostID] = config.MCPWritePolicy{Mode: mode}
+
+	default:
 		window := time.Duration(minutes) * time.Minute
 		if window <= 0 || window > maxWriteWindow {
 			window = maxWriteWindow
@@ -290,7 +318,9 @@ func (a *App) SetMCPWritePolicy(hostID, mode string, minutes int) MCPStatus {
 		out.Error = err.Error()
 		return out
 	}
-	return a.MCPState()
+	out := a.MCPState()
+	a.emitMCPState(out)
+	return out
 }
 
 // WriteApprovalTimeoutForTest shortens the wait so a test does not have to sit

@@ -44,6 +44,7 @@ type Server struct {
 	token    string
 	password string        // "" = no login page; a value gates access behind /login
 	sessions *sessionStore // live login sessions
+	logins   *loginLimiter // slows password guessing on /login
 	uploader Uploader
 
 	mu      sync.Mutex
@@ -59,7 +60,8 @@ type Uploader interface {
 
 // NewServer wraps a dispatcher. token may be empty (loopback deployments).
 func NewServer(disp *Dispatcher, token string) *Server {
-	return &Server{disp: disp, token: token, sessions: newSessionStore(), clients: map[*wsClient]struct{}{}}
+	return &Server{disp: disp, token: token, sessions: newSessionStore(),
+		logins: newLoginLimiter(), clients: map[*wsClient]struct{}{}}
 }
 
 // SetPassword turns on the built-in login: unauthenticated requests to /rpc,

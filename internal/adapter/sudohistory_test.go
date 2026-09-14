@@ -218,3 +218,37 @@ func TestSudoHistoryArgsAreBounded(t *testing.T) {
 		t.Error("an empty range still passed --since")
 	}
 }
+
+// `-p` means "password" in about four commands and something else in every
+// other one. Masking it everywhere turned `ss -plnt` into `ss -p••••••`, and a
+// history full of redactions that hide nothing is one nobody reads — while the
+// command that was actually run becomes unreadable to whoever is auditing.
+func TestMaskingLeavesOrdinaryDashPAlone(t *testing.T) {
+	for _, line := range []string{
+		"ss -plnt",
+		"cp -pr /etc/nginx /backup",
+		"mkdir -pv /srv/app/releases",
+		"mount -o remount,keyboard=us /mnt",
+		"ps -p 1234",
+	} {
+		got, found := MaskSecrets(line)
+		if found || got != line {
+			t.Errorf("masked something that is not a secret:\n  in:  %s\n  out: %s", line, got)
+		}
+	}
+
+	// The commands that really do take a password that way are still masked.
+	for _, line := range []string{
+		"mysql -uroot -phunter2 mydb",
+		"mysqldump -u backup -psekrit --all-databases",
+		"redis-cli -p6379 -phunter2 ping",
+	} {
+		got, found := MaskSecrets(line)
+		if !found {
+			t.Errorf("a password went through in the clear: %s", got)
+		}
+		if strings.Contains(got, "hunter2") || strings.Contains(got, "sekrit") {
+			t.Errorf("the secret survived: %s", got)
+		}
+	}
+}

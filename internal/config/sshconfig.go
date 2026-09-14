@@ -114,6 +114,18 @@ func parseSSHConfig(path string, depth int) ([]sshEntry, error) {
 		}
 
 		switch strings.ToLower(key) {
+		case "match":
+			// A Match block ends the Host block before it, and everything
+			// inside it is conditional on things this importer cannot evaluate
+			// — the final hostname, the local user, the result of a command.
+			// Left running, its directives were attached to whichever Host came
+			// last, which is how a `Match host bastion` block's ProxyJump ended
+			// up on an unrelated server.
+			for _, e := range current {
+				entries = append(entries, *e)
+			}
+			current = nil
+
 		case "host":
 			for _, e := range current {
 				entries = append(entries, *e)

@@ -86,7 +86,15 @@ func TestGPUFeedNoCardIsLiveAndEmpty(t *testing.T) {
 	w := newGPUWatcher()
 	f := &gpuFeed{started: time.Now()}
 	w.byID["h"] = f
-	f.closed() // the stream ran, said nothing, exited
+	// Twice. One empty run is not the answer: a driver still loading, or an
+	// nvidia-smi that lost a race with the device node at boot, says nothing
+	// once and names a card a moment later — and noCard is never cleared, so
+	// that one moment used to hide the GPU panel for the whole session.
+	f.closed()
+	if f.noCard {
+		t.Error("gave up after a single empty run")
+	}
+	f.closed() // the stream ran, said nothing, exited — twice
 
 	rows, live := w.sample("h")
 	if !live {
@@ -142,6 +150,8 @@ func TestGPUForgetClearsNoCard(t *testing.T) {
 	w := newGPUWatcher()
 	f := &gpuFeed{started: time.Now()}
 	w.byID["h"] = f
+	// Twice: one empty run is a retry, two is the answer. See closed().
+	f.closed()
 	f.closed()
 	if _, live := w.sample("h"); !live {
 		t.Fatal("setup: expected the no-card answer")

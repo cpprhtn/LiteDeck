@@ -34,10 +34,19 @@ import (
 // the obvious way to count boots and does not appear at all under `-q -o
 // short-iso`. Matching on something that is never printed is a counter that is
 // always zero, which looks exactly like a server that never restarts.
-const DigestScript = `since="$1"
+// Every script here opens by pinning the locale. pam_env hands a non-interactive
+// exec the machine's LANG, and everything these parse is English — `last -F`'s
+// weekday, ufw's "Status: active", journalctl's month names. On a server
+// installed in another language the parsers match nothing and return empty,
+// which reads on screen as "nobody logged in" and "no attackers": the shape of
+// wrong answer this app is built not to give. Setenv is asked for as well (see
+// sshcore.ExecOpts) but only works where sshd lists the variable in AcceptEnv,
+// so each script says it too.
+const DigestScript = `LC_ALL=C; export LC_ALL
+since="$1"
 journalctl --since "$since" --no-pager -q -o short-iso 2>/dev/null | awk '
 /systemd\[1\]: Startup finished/          { boot++ }
-/ sshd\[[0-9]*\]: Failed password/       { authfail++ }
+/ sshd(-session)?\[[0-9]*\]: Failed password/ { authfail++ }
 / sudo\[[0-9]*\]: .*COMMAND=/            { sudo++ }
 /systemd\[1\]: .*(Failed with result|Failed to start)/ { unitfail++ }
 END {

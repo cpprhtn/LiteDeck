@@ -11,6 +11,7 @@ import (
 	"github.com/cpprhtn/LiteDeck/internal/i18n"
 	"github.com/cpprhtn/LiteDeck/internal/shellquote"
 	"golang.org/x/crypto/ssh"
+	"strings"
 )
 
 // Long-running commands whose output arrives over time — `journalctl -f`,
@@ -167,11 +168,47 @@ func (c *Conn) OpenStreamOpts(
 	return s, nil
 }
 
+// overlongNote is deliberately plain: it crosses into the log pane as a line of
+// output, not as an app message, and has to read as one.
+const overlongNote = "a line longer than 256 KB was skipped"
+
 func scan(r io.Reader, isStderr bool, onLine OnLine) {
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 0, 8*1024), maxStreamLine)
-	for sc.Scan() {
-		onLine(sc.Text(), isStderr)
+	br := bufio.NewReaderSize(r, 8*1024)
+	for {
+		line, err := br.ReadSlice('\n')
+		switch {
+		case err == nil:
+			onLine(strings.TrimRight(string(line), "\r\n"), isStderr)
+
+		case errors.Is(err, bufio.ErrBufferFull):
+			// A line longer than the buffer. bufio.Scanner, which this
+			// replaced, ended the whole scan here with ErrTooLong and returned:
+			// the follow went quiet while still holding its channel slot, alive
+			// on screen and stopped in fact. One newline-free JSON line from a
+			// container is enough to do it.
+			//
+			// Skipped rather than assembled. The cap exists so a program
+			// printing a gigabyte without a newline cannot exhaust memory here,
+			// and that reason does not stop applying because the line is
+			// interesting.
+			n := len(line)
+			for errors.Is(err, bufio.ErrBufferFull) && n < maxStreamLine {
+				line, err = br.ReadSlice('\n')
+				n += len(line)
+			}
+			onLine("— "+overlongNote+" —", true)
+			if err != nil && !errors.Is(err, bufio.ErrBufferFull) {
+				return
+			}
+
+		default:
+			// EOF, or the channel went away. Anything buffered without a
+			// trailing newline is still output and worth showing.
+			if len(line) > 0 {
+				onLine(strings.TrimRight(string(line), "\r\n"), isStderr)
+			}
+			return
+		}
 	}
 }
 

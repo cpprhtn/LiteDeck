@@ -123,17 +123,22 @@ safe ([`internal/mcp/http.go`](../internal/mcp/http.go)).
 
 ## What it does not do, stated up front
 
-- **It cannot bound how long a password stays in memory.** Go strings are immutable and the runtime
-  may copy them at any time, so a secret held as a string cannot be erased on demand;
-  `x/crypto/ssh` takes passwords as strings too. It becomes garbage immediately and is freed at the
-  next collection, but **there is no zero-on-use implemented.** A core or heap dump could show it
+- **It cannot fully bound how long a password stays in memory.** The one copy that lives long
+  enough to matter — the sudo password a turned lock holds until the connection ends — is kept as
+  bytes and zeroed when the lock is released. Every other copy is still a string and cannot be
+  erased: the one `x/crypto/ssh` takes at the moment of authentication, and the one made to hand it
+  over. Both live for a single call and become garbage at once, but **a core or heap dump taken in
+  that moment could show them**
 - **Release binaries are unsigned.** A SHA256 checksum is not a signature
 - **The integrity check on a resumed transfer looks at the seam**, not at everything already
   transferred — the 64KB before the resume point. A source edited to exactly the same length,
   outside that window, could get through
   ([features in detail](features.en.md#transfers-whole-folders-and-resuming-after-an-interruption))
-- **On real Linux hardware only the read side and file writes have been exercised**; transfers, completing a sudo escalation, the terminal PTY and log tailing are still container-only. See
-  [what is and is not verified](support.en.md)
+- **What has been exercised on real hardware is listed in
+  [what is and is not verified](support.en.md).** On a Raspberry Pi 4 that is whole-folder
+  transfers with resume, a completed sudo escalation, the terminal PTY and live log
+  tailing; on a real Windows server, ending a session and a cold WSL start. What has not
+  been exercised is in the same table
 - There is no audit log. The Command Log stays on your machine and goes nowhere.
   **A log the client writes is not an audit**
 - Dependency vulnerabilities are checked by `govulncheck ./...` in CI, on pushes to `main` and every PR

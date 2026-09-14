@@ -48,8 +48,19 @@ export function CommandLogPanel({
     }
   }, [])
 
+  // Follow only from the bottom. Scrolling up to read a command and being
+  // dragged back down two seconds later is the log reading you rather than the
+  // other way round — the log viewer has had this rule for a while and this
+  // panel did not.
+  const scrollerRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (open) endRef.current?.scrollIntoView({ block: 'end' })
+    if (!open) return
+    const el = scrollerRef.current
+    if (el) {
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 24
+      if (!atBottom) return
+    }
+    endRef.current?.scrollIntoView({ block: 'end' })
   }, [entries, open])
 
   const copy = async (e: CommandEntry) => {
@@ -109,7 +120,7 @@ export function CommandLogPanel({
       </button>
 
       {open && (
-        <div className="cmdlog-body">
+        <div className="cmdlog-body" ref={scrollerRef}>
           {shown.length === 0 && (
             <div className="placeholder small">
               {entries.length === 0

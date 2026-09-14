@@ -71,13 +71,31 @@ type promptBridge struct {
 	seq      int
 	hostKeys map[string]chan sshcore.TrustDecision
 	secrets  map[string]chan secretAnswer
+	// pending keeps the payload of every prompt still waiting for an answer.
+	//
+	// The desktop never needed it: one window, and the event reaches it. A
+	// browser can lose the WebSocket mid-prompt — a laptop lid, a proxy idle
+	// timeout — and the reconnect used to bring back a page with no dialog on
+	// it while Go went on waiting, so ConnectHost hung until the prompt timed
+	// out two minutes later with nothing on screen to explain it.
+	pendingKeys    map[string]HostKeyPrompt
+	pendingSecrets map[string]SecretPrompt
+}
+
+// PendingPrompts is what a client asks for after reconnecting.
+type PendingPrompts struct {
+	HostKeys []HostKeyPrompt  `json:"hostKeys"`
+	Secrets  []SecretPrompt   `json:"secrets"`
+	Writes   []MCPWritePrompt `json:"writes"`
 }
 
 func newPromptBridge(a *App) *promptBridge {
 	return &promptBridge{
-		app:      a,
-		hostKeys: make(map[string]chan sshcore.TrustDecision),
-		secrets:  make(map[string]chan secretAnswer),
+		app:            a,
+		hostKeys:       make(map[string]chan sshcore.TrustDecision),
+		secrets:        make(map[string]chan secretAnswer),
+		pendingKeys:    make(map[string]HostKeyPrompt),
+		pendingSecrets: make(map[string]SecretPrompt),
 	}
 }
 
@@ -102,22 +120,25 @@ func (b *promptBridge) confirmHostKey(hostID string, k sshcore.KeyInfo) (sshcore
 	id := b.nextID()
 	ch := make(chan sshcore.TrustDecision, 1)
 
-	b.mu.Lock()
-	b.hostKeys[id] = ch
-	b.mu.Unlock()
-	defer func() {
-		b.mu.Lock()
-		delete(b.hostKeys, id)
-		b.mu.Unlock()
-	}()
-
-	b.app.emit("prompt:hostkey", HostKeyPrompt{
+	payload := HostKeyPrompt{
 		ID:          id,
 		HostID:      hostID,
 		Address:     k.Address,
 		KeyType:     k.Type,
 		Fingerprint: k.Fingerprint,
-	})
+	}
+	b.mu.Lock()
+	b.hostKeys[id] = ch
+	b.pendingKeys[id] = payload
+	b.mu.Unlock()
+	defer func() {
+		b.mu.Lock()
+		delete(b.hostKeys, id)
+		delete(b.pendingKeys, id)
+		b.mu.Unlock()
+	}()
+
+	b.app.emit("prompt:hostkey", payload)
 
 	select {
 	case d := <-ch:
@@ -180,16 +201,7 @@ func (b *promptBridge) ask(
 	id := b.nextID()
 	ch := make(chan secretAnswer, 1)
 
-	b.mu.Lock()
-	b.secrets[id] = ch
-	b.mu.Unlock()
-	defer func() {
-		b.mu.Lock()
-		delete(b.secrets, id)
-		b.mu.Unlock()
-	}()
-
-	b.app.emit("prompt:secret", SecretPrompt{
+	payload := SecretPrompt{
 		ID:          id,
 		HostID:      hostID,
 		Kind:        string(kind),
@@ -197,7 +209,19 @@ func (b *promptBridge) ask(
 		SessionOnly: sessionOnly,
 		CanRemember: !sessionOnly && b.app.secrets.Available(),
 		Echo:        echo,
-	})
+	}
+	b.mu.Lock()
+	b.secrets[id] = ch
+	b.pendingSecrets[id] = payload
+	b.mu.Unlock()
+	defer func() {
+		b.mu.Lock()
+		delete(b.secrets, id)
+		delete(b.pendingSecrets, id)
+		b.mu.Unlock()
+	}()
+
+	b.app.emit("prompt:secret", payload)
 
 	select {
 	case ans := <-ch:
@@ -278,4 +302,35 @@ func (b *promptBridge) challengeFunc(hostID string) sshcore.Challenge {
 		}
 		return answers, nil
 	}
+}
+
+// PendingPrompts returns every prompt still waiting for an answer.
+//
+// For a web client that reconnected: the events it missed while the socket was
+// down are gone, and Go is still waiting. Without this the page came back with
+// no dialog while ConnectHost sat there until the prompt timed out.
+func (a *App) PendingPrompts() PendingPrompts {
+	out := PendingPrompts{
+		HostKeys: []HostKeyPrompt{},
+		Secrets:  []SecretPrompt{},
+		Writes:   []MCPWritePrompt{},
+	}
+	if a.prompts != nil {
+		a.prompts.mu.Lock()
+		for _, p := range a.prompts.pendingKeys {
+			out.HostKeys = append(out.HostKeys, p)
+		}
+		for _, p := range a.prompts.pendingSecrets {
+			out.Secrets = append(out.Secrets, p)
+		}
+		a.prompts.mu.Unlock()
+	}
+	if a.approvals != nil {
+		a.approvals.mu.Lock()
+		for _, p := range a.approvals.pending {
+			out.Writes = append(out.Writes, p)
+		}
+		a.approvals.mu.Unlock()
+	}
+	return out
 }

@@ -276,7 +276,18 @@ func (w *progressWriter) Write(p []byte) (int, error) {
 }
 
 // StartUpload queues local files for upload into remoteDir (§4.2).
+//
+// Refused in server mode. "Local" here means the machine the app is running on,
+// which in server mode is the server box rather than the person's laptop — so
+// over /rpc this reads the server's own filesystem and puts it on a remote
+// host. A web session already holds every SSH host, but not the server
+// process's own disk, and where that process runs as root or a dedicated
+// account this is a real escalation. The browser uploads through /upload
+// instead, which carries the bytes rather than naming a path.
 func (a *App) StartUpload(hostID string, localPaths []string, remoteDir string) ([]string, error) {
+	if a.headless {
+		return nil, i18n.Errorf("서버 모드에서는 서버의 로컬 파일을 올릴 수 없습니다 — 브라우저에서 업로드하세요")
+	}
 	dir, err := CleanRemotePath(remoteDir)
 	if err != nil {
 		return nil, err
@@ -400,6 +411,13 @@ func (a *App) uploadOne(ctx context.Context, j *transferJob) error {
 
 // StartDownload queues remote files for download into localDir (§4.2).
 func (a *App) StartDownload(hostID string, remotePaths []string, localDir string) ([]string, error) {
+	if a.headless {
+		// The mirror of StartUpload: this writes remote files to an arbitrary
+		// path on the machine running the app, which in server mode is the
+		// server box. The desktop chooser (PickLocalDir) already refuses there,
+		// so nothing legitimate reaches this.
+		return nil, i18n.Errorf("서버 모드에서는 서버의 로컬 디스크로 받을 수 없습니다 — 브라우저에서 내려받으세요")
+	}
 	if localDir == "" {
 		return nil, errors.New("app: no local directory chosen")
 	}
@@ -517,12 +535,47 @@ func (a *App) downloadOne(ctx context.Context, j *transferJob) error {
 		a.transfers.keepPartial(j)
 		return closeErr
 	}
-	if err := os.Rename(tmp, j.Local); err != nil {
+	// A file that is already there is not replaced.
+	//
+	// The rename used to land on top of whatever had that name, so downloading
+	// `backup.tar.gz` into a folder that already held one destroyed it with no
+	// question asked and no way back — the app's own delete makes somebody type
+	// the path, and this did more damage with a double-click. A free name
+	// instead, the way a browser picks one, and the queue row says which name
+	// was used.
+	final, err := freeLocalName(j.Local)
+	if err != nil {
 		_ = os.Remove(tmp)
 		return err
 	}
+	if err := os.Rename(tmp, final); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if final != j.Local {
+		a.transfers.renamed(j, final)
+	}
 	a.transfers.emit(j)
 	return nil
+}
+
+// freeLocalName returns p, or the first "p (2)", "p (3)" … that does not exist.
+//
+// Bounded: a directory with a hundred collisions is a situation to report
+// rather than to keep numbering through.
+func freeLocalName(p string) (string, error) {
+	if _, err := os.Lstat(p); errors.Is(err, os.ErrNotExist) {
+		return p, nil
+	}
+	ext := filepath.Ext(p)
+	base := strings.TrimSuffix(p, ext)
+	for i := 2; i < 100; i++ {
+		candidate := fmt.Sprintf("%s (%d)%s", base, i, ext)
+		if _, err := os.Lstat(candidate); errors.Is(err, os.ErrNotExist) {
+			return candidate, nil
+		}
+	}
+	return "", i18n.Errorf("%s 와 같은 이름이 이미 너무 많습니다", filepath.Base(p))
 }
 
 // Resuming an interrupted transfer (§4.2).
@@ -652,6 +705,14 @@ func (q *transferQueue) beginAt(j *transferJob, at int64) {
 
 // keepPartial marks a stopped transfer as one that can be picked up. The bytes
 // are left where they are; that is the whole point.
+// renamed records that the file landed under a different name than asked for,
+// because something was already there.
+func (q *transferQueue) renamed(j *transferJob, local string) {
+	q.mu.Lock()
+	j.Local = local
+	q.mu.Unlock()
+}
+
 func (q *transferQueue) keepPartial(j *transferJob) {
 	q.mu.Lock()
 	j.Resumable = !j.Dir && j.done.Load() > 0

@@ -3,6 +3,8 @@ package adapter
 import (
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -30,10 +32,18 @@ func TestParsePSGolden(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParsePS: %v", err)
 	}
-	if len(procs) != 11 {
-		t.Fatalf("got %d processes, want 11", len(procs))
+	// Ten, not the eleven rows in the file. The capture was taken by running
+	// the very command this parses, so it contains that `ps` — at 0.0% here
+	// only because the capture was written to a file rather than polled. On a
+	// live read it comes back at 100% and sorts to the top of the list.
+	if len(procs) != 10 {
+		t.Fatalf("got %d processes, want 10", len(procs))
 	}
 	byPID := index(procs)
+
+	if _, ok := byPID[97]; ok {
+		t.Error("the read's own ps is in the list")
+	}
 
 	init, ok := byPID[1]
 	if !ok {
@@ -207,7 +217,85 @@ func TestPSArgs(t *testing.T) {
 		t.Errorf("PSArgs() = %q", args)
 	}
 	// args must be last: it is the only column that can contain whitespace.
-	if got := args[1]; got[len(got)-len("comm,args"):] != "comm,args" {
-		t.Errorf("field list %q must end with comm,args", got)
+	if got := args[1]; !strings.HasSuffix(got, ",args") {
+		t.Errorf("field list %q must end with args", got)
+	}
+	// comm asks for a width, which is what lets a name containing a space be
+	// told apart from a name followed by its arguments. Without it the column
+	// is only as wide as the widest name in the listing.
+	if got := args[1]; !strings.Contains(got, "comm:"+strconv.Itoa(commWidth)+",args") {
+		t.Errorf("field list %q does not pin comm to a width", got)
+	}
+}
+
+// The poll's own `ps` is alive for exactly the length of the read, so its %CPU
+// comes back as 100 and it sorts first in a list ordered by CPU: a row that
+// appears at number one and is gone by the next tick, on every server.
+func TestParsePSDropsTheReadItself(t *testing.T) {
+	self := "ps " + strings.Join(PSArgs(), " ")
+	data := "    1     0 root      0.0  0.1  1234 Ss   99999 systemd /sbin/init\n" +
+		" 4242  4200 deploy  100.0  0.0   900 R+       0 ps " + self + "\n" +
+		" 5000     1 deploy    1.2  0.4  9000 S    88888 nginx nginx: worker\n"
+
+	got, err := ParsePS([]byte(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range got {
+		if p.PID == 4242 {
+			t.Errorf("the polling ps is in the list at %.0f%% CPU", p.CPU)
+		}
+	}
+	if len(got) != 2 {
+		t.Errorf("got %d rows, want 2: %+v", len(got), got)
+	}
+
+	// A `ps` somebody typed in a terminal is a real process and stays.
+	mine := " 6000  5999 deploy    0.0  0.0   800 R+       1 ps ps aux\n"
+	got, err = ParsePS([]byte(mine))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Errorf("dropped a ps the user ran: %+v", got)
+	}
+}
+
+// A process name can contain a space. Firefox's content processes are called
+// "Web Content", and splitting at the first one left "Web" as the command and
+// "Content /usr/lib/firefox/…" as the arguments.
+//
+// Not fixed by guessing where the name ends — "sshd" followed by the title
+// "sshd: /usr/sbin/sshd -D" looks exactly like a two-word name — but by asking
+// ps for a fixed-width column, so args begins at a known offset.
+func TestParsePSKeepsASpaceInsideTheProcessName(t *testing.T) {
+	pad := func(comm string) string {
+		for len(comm) < 20 {
+			comm += " "
+		}
+		return comm
+	}
+	data := " 1000   900 deploy    1.0  2.0 90000 Sl    5000 " + pad("Web Content") +
+		"/usr/lib/firefox/firefox -contentproc -childID 3\n" +
+		"  700     1 root      0.0  0.0  9000 Ss   99999 " + pad("sshd") +
+		"sshd: /usr/sbin/sshd -D\n"
+
+	got, err := ParsePS([]byte(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d rows", len(got))
+	}
+	if got[0].Command != "Web Content" {
+		t.Errorf("command = %q, want %q", got[0].Command, "Web Content")
+	}
+	if !strings.HasPrefix(got[0].Args, "/usr/lib/firefox/firefox") {
+		t.Errorf("args = %q — the name's second word leaked into them", got[0].Args)
+	}
+	// The shape that makes every guessing rule wrong: one-word name, and a
+	// title that begins with that word and a colon.
+	if got[1].Command != "sshd" || !strings.HasPrefix(got[1].Args, "sshd:") {
+		t.Errorf("sshd = %q / %q", got[1].Command, got[1].Args)
 	}
 }

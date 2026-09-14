@@ -24,6 +24,7 @@ import { LineWatcher } from './lineWatcher'
 import { requestReveal } from './openFiles'
 import { getPlatform } from './platform'
 import { t } from './i18n'
+import { isWebMode } from './webTransport'
 
 // The built-in terminal (§4.6).
 //
@@ -36,7 +37,6 @@ import { t } from './i18n'
 // characters that never repair themselves.
 
 const enc = new TextEncoder()
-const dec = new TextDecoder()
 
 function b64encode(data: string): string {
   const bytes = enc.encode(data)
@@ -45,12 +45,37 @@ function b64encode(data: string): string {
   return btoa(bin)
 }
 
-function b64decode(data: string): string {
+/** One decoder per pane.
+ *
+ *  `stream: true` holds the tail of a chunk that ended mid-character until the
+ *  next call completes it — which is exactly right for one stream and wrong for
+ *  several sharing a decoder. Two tabs used to hand their bytes to the same
+ *  one, so half a Hangul syllable from a `tail -f` came back glued to the front
+ *  of the next line of a build in the other tab. Both tabs showed a broken
+ *  character that never repaired itself. */
+function b64decode(dec: TextDecoder, data: string): string {
   const bin = atob(data)
   const bytes = new Uint8Array(bin.length)
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-  // stream: true keeps a multi-byte character split across two chunks intact.
   return dec.decode(bytes, { stream: true })
+}
+
+
+/** Read the clipboard, whichever side can actually do it.
+ *
+ *  On the desktop the read detours through Go: WKWebView refuses
+ *  `navigator.clipboard.readText()` outright, so on macOS the paste would
+ *  silently do nothing. Writing is allowed in the same webview, which is why
+ *  only this half detours.
+ *
+ *  In server mode there is no webview behind that call and Go answers "server
+ *  mode cannot read the clipboard", so all three paste paths failed every time.
+ *  A browser over HTTPS or localhost can read its own clipboard, which is the
+ *  right answer there — the clipboard that matters is the one at the keyboard,
+ *  not the one on the server. */
+function readClipboard(): Promise<string> {
+  if (isWebMode()) return navigator.clipboard.readText()
+  return ReadClipboard()
 }
 
 /** Reads the app's design tokens so the terminal matches the rest of the UI. */
@@ -112,6 +137,17 @@ function TerminalPane({
       // macOS convention: ⌥ composes characters rather than sending Meta.
       macOptionIsMeta: false,
     })
+    // The palette is read once at construction, so a terminal opened in
+    // daylight stayed light after the OS switched to dark while CodeMirror and
+    // the rest of the UI changed underneath it. The tokens are CSS variables;
+    // when the scheme flips they resolve to new values and the terminal has to
+    // be told.
+    const scheme = window.matchMedia?.('(prefers-color-scheme: dark)')
+    const onScheme = () => {
+      term.options.theme = themeFromTokens()
+    }
+    scheme?.addEventListener('change', onScheme)
+
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.open(hostRef.current)
@@ -151,10 +187,7 @@ function TerminalPane({
         if (sel) void navigator.clipboard.writeText(sel).catch(() => {})
         return false
       }
-      // Through Go, not navigator.clipboard.readText(): WebKit refuses that
-      // call outright, so on macOS the paste would silently do nothing. Writing
-      // is allowed in the same webview, which is why only this half detours.
-      ReadClipboard()
+      readClipboard()
         // term.paste rather than WriteTerminal: it wraps the text in the
         // bracketed-paste markers when the far side asked for them, which is
         // what stops a pasted block from being run a line at a time, and
@@ -165,10 +198,15 @@ function TerminalPane({
       return false
     })
 
+    const dec = new TextDecoder()
     const offData = on<string>(`term:data:${info.id}`, (chunk) =>
-      term.write(b64decode(chunk)),
+      term.write(b64decode(dec, chunk)),
     )
     const offExit = on<string>(`term:exit:${info.id}`, (msg) => {
+      // Flush whatever the decoder was holding. Without this a session that
+      // ends mid-character drops the last one silently.
+      const tail = dec.decode()
+      if (tail) term.write(tail)
       term.write(`\r\n\x1b[2m— ${t('세션 종료')}${msg ? `: ${msg}` : ''} —\x1b[0m\r\n`)
       closed.current()
     })
@@ -220,15 +258,27 @@ function TerminalPane({
     // a 10x6 terminal. That size went to the real PTY, the shell redrew its
     // prompt for a 10-column screen, and the screenful of output that was there
     // did not survive the trip back. Hiding a tab is not a resize.
+    // Fit locally on every observation, tell the server once the dragging
+    // stops. A window drag fires the observer per frame, and each one was an
+    // RPC and a real SIGWINCH on the far side — a shell redrawing its prompt
+    // sixty times a second while somebody resizes the window.
+    let resizeTimer = 0
     const resize = () => {
       const el = hostRef.current
       if (!el || el.clientWidth === 0 || el.clientHeight === 0) return
       try {
         fit.fit()
-        void ResizeTerminal(info.id, term.cols, term.rows).catch(() => {})
       } catch {
         /* the pane is not visible yet */
+        return
       }
+      const cols = term.cols
+      const rows = term.rows
+      if (resizeTimer) clearTimeout(resizeTimer)
+      resizeTimer = window.setTimeout(() => {
+        resizeTimer = 0
+        void ResizeTerminal(info.id, cols, rows).catch(() => {})
+      }, 120)
     }
     const observer = new ResizeObserver(resize)
     observer.observe(hostRef.current)
@@ -237,7 +287,9 @@ function TerminalPane({
 
     return () => {
       observer.disconnect()
+      if (resizeTimer) clearTimeout(resizeTimer)
       disposeInput.dispose()
+      scheme?.removeEventListener('change', onScheme)
       offData()
       offExit()
       term.dispose()
@@ -277,9 +329,8 @@ function TerminalPane({
           term.clearSelection()
           return
         }
-        // The same detour the keyboard paste takes: WebKit refuses
-        // navigator.clipboard.readText(), so the read goes through Go.
-        ReadClipboard()
+        // Same source as the keyboard paste — see readClipboard.
+        readClipboard()
           .then((text) => text && term.paste(text))
           .catch(() => failed.current(t('클립보드를 읽지 못했습니다.')))
       }}
@@ -492,10 +543,12 @@ export function TerminalView({
   // discoverable, and a line of prose in the toolbar was removed once already
   // for being noise. The tab's tooltip is where somebody hunting for it looks.
   const mod = getPlatform().isMac ? '⌘' : 'Ctrl+Shift+'
-  const copyHint = t('복사 {c} · 붙여넣기 {v} · 우클릭으로도 붙여넣기', {
-    c: `${mod}C`,
-    v: `${mod}V`,
-  })
+  // Right-click pastes everywhere except macOS, where it opens the system
+  // context menu instead and the app never sees the event. Saying so there was
+  // a hint that did not work on the platform reading it.
+  const copyHint = getPlatform().isMac
+    ? t('복사 {c} · 붙여넣기 {v}', { c: `${mod}C`, v: `${mod}V` })
+    : t('복사 {c} · 붙여넣기 {v} · 우클릭으로도 붙여넣기', { c: `${mod}C`, v: `${mod}V` })
 
   return (
     <div className="view term-view">
@@ -547,7 +600,10 @@ export function TerminalView({
                   className="rail-pop-item"
                   onClick={() => {
                     setShellMenu(false)
-                    void openTab(sh.id)
+                    // The label as well as the id. WSL is the one that takes
+                    // seconds to come up — cold, six to twelve of them — and it
+                    // was the one whose name the indicator did not show.
+                    void openTab(sh.id, sh.label)
                   }}
                 >
                   {sh.label}

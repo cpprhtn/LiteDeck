@@ -41,12 +41,26 @@ while kill -0 "$1" 2>/dev/null; do
   sleep 0.2
 done
 
+# Relaunch whatever is at $2 and stop. Reached from every failure after the app
+# has already quit: without it "Install update" made the window disappear and
+# nothing came back — on a read-only DMG, under macOS App Translocation, from a
+# /Applications the user cannot write, or with Defender holding the file open.
+# An app that did not update is a small disappointment; an app that is gone is
+# not.
+relaunch_and_die() {
+  case "$(uname -s)" in
+    Darwin) open "$2" ;;
+    *) "$2" >/dev/null 2>&1 & ;;
+  esac
+  exit 1
+}
+
 old="$2.litedeck-old"
 rm -rf "$old"
-mv "$2" "$old" || exit 1
+mv "$2" "$old" || relaunch_and_die
 if ! mv "$3" "$2"; then
-  mv "$old" "$2"
-  exit 1
+  mv "$old" "$2" || exit 1
+  relaunch_and_die
 fi
 rm -rf "$old"
 
@@ -75,8 +89,11 @@ goto wait
 :gone
 set "old=%~2.litedeck-old"
 if exist "%old%" del /f /q "%old%"
-move /y "%~2" "%old%" >nul || exit /b 1
-move /y "%~3" "%~2" >nul || (move /y "%old%" "%~2" >nul & exit /b 1)
+rem Every failure after the app has quit relaunches what is there. Without it
+rem "Install update" made the window vanish with nothing coming back — Defender
+rem holding the file open is enough to reach this.
+move /y "%~2" "%old%" >nul || (start "" "%~2" & exit /b 1)
+move /y "%~3" "%~2" >nul || (move /y "%old%" "%~2" >nul & start "" "%~2" & exit /b 1)
 del /f /q "%old%" >nul 2>&1
 
 start "" "%~2"

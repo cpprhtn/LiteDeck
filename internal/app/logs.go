@@ -148,8 +148,10 @@ func (a *App) FollowServiceLog(hostID, unit string, tail int, elevate bool) (Log
 
 // startElevatedStream runs a follow through sudo, with the password on stdin.
 //
-// The stream keeps running after sudo has consumed the password, so the reader
-// is a pipe that stays open rather than a one-shot string.
+// The password goes in as a one-shot reader: sudo consumes it and then reads
+// EOF, which is what makes a wrong password fail instead of hanging on the
+// retry prompt. The *stream* keeps running afterwards — it is sudo's stdin that
+// ends, not the session.
 func (a *App) startElevatedStream(hostID, title, cmd string, args ...string) (LogStream, error) {
 	info, err := a.DetectHost(hostID)
 	if err != nil {

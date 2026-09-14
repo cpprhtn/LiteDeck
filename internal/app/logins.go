@@ -7,6 +7,7 @@ import (
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
 	"github.com/cpprhtn/LiteDeck/internal/i18n"
 	"github.com/cpprhtn/LiteDeck/internal/sshcore"
+	"sync"
 	"time"
 )
 
@@ -60,6 +61,15 @@ func (a *App) HostLogins(hostID string, elevate bool) (LoginsView, error) {
 	if err != nil {
 		return LoginsView{}, err
 	}
+	// Cached for the same reason the security read is: this is a 24-hour
+	// journal grep — 583 ms on the measured server — and two tabs ask for it.
+	// The security tab reads it on every load and the session tab reads it
+	// again, so going back and forth between them ran the same scan every time
+	// and left a line in the Command Log for each.
+	gen := a.connGeneration(hostID)
+	if cached, ok := a.logins.get(hostID, gen, elevate); ok {
+		return cached, nil
+	}
 	conn, err := a.mgr.Conn(hostID)
 	if err != nil {
 		return LoginsView{}, err
@@ -69,7 +79,11 @@ func (a *App) HostLogins(hostID string, elevate bool) (LoginsView, error) {
 	defer cancel()
 
 	if info.Platform == adapter.PlatformWindows {
-		return a.windowsLogins(ctx, conn)
+		view, err := a.windowsLogins(ctx, conn)
+		if err == nil {
+			a.logins.put(hostID, gen, elevate, view)
+		}
+		return view, err
 	}
 
 	// One script, the way the metrics snapshot is one script (§3.2b's stated
@@ -81,7 +95,7 @@ func (a *App) HostLogins(hostID string, elevate bool) (LoginsView, error) {
 
 	view := LoginsView{Logins: []adapter.Login{}, Window: authWindow}
 	last, auth := splitLoginsOutput(string(res.Stdout))
-	view.Logins = adapter.ParseLast(last)
+	view.Logins = adapter.ParseLast(last, a.serverLocation(hostID))
 
 	switch {
 	case !info.HasSystemd:
@@ -142,4 +156,43 @@ func (a *App) windowsLogins(ctx context.Context, conn *sshcore.Conn) (LoginsView
 		view.Since = &since
 	}
 	return view, nil
+}
+
+// loginsCache holds one login-history read per connection.
+//
+// Keyed on the elevation as well, because the elevated read answers a different
+// question — an unelevated one comes back with Access=needs-sudo and no
+// failures at all, and serving that to somebody who just pressed "read as
+// administrator" would look like the button did nothing.
+//
+// No TTL. A tab switch must not re-run a 24-hour journal grep, and the refresh
+// that does exist is the connection changing. The security tab's own cache uses
+// a TTL because its numbers include a delta; these are a window on the past.
+type loginsCache struct {
+	mu   sync.Mutex
+	byID map[string]loginsEntry
+}
+
+type loginsEntry struct {
+	gen      uint64
+	elevated bool
+	view     LoginsView
+}
+
+func newLoginsCache() *loginsCache { return &loginsCache{byID: map[string]loginsEntry{}} }
+
+func (c *loginsCache) get(id string, gen uint64, elevated bool) (LoginsView, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.byID[id]
+	if !ok || e.gen != gen || e.elevated != elevated {
+		return LoginsView{}, false
+	}
+	return e.view, true
+}
+
+func (c *loginsCache) put(id string, gen uint64, elevated bool, view LoginsView) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.byID[id] = loginsEntry{gen: gen, elevated: elevated, view: view}
 }

@@ -4,6 +4,9 @@ import { ResizeHandle } from './ResizeHandle'
 import { usePref } from './prefs'
 import { t } from './i18n'
 
+/** A log line plus a key of this side's own making. */
+type KeyedLine = LogLine & { seq: number }
+
 // Live log output (§4.3, §4.5).
 //
 // Follows rather than polls: re-reading the last 500 lines every few seconds
@@ -23,7 +26,7 @@ export function LogPanel({
    *  running now. */
   onReopen?: () => void
 }) {
-  const [lines, setLines] = useState<LogLine[]>([])
+  const [lines, setLines] = useState<KeyedLine[]>([])
   const [ended, setEnded] = useState<string | null>(null)
   const [follow, setFollow] = useState(true)
   const [filter, setFilter] = useState('')
@@ -43,13 +46,35 @@ export function LogPanel({
     setFollow(true)
     setFilter('')
 
-    const offData = on<LogLine>(`log:data:${stream.id}`, (line) =>
-      // Bounded: a chatty unit would otherwise grow the DOM without limit and
-      // the window would slow to a crawl over a long session.
-      setLines((prev) => (prev.length >= MAX_LINES ? [...prev.slice(1), line] : [...prev, line])),
-    )
+    // Batched, and the array is grown rather than rebuilt.
+    //
+    // A line at a time meant one React render per line and a fresh 5,000-element
+    // array copied on every one of them, so a chatty container spent the whole
+    // frame budget on array arithmetic. Collecting what arrived between frames
+    // and applying it once keeps the DOM the same size and the work
+    // proportional to what actually came in.
+    // The sequence number is this side's, not the server's: it exists only to
+    // give each row a key that survives the buffer sliding.
+    let seq = 0
+    let pendingLines: KeyedLine[] = []
+    let frame = 0
+    const flush = () => {
+      frame = 0
+      if (pendingLines.length === 0) return
+      const batch = pendingLines
+      pendingLines = []
+      setLines((prev) => {
+        const next = prev.concat(batch)
+        return next.length > MAX_LINES ? next.slice(next.length - MAX_LINES) : next
+      })
+    }
+    const offData = on<LogLine>(`log:data:${stream.id}`, (line) => {
+      pendingLines.push({ ...line, seq: seq++ })
+      if (!frame) frame = requestAnimationFrame(flush)
+    })
     const offExit = on<string>(`log:exit:${stream.id}`, (msg) => setEnded(msg || t('스트림 종료')))
     return () => {
+      if (frame) cancelAnimationFrame(frame)
       offData()
       offExit()
       void StopLogStream(stream.id).catch(() => {})
@@ -126,8 +151,11 @@ export function LogPanel({
             {lines.length === 0 ? t('로그를 기다리는 중…') : t('필터에 맞는 줄이 없습니다.')}
           </div>
         )}
-        {shown.map((l, i) => (
-          <div key={i} className="logline" data-stderr={l.stderr || undefined}>
+        {/* Keyed on the line's own identity, not its index. With an index key
+            every row changes identity the moment the buffer slides, so React
+            re-renders all five thousand to add one. */}
+        {shown.map((l) => (
+          <div key={l.seq} className="logline" data-stderr={l.stderr || undefined}>
             {l.text}
           </div>
         ))}

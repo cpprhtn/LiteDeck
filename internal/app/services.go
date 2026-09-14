@@ -20,8 +20,14 @@ import (
 const pollTimeout = 20 * time.Second
 
 type detectCache struct {
-	mu   sync.Mutex
-	byID map[string]adapter.ServerInfo
+	mu sync.Mutex
+	// byID is keyed on the host and remembers which connection answered.
+	// Without the generation this was the one cache in the app that survived a
+	// reconnect: after a reboot HasDocker, SudoNoPasswd and CanReadJournal were
+	// whatever the old machine had said, and every other cache had already been
+	// taught to notice. The session tab's freshen() cleared it, so the symptom
+	// only appeared to somebody who never opened that tab.
+	byID map[string]detectEntry
 	// inFlight holds one channel per host being probed right now. Without it
 	// the cache was only locked at its two ends: everybody who missed released
 	// the lock and ran the whole probe set, so N views mounting together meant
@@ -30,9 +36,14 @@ type detectCache struct {
 	inFlight map[string]chan struct{}
 }
 
+type detectEntry struct {
+	gen  uint64
+	info adapter.ServerInfo
+}
+
 func newDetectCache() *detectCache {
 	return &detectCache{
-		byID:     make(map[string]adapter.ServerInfo),
+		byID:     make(map[string]detectEntry),
 		inFlight: make(map[string]chan struct{}),
 	}
 }
@@ -44,11 +55,11 @@ func newDetectCache() *detectCache {
 // A failed probe is deliberately not cached. The waiters loop back and one of
 // them takes the claim, which is the same number of attempts as before rather
 // than a wrong answer remembered.
-func (c *detectCache) claim(id string) (adapter.ServerInfo, <-chan struct{}, bool) {
+func (c *detectCache) claim(id string, gen uint64) (adapter.ServerInfo, <-chan struct{}, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if v, ok := c.byID[id]; ok {
-		return v, nil, true
+	if v, ok := c.byID[id]; ok && v.gen == gen {
+		return v.info, nil, true
 	}
 	if ch, ok := c.inFlight[id]; ok {
 		return adapter.ServerInfo{}, ch, false
@@ -67,17 +78,57 @@ func (c *detectCache) done(id string) {
 	}
 }
 
-func (c *detectCache) get(id string) (adapter.ServerInfo, bool) {
+func (c *detectCache) get(id string, gen uint64) (adapter.ServerInfo, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	v, ok := c.byID[id]
-	return v, ok
+	if !ok || v.gen != gen {
+		return adapter.ServerInfo{}, false
+	}
+	return v.info, true
 }
 
-func (c *detectCache) put(id string, info adapter.ServerInfo) {
+func (c *detectCache) put(id string, gen uint64, info adapter.ServerInfo) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.byID[id] = info
+	c.byID[id] = detectEntry{gen: gen, info: info}
+}
+
+// connGeneration is the current connection's number, or zero when there is no
+// manager yet.
+//
+// New() leaves mgr nil until Startup, and that App is a real state: every test
+// that does not need a server uses it, and so does the binding-exposure walk.
+// Reaching through a nil manager for a number that would be zero anyway is a
+// panic for nothing.
+func (a *App) connGeneration(hostID string) uint64 {
+	if a.mgr == nil {
+		return 0
+	}
+	return a.mgr.Generation(hostID)
+}
+
+// serverLocation is the timezone the server said it is in.
+//
+// Several sources print the server's wall clock with no offset attached —
+// `last -F`, fail2ban's log, journalctl's short-iso hours. Reading those in the
+// viewer's zone moves every timestamp by the difference between the two, which
+// on a UTC server and a KST desktop is nine hours in the direction that hides
+// recent events. Detection already asks the server for its zone.
+//
+// nil where the server did not say or the name is not one this machine knows,
+// which leaves the parsers on the viewer's zone — the old behaviour, and the
+// only honest fallback.
+func (a *App) serverLocation(hostID string) *time.Location {
+	info, ok := a.detected.get(hostID, a.connGeneration(hostID))
+	if !ok || info.Timezone == "" {
+		return nil
+	}
+	loc, err := time.LoadLocation(info.Timezone)
+	if err != nil {
+		return nil
+	}
+	return loc
 }
 
 func (c *detectCache) forget(id string) {
@@ -110,11 +161,12 @@ func newServerInfoView(info adapter.ServerInfo) ServerInfoView {
 // connection. Detection is not free — several round trips — and nothing it
 // looks at changes while the user is logged in.
 func (a *App) DetectHost(hostID string) (ServerInfoView, error) {
+	gen := a.connGeneration(hostID)
 	// One probe per host, however many callers arrive at once. Views mount
 	// together, and each one asking for itself turned a cached answer into
 	// several round trips per tab.
 	for {
-		info, wait, cached := a.detected.claim(hostID)
+		info, wait, cached := a.detected.claim(hostID, gen)
 		if cached {
 			return newServerInfoView(info), nil
 		}
@@ -136,7 +188,7 @@ func (a *App) DetectHost(hostID string) (ServerInfoView, error) {
 	if err != nil {
 		return ServerInfoView{}, err
 	}
-	a.detected.put(hostID, info)
+	a.detected.put(hostID, gen, info)
 	// Whether this account has sudo at all is part of what detection just
 	// learned, and the lock control renders before this finishes. Without this
 	// a view that mounted first would sit on "no sudo here" until something
@@ -343,6 +395,15 @@ func isPermissionDenied(res *sshcore.Result) bool {
 	for _, marker := range []string{
 		"access denied", "interactive authentication required",
 		"permission denied", "must be root",
+		// EPERM's own text. `kill` and `renice` are shell builtins, so their
+		// refusal comes back as "bash: line 1: kill: (78) - Operation not
+		// permitted" rather than anything systemd would say — and without this
+		// marker the process tab reported the raw error with no "retry as
+		// administrator" beside it, which is the one thing that would have
+		// worked. `not owner` is the same errno on older userlands.
+		"operation not permitted", "not owner",
+		// EACCES from a C library that spells it out.
+		"insufficient privileges",
 	} {
 		if strings.Contains(s, marker) {
 			return true

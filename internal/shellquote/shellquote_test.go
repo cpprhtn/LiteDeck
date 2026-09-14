@@ -226,3 +226,29 @@ func TestJoinArgvAgainstRealShell(t *testing.T) {
 		}
 	}
 }
+
+// zsh rewrites a word that starts with `=` to the path of the command named
+// after it — EQUALS is on by default there. A file called `=ls` left bare
+// reaches the server as `/bin/ls`, so the first character decides.
+func TestLeadingEqualsIsQuoted(t *testing.T) {
+	for _, s := range []string{"=ls", "=rm", "=", "=a/b"} {
+		got, err := Quote(s)
+		if err != nil {
+			t.Fatalf("Quote(%q): %v", s, err)
+		}
+		if got == s {
+			t.Errorf("Quote(%q) = %q — zsh expands that to a command path", s, got)
+		}
+	}
+	// `=` anywhere else is ordinary and must stay bare, or every --opt=value in
+	// the Command Log grows quotes for nothing.
+	for _, s := range []string{"--color=auto", "a=b", "LANG=C.UTF-8"} {
+		got, err := Quote(s)
+		if err != nil {
+			t.Fatalf("Quote(%q): %v", s, err)
+		}
+		if got != s {
+			t.Errorf("Quote(%q) = %q, want it left bare", s, got)
+		}
+	}
+}

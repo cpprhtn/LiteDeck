@@ -11,18 +11,11 @@ import {
   type Volume,
 } from './ipc'
 import { t } from './i18n'
+import { siBytes } from './format'
 
 // Images and volumes (v1.x). People open this to reclaim disk, so the two
 // things it must answer are "what is big" and "what is safe to delete".
 
-function fmtBytes(n: number): string {
-  // Decimal units, matching what docker itself prints — showing 8.4 MiB next to
-  // docker's own "8.82MB" for the same image reads as a discrepancy.
-  if (n >= 1e9) return `${(n / 1e9).toFixed(2)} GB`
-  if (n >= 1e6) return `${(n / 1e6).toFixed(1)} MB`
-  if (n >= 1e3) return `${(n / 1e3).toFixed(0)} kB`
-  return `${n} B`
-}
 
 type Confirm =
   | { kind: 'image'; image: Image }
@@ -68,17 +61,23 @@ export function ImagesVolumes({
     void refresh()
   }, [visible, refresh])
 
-  const run = async (key: string, fn: (elevate: boolean) => Promise<ActionResult>) => {
+  // The elevated retry goes back through here — see ContainerView for what a
+  // bare `fn(true)` swallowed.
+  const run = async (
+    key: string,
+    fn: (elevate: boolean) => Promise<ActionResult>,
+    elevate = false,
+  ) => {
     setPending(key)
     setNeedsRoot(null)
     setConfirm(null)
     try {
-      const res = await fn(false)
+      const res = await fn(elevate)
       if (!res.ok) {
-        if (res.needsElevation) {
+        if (res.needsElevation && !elevate) {
           setNeedsRoot({
             message: res.error ?? t('권한이 필요합니다'),
-            retry: () => void fn(true).then(() => refresh()),
+            retry: () => void run(key, fn, true),
           })
         } else {
           onError(res.error ?? t('실패했습니다'))
@@ -106,7 +105,7 @@ export function ImagesVolumes({
         <span className="muted small">
           {t('이미지 {images}개 · 합계 {size} · 볼륨 {volumes}개', {
             images: images.length,
-            size: fmtBytes(totalBytes),
+            size: siBytes(totalBytes),
             volumes: volumes.length,
           })}
         </span>
@@ -119,7 +118,7 @@ export function ImagesVolumes({
               setConfirm({ kind: 'prune', count: dangling.length, bytes: danglingBytes })
             }
           >
-            {t('미사용 레이어 정리 ({size})', { size: fmtBytes(danglingBytes) })}
+            {t('미사용 레이어 정리 ({size})', { size: siBytes(danglingBytes) })}
           </button>
         )}
         <button className="ghost" onClick={() => void refresh()}>
@@ -154,7 +153,7 @@ export function ImagesVolumes({
               {t('— 큰 순서. 사용 중이면 데몬이 삭제를 거부합니다')}
             </span>
           </h3>
-          {images.length === 0 && <div className="placeholder small">{t('이미지가 없습니다.')}</div>}
+          {images.length === 0 && <div className="placeholder small">{t('내려받은 이미지가 없습니다.')}</div>}
           {images.length > 0 && (
             <div className="table net-table">
               <div className="thead" style={{ gridTemplateColumns: '1fr 120px 100px 90px 80px' }}>
@@ -177,7 +176,7 @@ export function ImagesVolumes({
                       `${img.repository}:${img.tag}`
                     )}
                   </div>
-                  <div className="num mono">{fmtBytes(img.sizeBytes)}</div>
+                  <div className="num mono">{siBytes(img.sizeBytes)}</div>
                   <div className="num mono">
                     {img.containers < 0 ? <span className="muted">?</span> : img.containers}
                   </div>
@@ -274,7 +273,7 @@ export function ImagesVolumes({
                       : `${confirm.image.repository}:${confirm.image.tag}`}
                   </dd>
                   <dt>{t('크기')}</dt>
-                  <dd className="mono">{fmtBytes(confirm.image.sizeBytes)}</dd>
+                  <dd className="mono">{siBytes(confirm.image.sizeBytes)}</dd>
                   <dt>ID</dt>
                   <dd className="mono selectable">{confirm.image.id}</dd>
                 </dl>
@@ -331,7 +330,7 @@ export function ImagesVolumes({
               <>
                 <h2>{t('미사용 레이어를 정리하시겠습니까?')}</h2>
                 <p className="muted">
-                  {t('태그가 없는 레이어 {n}개, 약 {size}가 삭제됩니다. 태그가 붙은 이미지는 건드리지 않습니다.', { n: confirm.count, size: fmtBytes(confirm.bytes) })}
+                  {t('태그가 없는 레이어 {n}개, 약 {size}가 삭제됩니다. 태그가 붙은 이미지는 건드리지 않습니다.', { n: confirm.count, size: siBytes(confirm.bytes) })}
                 </p>
                 <div className="dialog-actions">
                   <button onClick={() => setConfirm(null)}>{t('취소')}</button>

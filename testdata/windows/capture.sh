@@ -153,6 +153,23 @@ capture single-service "${PRELUDE}Get-Service | Select-Object -First 1 Name,Stat
 # mismatch between two different projections.
 capture single-win32-service "${PRELUDE}Get-CimInstance Win32_Service | Select-Object -First 1 Name,DisplayName,State,StartMode,Status,ProcessId,PathName,StartName,Description,AcceptStop,AcceptPause,DelayedAutoStart,ExitCode,ServiceSpecificExitCode | ConvertTo-Json -Compress -Depth 3"
 
+
+# ── The four adapter scripts, as the app sends them ───────────────────────────
+#
+# Printed by the Go that defines them rather than copied here. The parsers had
+# goldens and the scripts did not, so a regression in a regex or a PowerShell
+# version showed up on somebody's server instead of in CI.
+#
+# With the same prelude the app sends, or the capture records progress records
+# on stderr that the app never sees.
+REPO="$(cd "$(dirname "$0")/../.." && pwd)"
+adapter_script() { (cd "$REPO" && go run ./internal/adapter/cmd/winscripts "$1"); }
+
+for s in shells sessions logins security wslprobe; do
+	body=$(adapter_script "$s") || { echo "  skipped $s (go run failed)"; continue; }
+	capture "script-$s" "${PRELUDE}${body}"
+done
+
 # --- anonymise -------------------------------------------------------------
 # These files are committed to a public repository, and a capture of a real
 # machine carries its computer name, its account names and its LAN addressing.
@@ -188,6 +205,12 @@ if machine:
     subs.append((machine, "DESKTOP-EXAMPLE"))
 if user:
     subs.append((user, "TESTUSER"))
+    # whoami reports the account as Windows stores it; the SSH log records it as
+    # the client typed it, which on the captured machine is lowercase. Without
+    # this the account name survives in script-logins.out and script-sessions.out.
+    for variant, repl in ((user.lower(), "testuser"), (user.upper(), "TESTUSER")):
+        if variant != user:
+            subs.append((variant, repl))
 
 # RFC 5737 documentation range for the routable/LAN v4 address. Loopback and
 # link-local are kept: they are the same on every machine and the exposure logic
@@ -220,12 +243,43 @@ def redact_mac(text):
     dashed = re.sub(r"\b(?:[0-9A-F]{2}-){5}[0-9A-F]{2}\b", "00-1A-2B-3C-4D-5E", text)
     return re.sub(r"\b(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\b", "00:1a:2b:3c:4d:5e", dashed)
 
+# The adapter scripts print pipe-delimited plain text, so their addresses are
+# bare rather than quoted and the rule above does not see them. They are also
+# the files most worth covering: script-logins.out is a public machine's whole
+# attack log, every source address in it real.
+#
+# Distinct addresses get distinct replacements, in order of first appearance.
+# Collapsing them onto one value would still parse, and would destroy what these
+# goldens are for: the attacker ranking and the login/disconnect pairing both
+# depend on telling one address from another.
+_seen = {}
+
+def redact_bare_ipv4(text):
+    def repl(m):
+        ip = m.group(0)
+        if ip.startswith(("127.", "169.254.", "0.", "10.", "192.168.")):
+            return ip
+        if ip not in _seen:
+            n = len(_seen)
+            # RFC 5737 gives 254 usable documentation addresses per block. Roll
+            # into the second block rather than wrap and merge two attackers.
+            _seen[ip] = f"192.0.2.{n + 1}" if n < 254 else f"198.51.100.{n - 253}"
+        return _seen[ip]
+    return re.sub(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", repl, text)
+
 count = 0
 for p in sorted(out.iterdir()):
     if p.suffix not in (".out", ".err", ".txt"):
         continue
     try:
-        s = original = p.read_text(encoding="utf-8")
+        # newline="" on both ends. Without it Python translates on the way in
+        # and again on the way out, and every file this step rewrites arrives
+        # from Windows with CRLF and leaves with LF — silently, because the
+        # content still looks right. The parsers all strip the carriage return
+        # themselves, so a golden that lost it stops testing the thing most
+        # likely to break.
+        with p.open(encoding="utf-8", newline="") as fh:
+            s = original = fh.read()
     except UnicodeDecodeError:
         # Not UTF-8. Left byte-for-byte on purpose: docker-*.err is captured
         # without the encoding prelude and arrives in the OEM codepage, which is
@@ -237,10 +291,11 @@ for p in sorted(out.iterdir()):
     # Addresses only where addresses belong. stderr carries no host addressing,
     # and it does carry version strings that look like one.
     if p.suffix == ".out":
-        s = redact_ipv4(s)
+        s = redact_bare_ipv4(s) if p.name.startswith("script-") else redact_ipv4(s)
     s = redact_mac(redact_ipv6_iid(s))
     if s != original:
-        p.write_text(s, encoding="utf-8")
+        with p.open("w", encoding="utf-8", newline="") as fh:
+            fh.write(s)
         count += 1
 
 print(f"  rewrote {count} file(s); machine={machine!r} user={user!r}")

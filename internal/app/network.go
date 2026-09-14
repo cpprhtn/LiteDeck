@@ -136,7 +136,7 @@ func (a *App) HostNetwork(hostID string) (NetworkView, error) {
 	// Only a success is cached. A server without iproute2 goes on being asked,
 	// which is the behaviour it already had — and a failure held for half a
 	// minute would be a tab that stays broken after the package is installed.
-	gen := a.mgr.Generation(hostID)
+	gen := a.connGeneration(hostID)
 	if ifaces, ok := a.ifaces.get(hostID, gen); ok {
 		out.Interfaces = ifaces
 	} else if res, err := conn.Poll(ctx, "ip", adapter.IPAddrArgs()...); err != nil {

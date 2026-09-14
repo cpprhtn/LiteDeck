@@ -78,13 +78,23 @@ func Agent() (ssh.AuthMethod, error) {
 	if sock == "" {
 		return nil, errors.New("sshcore: no ssh-agent (SSH_AUTH_SOCK is unset)")
 	}
-	conn, err := net.Dial("unix", sock)
-	if err != nil {
-		return nil, fmt.Errorf("sshcore: connect to ssh-agent: %w", err)
-	}
-	// The connection intentionally outlives this call: x/crypto/ssh queries the
-	// agent during the handshake. It is closed when the process exits.
-	return ssh.PublicKeysCallback(agent.NewClient(conn).Signers), nil
+	// Dialled lazily, once per handshake, and closed when that handshake is
+	// done.
+	//
+	// It used to be dialled here and never closed, and this is called on every
+	// connect and every automatic reconnect — so a machine that reconnected
+	// through a flapping link accumulated open sockets to the agent for the
+	// life of the app, and the agent has its own limit on those.
+	return ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
+		conn, err := net.Dial("unix", sock)
+		if err != nil {
+			return nil, fmt.Errorf("sshcore: connect to ssh-agent: %w", err)
+		}
+		defer conn.Close()
+		// Signers returns the keys themselves, not handles onto the socket, so
+		// closing it here does not take them with it.
+		return agent.NewClient(conn).Signers()
+	}), nil
 }
 
 // Password authenticates with a password fetched on demand.

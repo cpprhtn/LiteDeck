@@ -42,11 +42,16 @@ type Confirm =
 
 export function EditorPane({
   hostID,
+  visible,
   onError,
   onSaved,
   onDownload,
 }: {
   hostID: string
+  /** Whether the file tab is the one on screen. The save shortcut is a window
+   *  listener, so without this ⌘S in the terminal tab opened a save dialog
+   *  inside a hidden tab and the scrim then swallowed Escape. */
+  visible: boolean
   onError: (msg: string) => void
   /** Called with the saved path so the tree can reread just that directory. */
   onSaved: (path: string) => void
@@ -69,6 +74,10 @@ export function EditorPane({
   latest.current = file
   const confirmRef = useRef(confirm)
   confirmRef.current = confirm
+  // A ref rather than a dependency: the listener is installed once, and
+  // re-installing it on every tab switch would drop a keystroke in between.
+  const visibleRef = useRef(visible)
+  visibleRef.current = visible
   // requestSave is defined below the early return, so the listener reaches it
   // through a ref rather than being re-registered on every render.
   const requestSaveRef = useRef<(f: OpenFile) => void>(() => {})
@@ -87,6 +96,7 @@ export function EditorPane({
   // first and marks it handled; this only picks up what it did not.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (!visibleRef.current) return
       if (e.defaultPrevented || !matches(e, 'save')) return
       const f = latest.current
       if (!f) return
@@ -214,6 +224,7 @@ export function EditorPane({
       ) : (
         <CodeEditor
           path={file.path}
+          openPaths={files.map((f) => f.path)}
           value={file.doc}
           onChange={(doc) => setDoc(hostID, file.path, doc)}
           onSave={() => latest.current && requestSave(latest.current)}
@@ -296,10 +307,17 @@ export function EditorPane({
           busy={busy}
           confirmLabel={t('덮어쓰기')}
           danger
+          note={t('취소해도 서버 내용이 기준으로 바뀝니다. 다음 저장은 이 diff 없이 서버 내용을 덮어씁니다.')}
           onCancel={() => {
             // Nothing was written, but the tab now knows what the server holds —
             // without this the next save conflicts against the same stale mtime
             // forever.
+            //
+            // Which means the *next* save is an ordinary one: it will replace
+            // what is on the server with no second warning. That is the right
+            // behaviour — the user has seen the difference and chosen to keep
+            // their version open — but it is not obvious, so the dialog says
+            // it rather than leaving it to be discovered.
             rebase(hostID, confirm.file.path, confirm.server)
             setConfirm(null)
           }}
@@ -356,6 +374,7 @@ function DiffDialog({
   confirmLabel,
   danger,
   extra,
+  note,
   onCancel,
   onConfirm,
 }: {
@@ -368,6 +387,8 @@ function DiffDialog({
   confirmLabel: string
   danger?: boolean
   extra?: ReactNode
+  /** A line under the diff, for something the buttons do not say. */
+  note?: string
   onCancel: () => void
   onConfirm: () => void
 }) {
@@ -380,9 +401,9 @@ function DiffDialog({
     <Scrim onClose={onCancel}>
       <div
         className="dialog diff-dialog"
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') onCancel()
-        }}
+        /* No Escape handler here: the Scrim above already has onCancel and
+           listens in the capture phase, so anything on this element is never
+           reached. Two places claiming the same key is how one of them rots. */
       >
         <h2>{title}</h2>
         <p className="mono muted ellipsis">{path}</p>
@@ -391,6 +412,7 @@ function DiffDialog({
           <DiffView path={path} before={before} after={after} />
         </Suspense>
         <div className="dialog-actions">
+          {note && <span className="muted small diff-note">{note}</span>}
           <button onClick={onCancel}>{t('취소')}</button>
           {extra}
           <button

@@ -284,13 +284,30 @@ func Dial(ctx context.Context, cfg HostConfig) (*Conn, error) {
 	// transport out from under it instead. A deadline would have done for a
 	// socket, but a forwarded channel does not carry one — and this way the
 	// caller's cancellation reaches the handshake too, which it never did.
+	//
+	// The fixed timeout applies only when the caller set no deadline. The host
+	// key callback and the password and 2FA prompts all run *inside*
+	// ssh.NewClientConn, so a flat 15 seconds counted a person reading a
+	// fingerprint and typing a password against the network budget: answering
+	// after 20 seconds ended in "use of closed network connection", which reads
+	// as "the first connection to a new server always fails, the second works".
+	// A one-time-code login never had a chance. How long a login may take,
+	// including the human, is the caller's decision — hosts.go budgets
+	// PromptTimeout + 30s, and twice that through a bastion.
+	watchdog := time.After(timeout)
+	if _, ok := ctx.Deadline(); ok {
+		// A caller who set a deadline has already said how long this may take.
+		// Leaving the flat timer armed would override them with the smaller
+		// number, which is the bug.
+		watchdog = nil
+	}
 	handshake := make(chan struct{})
 	go func() {
 		select {
 		case <-handshake:
 		case <-ctx.Done():
 			_ = tcp.Close()
-		case <-time.After(timeout):
+		case <-watchdog:
 			_ = tcp.Close()
 		}
 	}()
@@ -431,6 +448,19 @@ func (c *Conn) run(ctx context.Context, line string, stdin io.Reader) (*Result, 
 	if stdin != nil {
 		sess.Stdin = stdin
 	}
+	// Ask for the C locale, and do not mind being refused.
+	//
+	// Everything this app parses is English: `last -F`'s "%a %b", ufw's
+	// "Status: active", the shell's "Operation not permitted". pam_env gives a
+	// non-interactive exec the machine's LANG, so on a server installed in
+	// Korean those become "일 9월", "Status: 활성" and a translated errno — and
+	// the parsers return empty rather than wrong, which reads as "nothing is
+	// happening" on exactly the screens where that is the dangerous answer.
+	//
+	// Setenv only works where sshd lists the variable in AcceptEnv, which is
+	// why the scripts that depend on it also set it themselves. This costs
+	// nothing and covers the argv commands, which have nowhere to put it.
+	_ = sess.Setenv("LC_ALL", "C")
 
 	start := time.Now()
 	if err := sess.Start(line); err != nil {
@@ -493,7 +523,18 @@ func (c *Conn) SFTP() (*sftp.Client, error) {
 	// No semaphore: this runs under c.mu with the c.sftp != nil check above, so
 	// there is exactly one of these per connection for its whole life. It is
 	// accounted for in the budget arithmetic, not policed by a counter.
-	cl, err := sftp.NewClient(c.client)
+	// UseConcurrentWrites: without it every write is one request and one reply,
+	// so an upload waits a full round trip per 32 KB buffer — about 640 KB/s at
+	// 50 ms of latency, whatever the link can do. Downloads were already fast
+	// because pkg/sftp reads ahead by default; this is the other direction
+	// catching up.
+	//
+	// The documented caveat is that a failed concurrent write can leave a hole
+	// rather than a clean truncation. Every upload here goes to a temporary
+	// name and is renamed into place on success, so a failure leaves the
+	// temporary file and never the destination — which is the case the caveat
+	// is about.
+	cl, err := sftp.NewClient(c.client, sftp.UseConcurrentWrites(true))
 	if err != nil {
 		return nil, fmt.Errorf("sshcore: start sftp subsystem: %w", err)
 	}

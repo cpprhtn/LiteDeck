@@ -17,7 +17,7 @@ import {
 } from './ipc'
 import { Panel } from './ResourceView'
 import { LockButton, useSudoState } from './LockButton'
-import { k, t } from './i18n'
+import { t } from './i18n'
 import { WindowsSecurityView } from './WindowsSecurityView'
 
 // What is guarding this server (T-35).
@@ -59,6 +59,8 @@ export function SecurityView({
   const [logins, setLogins] = useState<Login[]>([])
   const [fresh, setFresh] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
+  /** Which halves of this screen could not be read. Named, not hidden. */
+  const [partial, setPartial] = useState<string[]>([])
   // The lock is the connection's, not this tab's. Unlocking in the network tab
   // has to land here too, which is why the state comes from Go rather than from
   // whatever this screen last read.
@@ -72,19 +74,33 @@ export function SecurityView({
         // read of `ss` from inside the security script: two reads of the same
         // thing can disagree, and a security screen disagreeing with the
         // network screen about which ports are open is worse than a round trip.
+        // A failure is kept apart from an empty answer. `catch(() => null)`
+        // turned "could not read the ports" into "no ports are open" and
+        // "could not read the logins" into "nothing has been recorded" — which
+        // is the one thing this tab is built not to do.
         const [sec, net, who] = await Promise.all([
           HostSecurity(hostID, elevate, force),
-          HostNetwork(hostID).catch(() => null),
-          SecurityLogins(hostID).catch(() => null),
+          HostNetwork(hostID).then(
+            (n) => ({ ok: true as const, n }),
+            (e) => ({ ok: false as const, e: String(e) }),
+          ),
+          SecurityLogins(hostID).then(
+            (w) => ({ ok: true as const, w }),
+            (e) => ({ ok: false as const, e: String(e) }),
+          ),
         ])
         setView(sec)
-        setListening(net?.listeners ?? [])
-        if (who) {
-          setLogins(who.logins ?? [])
-          setFresh(new Set(who.fresh ?? []))
+        setListening(net.ok ? (net.n?.listeners ?? []) : [])
+        setPartial(
+          [net.ok ? '' : t('열린 포트'), who.ok ? '' : t('최근 접속')].filter(Boolean),
+        )
+        if (who.ok && who.w) {
+          const w = who.w
+          setLogins(w.logins ?? [])
+          setFresh(new Set(w.fresh ?? []))
           // Marked only now, after the list is on screen. Doing it inside the
           // read would spend the surprise before anybody had it.
-          if (who.fresh?.length) void RememberSecurityLogins(hostID, who.fresh).catch(() => {})
+          if (w.fresh?.length) void RememberSecurityLogins(hostID, w.fresh).catch(() => {})
         }
       } catch (e) {
         onError(String(e))
@@ -103,8 +119,9 @@ export function SecurityView({
   // that changes, so this screen never sits on the locked answer while the
   // permission is already in hand.
   useEffect(() => {
-    if (visible) void load(sudo.unlocked)
-  }, [visible, load, sudo.unlocked])
+    // Waits for the first answer rather than reading unelevated and then again.
+    if (visible && sudo) void load(sudo.unlocked)
+  }, [visible, load, sudo])
 
   if (!view) {
     return <div className="placeholder">{busy ? t('읽는 중…') : t('보안 상태를 읽는 중…')}</div>
@@ -116,7 +133,17 @@ export function SecurityView({
   if (view.windows) {
     return (
       <div className="view security-view">
-        <div className="security-body">
+        {partial.length > 0 && (
+        /* Named rather than blanked. A read that failed used to leave an empty
+           list behind, which this screen renders as "no open ports" and "no
+           logins recorded" — the exact inversion of what happened. */
+        <p className="security-cluster small">
+          {t('{what} 을(를) 읽지 못했습니다. 그 자리는 비어 있는 것이 아니라 모르는 것입니다.', {
+            what: partial.join(' · '),
+          })}
+        </p>
+      )}
+      <div className="security-body">
           <WindowsSecurityView win={view.windows} listening={listening} />
           <Logins logins={logins} fresh={fresh} />
         </div>
@@ -418,46 +445,6 @@ function Logins({ logins, fresh }: { logins: Login[]; fresh: Set<string> }) {
   )
 }
 
-/** The firewall, as one statement rather than a row per tool.
- *
- *  Listing ufw and nftables side by side is what produced "ufw 켜짐 · nftables
- *  비활성", which is a contradiction: on a modern Ubuntu ufw *runs on*
- *  nftables through iptables-nft. They are a front end and its back end, not
- *  two firewalls, and the screen now says so. */
-function FirewallSummary({ view }: { view: View }) {
-  const front = view.ufwConfFound
-    ? { name: 'ufw', on: view.ufwEnabled, from: '/etc/ufw/ufw.conf' }
-    : view.units.find((u) => u.name === 'firewalld.service' && u.active)
-      ? { name: 'firewalld', on: true, from: 'systemd' }
-      : null
-
-  const backend = view.kernel.nftables
-    ? { name: 'nftables', refs: view.kernel.nftablesRefs }
-    : view.kernel.iptables
-      ? { name: 'iptables', refs: view.kernel.iptablesRefs }
-      : null
-
-  return (
-    <>
-      <div className="security-row" data-off={front !== null && !front.on ? true : undefined}>
-        <span className="mono security-tool">{front ? front.name : t('전면부 없음')}</span>
-        <span className="security-state">
-          {front ? (front.on ? t('켜짐') : t('꺼짐')) : t('알 수 없음')}
-        </span>
-        <span className="muted small security-src">{front ? front.from : ''}</span>
-      </div>
-      {backend && (
-        <p className="muted small">
-          {t('커널 백엔드')}: <span className="mono">{backend.name}</span>{' '}
-          {backend.refs > 0
-            ? t('사용 중 (참조 {n})', { n: backend.refs })
-            : t('올라와 있지만 참조 없음')}
-        </p>
-      )}
-    </>
-  )
-}
-
 /** What is being blocked, whether it is working, and who is still getting in.
  *
  *  The counter is the only number in this tab that says a thing is *working*
@@ -517,16 +504,6 @@ function Blocking({ view }: { view: View }) {
     </section>
   )
 }
-
-function Tile({ label, value, hint }: { label: string; value: number | string; hint?: string }) {
-  return (
-    <div className="security-tile" title={hint}>
-      <div className="num">{value}</div>
-      <div className="muted small">{label}</div>
-    </div>
-  )
-}
-
 /** One block list. fail2ban's and a hand-made one are marked apart: its entries
  *  come and go on their own as bans expire, and a hand-made table stays until
  *  somebody takes it out. Mixing them loses the only question worth asking —
@@ -637,40 +614,3 @@ function RuleTable({
   )
 }
 
-/** One tool, and the two things that can disagree about it. */
-function ToolRow({
-  unit,
-  override,
-}: {
-  unit: SecurityUnit
-  /** What the tool's own config says, where that can be read without root. */
-  override?: { on: boolean; from: string }
-}) {
-  const name = unit.name.replace(/\.service$/, '')
-  const disagrees = override !== undefined && override.on !== unit.active
-  const state = !unit.installed
-    ? t('설치 안 됨')
-    : override
-      ? override.on
-        ? t('켜짐')
-        : t('꺼짐')
-      : unit.active
-        ? t('활성')
-        : t('비활성')
-
-  return (
-    <div className="security-row" data-off={unit.installed && !(override?.on ?? unit.active) || undefined}>
-      <span className="mono security-tool">{name}</span>
-      <span className="security-state">{state}</span>
-      {unit.installed && (
-        <span className="muted small security-src" title={override ? override.from : 'systemd'}>
-          {override ? override.from : t('유닛 {state}', { state: unit.subState || '' })}
-          {disagrees && <span className="security-warn"> ⚠</span>}
-        </span>
-      )}
-    </div>
-  )
-}
-
-/** Three states, because "cannot" and "have not" are different answers. */
-export const SECURITY_TAB_LABEL = k('보안')

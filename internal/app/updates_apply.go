@@ -102,6 +102,12 @@ func (a *App) setUpdateState(s UpdateState) {
 // updateEventName. A download that reported its result only at the end would
 // leave the button dead for however long the network takes.
 func (a *App) DownloadUpdate() error {
+	if a.headless {
+		// The asset this would fetch is the desktop build — a binary that needs
+		// a webview and is not what is running here. Swapping it in would take
+		// the server down and leave something that cannot start.
+		return i18n.Errorf("서버 모드에서는 앱을 스스로 업데이트하지 않습니다 — 패키지나 바이너리를 교체하세요")
+	}
 	a.installer.mu.Lock()
 	if a.installer.busy {
 		a.installer.mu.Unlock()
@@ -261,6 +267,12 @@ func (a *App) download(ctx context.Context, url, path string) (string, error) {
 // new one in, starts it, and removes the leftovers. If anything fails before
 // the move, the old copy is still there and untouched.
 func (a *App) ApplyUpdate() error {
+	if a.headless {
+		// The asset this would fetch is the desktop build — a binary that needs
+		// a webview and is not what is running here. Swapping it in would take
+		// the server down and leave something that cannot start.
+		return i18n.Errorf("서버 모드에서는 앱을 스스로 업데이트하지 않습니다 — 패키지나 바이너리를 교체하세요")
+	}
 	a.installer.mu.Lock()
 	staged := a.installer.staged
 	a.installer.mu.Unlock()
@@ -269,6 +281,13 @@ func (a *App) ApplyUpdate() error {
 	}
 	target, err := installedPath()
 	if err != nil {
+		return err
+	}
+	// Checked before quitting, not after. The helper can put the old build back
+	// and relaunch it, but the user still watches their window disappear and
+	// come back for no reason — and on a read-only mount it was never going to
+	// work. Refusing here keeps the app running and says why.
+	if err := canReplace(target); err != nil {
 		return err
 	}
 	script, err := writeSwapHelper(staged)
@@ -568,4 +587,22 @@ func helperCommand(script string, args []string) *exec.Cmd {
 		return exec.Command("cmd", append([]string{"/c", "start", "/min", "", script}, args...)...)
 	}
 	return exec.Command("/bin/sh", append([]string{script}, args...)...)
+}
+
+// canReplace reports whether the swap could succeed, without doing it.
+//
+// The directory has to take a new entry: the helper moves the old build aside
+// and the new one in, both of which are writes to the parent rather than to the
+// app itself. A read-only DMG, a /Applications the user does not own and macOS
+// App Translocation (which runs the app from a read-only mount) all fail here.
+func canReplace(target string) error {
+	dir := filepath.Dir(target)
+	probe, err := os.CreateTemp(dir, ".litedeck-write-check-*")
+	if err != nil {
+		return i18n.Errorf("%s 에 쓸 수 없어 업데이트를 적용할 수 없습니다. 앱을 응용 프로그램 폴더로 옮기고 다시 시도해 주세요.", dir)
+	}
+	name := probe.Name()
+	_ = probe.Close()
+	_ = os.Remove(name)
+	return nil
 }

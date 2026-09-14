@@ -14,7 +14,7 @@ func goldenLast(t *testing.T) []Login {
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
-	return ParseLast(string(b))
+	return ParseLast(string(b), nil)
 }
 
 func TestLastReadsTheCapture(t *testing.T) {

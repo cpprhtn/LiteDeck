@@ -18,6 +18,7 @@ import (
 
 	"github.com/cpprhtn/LiteDeck/internal/i18n"
 	"github.com/pkg/sftp"
+	"sync"
 )
 
 // The file explorer (§4.2).
@@ -120,14 +121,65 @@ func (a *App) ListDir(hostID, dir string) (DirListing, error) {
 		listing.Truncated = true
 	}
 
-	listing.Entries = make([]FileEntry, 0, len(infos))
-	for _, fi := range infos {
-		listing.Entries = append(listing.Entries, a.entry(client, cleaned, fi))
+	listing.Entries = make([]FileEntry, len(infos))
+	for i, fi := range infos {
+		listing.Entries[i] = a.entry(cleaned, fi)
 	}
+	resolveLinks(client, listing.Entries)
 	return listing, nil
 }
 
-func (a *App) entry(client *sftp.Client, dir string, fi os.FileInfo) FileEntry {
+// linkWorkers is how many symlinks are resolved at once.
+//
+// Each one costs a ReadLink and a Stat, and done in sequence that is two round
+// trips per entry: /usr/bin, /etc/alternatives and node_modules/.bin are
+// hundreds of links each, so a directory that should open at once took several
+// seconds on a link with any latency. Sixteen is enough to hide the latency and
+// few enough not to flood the one SFTP channel the connection has.
+const linkWorkers = 16
+
+// resolveLinks fills in the symlink fields, in parallel.
+func resolveLinks(client *sftp.Client, entries []FileEntry) {
+	idx := make([]int, 0, len(entries))
+	for i := range entries {
+		if entries[i].IsSymlink {
+			idx = append(idx, i)
+		}
+	}
+	if len(idx) == 0 {
+		return
+	}
+
+	work := make(chan int)
+	var wg sync.WaitGroup
+	for w := 0; w < linkWorkers && w < len(idx); w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range work {
+				e := &entries[i]
+				if target, err := client.ReadLink(e.Path); err == nil {
+					e.LinkTarget = target
+				}
+				// The target's attributes, not the link's: what double-clicking
+				// it does depends on what it points at.
+				if st, err := client.Stat(e.Path); err == nil {
+					e.IsDir = st.IsDir()
+					e.Size = st.Size()
+				} else {
+					e.Broken = true
+				}
+			}
+		}()
+	}
+	for _, i := range idx {
+		work <- i
+	}
+	close(work)
+	wg.Wait()
+}
+
+func (a *App) entry(dir string, fi os.FileInfo) FileEntry {
 	full := path.Join(dir, fi.Name())
 	e := FileEntry{
 		Name:    fi.Name(),
@@ -144,18 +196,9 @@ func (a *App) entry(client *sftp.Client, dir string, fi os.FileInfo) FileEntry {
 
 	// ReadDir reports link attributes, not the target's, so a symlink has to be
 	// resolved separately to know whether double-clicking it opens a directory.
-	if fi.Mode()&os.ModeSymlink != 0 {
-		e.IsSymlink = true
-		if target, err := client.ReadLink(full); err == nil {
-			e.LinkTarget = target
-		}
-		if st, err := client.Stat(full); err == nil {
-			e.IsDir = st.IsDir()
-			e.Size = st.Size()
-		} else {
-			e.Broken = true
-		}
-	}
+	// The resolving itself is resolveLinks' job — two round trips each, and a
+	// directory of them is worth doing at once rather than in a queue.
+	e.IsSymlink = fi.Mode()&os.ModeSymlink != 0
 	return e
 }
 
@@ -312,7 +355,14 @@ func (a *App) DeletePaths(hostID string, paths []string, recursive bool, typed s
 		case !recursive:
 			err = client.RemoveDirectory(p)
 		default:
-			return a.removeRecursive(hostID, p)
+			// Not `return`: this used to end the whole loop at the first
+			// directory, so selecting two folders deleted one and answered
+			// ok:true. The frontend sorts directories first, which made it the
+			// common case rather than the rare one.
+			if res := a.removeRecursive(hostID, p); !res.OK {
+				return res
+			}
+			continue
 		}
 		if err != nil {
 			return a.fileFailure(hostID, p, err)
@@ -605,6 +655,19 @@ func (a *App) SaveTextFile(hostID string, req SaveRequest) SaveResult {
 	perm := os.FileMode(0o644)
 	var owner *sftp.FileStat
 
+	// Write through a symlink rather than over it. The atomic save stages a
+	// sibling file and renames it onto the target, and rename replaces a link
+	// with the regular file it was pointing past — so saving
+	// `sites-enabled/app` used to turn that link into a copy and leave the file
+	// in `sites-available` at its old contents. Every dotfile-manager symlink
+	// and `/etc/alternatives` entry is this case. `vi` follows the link, and so
+	// does this now.
+	target, err := followSymlink(client, cleaned)
+	if err != nil {
+		return SaveResult{ActionResult: a.fileFailure(hostID, cleaned, err)}
+	}
+	cleaned = target
+
 	fi, statErr := client.Stat(cleaned)
 	switch {
 	case statErr == nil:
@@ -682,6 +745,41 @@ var errCannotStage = errors.New(i18n.S("app: 임시 파일을 만들 수 없습�
 var stageSeq atomic.Uint64
 
 func init() { stageSeq.Store(uint64(time.Now().UnixNano())) }
+
+// symlinkHops bounds the walk. A link that points at itself is legal to create
+// and would otherwise spin here forever; the kernel uses a small limit for the
+// same reason.
+const symlinkHops = 16
+
+// followSymlink resolves p to the file a write should actually land on.
+//
+// Returns p unchanged when it is not a link, and when the link is broken —
+// writing then creates the file the link names, which is what following it
+// means. A relative target resolves against the link's own directory, not the
+// working directory, which is the mistake that makes `../foo` land in the wrong
+// place.
+func followSymlink(client *sftp.Client, p string) (string, error) {
+	for i := 0; i < symlinkHops; i++ {
+		fi, err := client.Lstat(p)
+		if err != nil {
+			// Does not exist yet: nothing to follow, and the caller handles the
+			// "gone since it was opened" case on its own.
+			return p, nil
+		}
+		if fi.Mode()&os.ModeSymlink == 0 {
+			return p, nil
+		}
+		dst, err := client.ReadLink(p)
+		if err != nil {
+			return "", err
+		}
+		if !path.IsAbs(dst) {
+			dst = path.Join(path.Dir(p), dst)
+		}
+		p = path.Clean(dst)
+	}
+	return "", i18n.Errorf("%s: 심볼릭 링크가 너무 깊습니다", p)
+}
 
 // stageAndRename writes content to a sibling temp file and moves it over target.
 func stageAndRename(

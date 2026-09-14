@@ -16,6 +16,7 @@ import {
   PreviewFile,
   StartDownload,
   StartUpload,
+  type Transfer,
   type DirListing,
   type FileEntry,
 } from './ipc'
@@ -642,7 +643,11 @@ export function FileExplorer({
         return false
       }
       setDialog(null)
-      await load(cwd)
+      // refresh, not load: load assumes the root changed and throws away the
+      // expanded folders, their children and the filter. Deleting one file out
+      // of a tree somebody had opened four levels deep collapsed the whole
+      // thing, every time.
+      await refresh()
       return true
     } catch (e) {
       onError(String(e))
@@ -682,7 +687,14 @@ export function FileExplorer({
       // platforms — Enter renames on macOS, Delete deletes on Windows — so
       // without this, a keystroke meant for the editor or the address bar acts
       // on whatever happens to be selected in the tree.
-      if (!visible || dialog || isTyping(ev)) return
+      //
+      // `dialog` is this component's own. The editor's save dialog lives in
+      // EditorPane and this handler never knew about it, so ⌘S followed by
+      // Enter — which the save dialog promises by focusing its confirm button —
+      // was swallowed here and opened whatever was selected in the tree
+      // instead. Opening a file by double-click selects its row first, so it
+      // was every time. Any open modal belongs to whoever opened it.
+      if (!visible || dialog || document.querySelector('.scrim') || isTyping(ev)) return
       const one = selectedEntries[0]
       if (matches(ev, 'find')) {
         // isTyping already gave the editor first claim on this: CodeMirror's
@@ -737,6 +749,23 @@ export function FileExplorer({
   }
 
   const webFileInput = useRef<HTMLInputElement>(null)
+
+  // A finished upload changes this directory, and nothing was telling the tree.
+  // StartUpload returns queue ids and the bytes move afterwards, so the only
+  // moment that knows is the progress event — the web path called refresh()
+  // itself and the desktop path (the picker, and drag and drop) did not, which
+  // is why a dropped file needed a manual refresh to appear.
+  useEffect(() => {
+    return on<Transfer>('transfer:progress', (tr) => {
+      if (tr.direction !== 'upload' || tr.status !== 'done') return
+      if (tr.hostId !== hostID) return
+      // Only when it landed in the folder being looked at. A queue running in
+      // the background must not make the tree jump under somebody's hands.
+      const into = tr.dir ? parentOf(tr.remote) : parentOf(tr.remote)
+      if (into !== cwdRef.current) return
+      void refresh()
+    })
+  }, [hostID, refresh])
 
   const upload = async (paths?: string[]) => {
     try {
@@ -1003,7 +1032,12 @@ export function FileExplorer({
               </>
             )}
             {listing?.protected && (
-              <span className="badge warn" title={t('루트 바로 아래 디렉터리 — 하위까지 지우려면 경로를 직접 입력해야 합니다')}>
+              /* Not `warn`. A user's home directory is protected, and that is
+                 the folder they work in all day — a warning colour that is
+                 always on stops meaning anything, including on the folders
+                 where it should. The protection is unchanged; it is announced
+                 where it applies, in the delete dialog. */
+              <span className="badge" title={t('하위까지 지우려면 경로를 직접 입력해야 합니다')}>
                 {t('보호된 경로')}
               </span>
             )}
@@ -1024,7 +1058,7 @@ export function FileExplorer({
               {listing && rows.length === 0 && (
                 <div className="placeholder">
                   {needle === ''
-                    ? t('비어 있는 디렉터리입니다.')
+                    ? t('비어 있는 디렉터리입니다. 위의 도구 모음에서 폴더를 만들거나 파일을 올릴 수 있습니다.')
                     : t('일치하는 항목이 없습니다. 아직 열어 보지 않은 폴더는 검색 대상이 아닙니다.')}
                 </div>
               )}
@@ -1127,6 +1161,7 @@ export function FileExplorer({
                   one changed size. */}
               <EditorPane
                 hostID={hostID}
+                visible={visible}
                 onError={onError}
                 onSaved={(path) => void refreshDir(parentOf(path))}
                 onDownload={(path) => void downloadOne(path)}
@@ -1157,7 +1192,11 @@ export function FileExplorer({
           busy={busy}
           onCancel={() => setDialog(null)}
           onSubmit={() => {
-            const to = joinPath(cwd, input)
+            // The file's own folder, not the tree root. Renaming `sub/main.txt`
+            // used to join the new name onto cwd and move the file up to the
+            // root — a rename that silently relocates, and the open tab
+            // followed it to the wrong path.
+            const to = joinPath(parentOf(dialog.entry.path), input)
             void act(async () => {
               const res = await RenamePath(hostID, dialog.entry.path, to)
               // An open tab follows the file rather than being closed under the

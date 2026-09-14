@@ -172,8 +172,12 @@ export function Rail({
           {listOpen && hosts.length === 0 && (
             <div className="empty">
               <p>{t('등록된 호스트가 없습니다.')}</p>
+              {/* One sentence, not a fragment either side of a <code>. Split
+                  like that, only the tail was translated — the English read
+                  "`~/.ssh/config` or add one by hand." with the verb missing,
+                  because Korean puts it at the end and English at the start. */}
               <p className="muted small">
-                <code>~/.ssh/config</code> {t('를 가져오거나 직접 추가하세요.')}
+                {t('~/.ssh/config 를 가져오거나 직접 추가하세요.')}
               </p>
             </div>
           )}

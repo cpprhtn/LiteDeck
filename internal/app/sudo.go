@@ -68,7 +68,7 @@ func (a *App) execMaybeElevated(
 	// second time to read the journal, having just been handed it — and the
 	// network tab could unlock and then watch the security tab ask again for
 	// the same permission on the same connection.
-	if password, ok := a.unlocked.get(hostID, a.mgr.Generation(hostID)); ok {
+	if password, ok := a.unlocked.get(hostID, a.connGeneration(hostID)); ok {
 		return conn.ExecOpts(ctx,
 			sshcore.ExecOptions{Stdin: strings.NewReader(password + "\n")},
 			"sudo", append([]string{"-S", "-p", "", "--", cmd}, args...)...)
@@ -83,10 +83,25 @@ func (a *App) execMaybeElevated(
 	// does not end up interleaved in stdout. The reader yields EOF after the
 	// password, so a wrong password fails instead of hanging on a retry prompt.
 	sudoArgs := append([]string{"-S", "-p", "", "--", cmd}, args...)
-	return conn.ExecOpts(ctx,
+	res, err := conn.ExecOpts(ctx,
 		sshcore.ExecOptions{Stdin: strings.NewReader(password + "\n")},
 		"sudo", sudoArgs...,
 	)
+	// A password that worked turns the lock for this connection.
+	//
+	// The lock used to be filled only by the security and network tabs' own
+	// button, so elevating one action left nothing behind: restart a unit with
+	// the password, then ask to read its log, and the dialog came back for the
+	// same password on the same connection a second later. The commit that
+	// promised "one lock per connection" reached the button and not the
+	// actions. Only on success, so a typo is not remembered.
+	if err == nil && res.OK() {
+		// Remembered, not turned: see sudoUnlockEntry. The next elevated action
+		// on this connection goes through without asking; the security tab's
+		// own lock still belongs to its button.
+		a.unlocked.remember(hostID, a.connGeneration(hostID), password)
+	}
+	return res, err
 }
 
 // classify turns a finished command into the result the frontend acts on.
@@ -149,7 +164,7 @@ func (a *App) execUnlocked(
 			"sudo", append([]string{"-n", "--", cmd}, args...)...)
 		return res, err == nil, err
 	}
-	if password, ok := a.unlocked.get(hostID, a.mgr.Generation(hostID)); ok {
+	if password, ok := a.unlocked.get(hostID, a.connGeneration(hostID)); ok {
 		// The password goes on stdin, never in argv — argv is visible in the
 		// remote process table and in the Command Log (§7.2).
 		res, err := conn.ExecOpts(ctx, sshcore.ExecOptions{

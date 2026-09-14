@@ -15,6 +15,7 @@ import { useMetrics, useMetricsHistory, type Sample } from './metricsStore'
 import { TimeChart } from './TimeChart'
 import { shortGPUName } from './gpuName'
 import { t } from './i18n'
+import { bytes, uptime as uptimeText } from './format'
 
 // The resource detail (§4.7, arch/07).
 //
@@ -32,30 +33,11 @@ import { t } from './i18n'
 // The readings all come from the summary bar's poll (metricsStore). Nothing
 // here asks the server for anything.
 
-function fmtBytes(n: number): string {
-  if (n <= 0) return '0B'
-  const units = ['B', 'K', 'M', 'G', 'T', 'P']
-  let v = n
-  let i = 0
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024
-    i++
-  }
-  return `${v >= 10 || i === 0 ? Math.round(v) : v.toFixed(1)}${units[i]}`
-}
 
-function fmtUptime(sec: number): string {
-  const d = Math.floor(sec / 86400)
-  const h = Math.floor((sec % 86400) / 3600)
-  const m = Math.floor((sec % 3600) / 60)
-  if (d > 0) return t('{d}일 {h}시간', { d, h })
-  if (h > 0) return t('{h}시간 {m}분', { h, m })
-  return t('{m}분', { m })
-}
 
 /** Bytes per second. -1 is "not known yet", never a real zero. */
 function fmtRate(v: number): string {
-  return v < 0 ? '—' : `${fmtBytes(v)}/s`
+  return v < 0 ? '—' : `${bytes(v)}/s`
 }
 
 /** A percentage that may be unknown. -1 is "no second sample yet" for CPU and
@@ -64,7 +46,16 @@ function pct(v: number): string {
   return v < 0 ? '—' : `${Math.round(v)}%`
 }
 
-export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFacts }) {
+export function ResourceView({
+  hostID,
+  visible,
+  facts,
+}: {
+  hostID: string
+  /** Whether this pane is on screen. */
+  visible: boolean
+  facts: SysFacts
+}) {
   // Read once per host, like the detection facts beside it. Both files change
   // when apt runs, which is not while somebody is reading this screen — and a
   // poller for it would be two SFTP stats a second for a number that moves
@@ -88,7 +79,14 @@ export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFact
   // for this host, and asking again would be a second round trip for the same
   // answer.
   const m = useMetrics(hostID)
-  const history = useMetricsHistory(hostID)
+  // Frozen while the tab is elsewhere. The store keeps collecting — the
+  // summary bar needs it — but rebuilding twelve to sixteen polylines out of up
+  // to 1,800 points every two seconds, for a pane nobody is looking at, is work
+  // paid for with the frame rate of whatever the user *is* looking at.
+  const live = useMetricsHistory(hostID)
+  const frozen = useRef<Sample[]>(live)
+  if (visible) frozen.current = live
+  const history = visible ? live : frozen.current
   // Errors and drops are lifetime totals, and the rule for them is written on
   // IfaceList below: they only matter when they climb. Alarming on the total
   // meant any host that had ever dropped a packet sat red forever — which is
@@ -130,7 +128,7 @@ export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFact
         <TopStat
           label={t('메모리')}
           value={pct(m.memPercent)}
-          sub={`${fmtBytes(m.memUsed)} / ${fmtBytes(m.memTotal)}`}
+          sub={`${bytes(m.memUsed)} / ${bytes(m.memTotal)}`}
           samples={history}
           pick={(x) => x.mem}
           warn={m.memPercent >= 90}
@@ -175,7 +173,7 @@ export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFact
             warn={cores.length > 0 && m.load1 > cores.length}
           />
         )}
-        <TopStat label={t('가동 시간')} value={fmtUptime(m.uptimeSeconds)} sub={since(m.uptimeSeconds)} />
+        <TopStat label={t('가동 시간')} value={uptimeText(m.uptimeSeconds)} sub={since(m.uptimeSeconds)} />
       </div>
 
       <div className="res-grid">
@@ -220,7 +218,7 @@ export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFact
         <Panel
           label={t('메모리')}
           value={pct(m.memPercent)}
-          sub={[`${fmtBytes(m.memUsed)} / ${fmtBytes(m.memTotal)}`]}
+          sub={[`${bytes(m.memUsed)} / ${bytes(m.memTotal)}`]}
           warn={m.memPercent >= 90 || swapPct >= 50}
         >
           <TimeChart
@@ -240,9 +238,9 @@ export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFact
               />
               <Legend
                 items={[
-                  { key: 'app', label: t('프로그램'), text: fmtBytes(Math.max(0, m.memUsed - m.memBuffers - m.memCached)) },
-                  { key: 'buffers', label: t('버퍼'), text: fmtBytes(m.memBuffers) },
-                  { key: 'cached', label: t('캐시'), text: fmtBytes(m.memCached) },
+                  { key: 'app', label: t('프로그램'), text: bytes(Math.max(0, m.memUsed - m.memBuffers - m.memCached)) },
+                  { key: 'buffers', label: t('버퍼'), text: bytes(m.memBuffers) },
+                  { key: 'cached', label: t('캐시'), text: bytes(m.memCached) },
                 ]}
               />
             </>
@@ -255,7 +253,7 @@ export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFact
               [
                 t('스왑'),
                 m.swapTotal > 0
-                  ? `${fmtBytes(m.swapUsed)} / ${fmtBytes(m.swapTotal)}`
+                  ? `${bytes(m.swapUsed)} / ${bytes(m.swapTotal)}`
                   : t('없음'),
               ],
             ]}
@@ -284,7 +282,7 @@ export function ResourceView({ hostID, facts }: { hostID: string; facts: SysFact
                 // fan. Showing 0 there would be alarming and wrong.
                 [t('팬'), pct(g.fan)],
                 [t('온도'), g.tempC < 0 ? '—' : `${Math.round(g.tempC)}°C`],
-                ['VRAM', `${fmtBytes(g.memUsed)} / ${fmtBytes(g.memTotal)}`],
+                ['VRAM', `${bytes(g.memUsed)} / ${bytes(g.memTotal)}`],
               ]}
             />
           </Panel>
@@ -497,7 +495,7 @@ function SystemInfo({
 }) {
   const rows: [string, string][] = []
   if (info.kernel) rows.push([t('커널'), info.kernel])
-  rows.push([t('가동 시간'), fmtUptime(uptime)])
+  rows.push([t('가동 시간'), uptimeText(uptime)])
   rows.push([t('부팅 시각'), since(uptime)])
   if (info.timezone) rows.push([t('시간대'), info.timezone])
   // Nothing at all where the server keeps no record of this. Debian keeps
@@ -838,9 +836,9 @@ function FilesystemTable({ rows, shown }: { rows: Filesystem[]; shown: Filesyste
             <tr key={f.mountPoint} data-dim={!interesting.has(f.mountPoint) || undefined}>
               <td className="mono ellipsis">{f.mountPoint}</td>
               <td className="mono ellipsis muted">{f.device}</td>
-              <td className="num">{fmtBytes(f.used)}</td>
-              <td className="num">{fmtBytes(f.size)}</td>
-              <td className="num">{fmtBytes(f.available)}</td>
+              <td className="num">{bytes(f.used)}</td>
+              <td className="num">{bytes(f.size)}</td>
+              <td className="num">{bytes(f.available)}</td>
               {/* A filesystem with room and no inodes left cannot create a
                   file, and every tool then says "no space left on device" —
                   the same words as running out of bytes. Blank where the

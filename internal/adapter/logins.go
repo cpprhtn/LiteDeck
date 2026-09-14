@@ -40,9 +40,18 @@ import (
 // that come back are the 773 lines, not the 3,008, and nothing is dropped on
 // the way: a spray that tries seven hundred names once each is a shape worth
 // seeing, and a floor of "two or more" would erase exactly that one.
-const LoginsScript = `echo '#last'; last -F -w -n 50 2>/dev/null
+// Every script here opens by pinning the locale. pam_env hands a non-interactive
+// exec the machine's LANG, and everything these parse is English — `last -F`'s
+// weekday, ufw's "Status: active", journalctl's month names. On a server
+// installed in another language the parsers match nothing and return empty,
+// which reads on screen as "nobody logged in" and "no attackers": the shape of
+// wrong answer this app is built not to give. Setenv is asked for as well (see
+// sshcore.ExecOpts) but only works where sshd lists the variable in AcceptEnv,
+// so each script says it too.
+const LoginsScript = `LC_ALL=C; export LC_ALL
+echo '#last'; last -F -w -n 50 2>/dev/null
 echo '#auth'
-journalctl -t sshd --since -24h -g 'Failed password|Accepted ' --no-pager -q -o cat 2>/dev/null | awk '
+journalctl -t sshd -t sshd-session --since -24h -g 'Failed password|Accepted ' --no-pager -q -o cat 2>/dev/null | awk '
 /Failed password/ {
   fail++
   u = $0; sub(/.* for /, "", u); sub(/^invalid user /, "", u); sub(/ from .*/, "", u); user[u]++
@@ -113,7 +122,10 @@ var weekdays = map[string]bool{
 // tty column, so splitting on whitespace and taking field 2 as the tty reads
 // every reboot wrong. Finding the weekday token instead splits the row into
 // "who and where" and "when", which is true of every shape the file has.
-func ParseLast(out string) []Login {
+func ParseLast(out string, loc *time.Location) []Login {
+	if loc == nil {
+		loc = time.Local
+	}
 	logins := []Login{}
 	for _, line := range strings.Split(out, "\n") {
 		if strings.TrimSpace(line) == "" || strings.HasPrefix(line, "wtmp begins") {
@@ -134,7 +146,7 @@ func ParseLast(out string) []Login {
 		if at < 1 {
 			continue
 		}
-		l, ok := loginFrom(fields[:at], fields[at:])
+		l, ok := loginFrom(fields[:at], fields[at:], loc)
 		if !ok {
 			continue
 		}
@@ -143,8 +155,8 @@ func ParseLast(out string) []Login {
 	return logins
 }
 
-func loginFrom(who, when []string) (Login, bool) {
-	start, ok := lastTime(when)
+func loginFrom(who, when []string, loc *time.Location) (Login, bool) {
+	start, ok := lastTime(when, loc)
 	if !ok {
 		return Login{}, false
 	}
@@ -168,7 +180,7 @@ func loginFrom(who, when []string) (Login, bool) {
 		return l, true
 	}
 	if i := strings.Index(rest, "- "); i >= 0 {
-		if end, ok := lastTime(strings.Fields(rest[i+2:])); ok {
+		if end, ok := lastTime(strings.Fields(rest[i+2:]), loc); ok {
 			l.Until = &end
 		}
 	}
@@ -176,15 +188,17 @@ func loginFrom(who, when []string) (Login, bool) {
 }
 
 // lastTime reads `last -F`'s timestamp: "Sun Sep  6 20:28:40 2026".
-func lastTime(f []string) (time.Time, bool) {
+func lastTime(f []string, loc *time.Location) (time.Time, bool) {
 	if len(f) < 5 {
 		return time.Time{}, false
 	}
-	// Parsed as local time on purpose: `last` prints in the server's zone and
-	// says nothing about which one. Treating it as UTC would move every login
-	// by the offset.
+	// Parsed in the server's zone: `last` prints its own wall clock and says
+	// nothing about which zone that is, so reading it in the viewer's zone
+	// moved every login by the difference between them. The caller passes what
+	// the server said it was; nil falls back to the viewer's, which is the old
+	// behaviour and the right answer when the server never said.
 	t, err := time.ParseInLocation("Mon Jan 2 15:04:05 2006",
-		strings.Join([]string{f[0], f[1], f[2], f[3], f[4]}, " "), time.Local)
+		strings.Join([]string{f[0], f[1], f[2], f[3], f[4]}, " "), loc)
 	if err != nil {
 		return time.Time{}, false
 	}

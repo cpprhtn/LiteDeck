@@ -147,17 +147,29 @@ func guardExposure(addr, token, password string) error {
 	if err != nil {
 		return fmt.Errorf("addr %q is not host:port: %w", addr, err)
 	}
-	if token != "" || password != "" {
-		return nil
-	}
 	ip := net.ParseIP(host)
 	loopback := host == "localhost" || (ip != nil && ip.IsLoopback())
-	if !loopback {
-		return fmt.Errorf("refusing to bind %s with no authentication: this endpoint can open "+
-			"SSH sessions to your servers, so a non-loopback bind needs a login (the default is "+
-			"on), a --token, or a reverse proxy in front with 127.0.0.1 — not --no-auth", addr)
+	if loopback {
+		return nil
 	}
-	return nil
+	if token != "" {
+		return nil
+	}
+	// The default password is printed in the README and in this file. Treating
+	// it as authentication makes the guard say yes to the one configuration it
+	// exists to stop: a box on the network whose password every reader of the
+	// documentation already knows. A real password still passes.
+	if password == defaultPassword {
+		return fmt.Errorf("refusing to bind %s with the default password: %q is in the "+
+			"documentation, so it is not a secret. Set LITEDECK_PASSWORD (or --password), "+
+			"or pass --token, before exposing this (see docs/server-mode.md)", addr, defaultPassword)
+	}
+	if password != "" {
+		return nil
+	}
+	return fmt.Errorf("refusing to bind %s with no authentication: this endpoint can open "+
+		"SSH sessions to your servers, so a non-loopback bind needs a login (the default is "+
+		"on), a --token, or a reverse proxy in front with 127.0.0.1 — not --no-auth", addr)
 }
 
 func bindNote(addr, token, password string) string {

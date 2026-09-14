@@ -26,11 +26,17 @@ type Pane = 'resources' | 'events'
 
 export function MonitorView({
   hostID,
+  visible,
   hasEvents,
   facts,
   onError,
 }: {
   hostID: string
+  /** Whether this tab is the one on screen. Every other view takes it; this one
+   *  did not, so once it had been opened its twelve to sixteen charts went on
+   *  rebuilding their polylines every two seconds for the rest of the session,
+   *  out of a sample store that grows to 1,800 points. */
+  visible: boolean
   /** No systemd, no journal, no event pane. The resource pane still works. */
   hasEvents: boolean
   /** From detection, not from the poll — none of it can change while the
@@ -62,7 +68,7 @@ export function MonitorView({
       </div>
 
       {active === 'resources' ? (
-        <ResourceView hostID={hostID} facts={facts} />
+        <ResourceView hostID={hostID} visible={visible} facts={facts} />
       ) : (
         <EventTimeline hostID={hostID} onError={onError} />
       )}

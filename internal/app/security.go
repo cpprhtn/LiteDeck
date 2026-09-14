@@ -274,8 +274,26 @@ type sudoUnlock struct {
 }
 
 type sudoUnlockEntry struct {
-	gen      uint64
-	password string
+	gen uint64
+	// password is the one copy in this app that lives long enough to be worth
+	// wiping: held from the moment the user types it until the connection ends,
+	// which is minutes or hours. A heap dump or a core file taken any time in
+	// between would have carried it as a plain string.
+	//
+	// The copy x/crypto/ssh makes at the moment of authentication is still a
+	// string and still unreachable — see internal/secret. This is the half that
+	// can be done, and until now it was not being done either.
+	password *secret.Buffer
+	// turned is whether the user opened the lock on purpose, as opposed to
+	// answering a password dialog for one action.
+	//
+	// The two need different answers. A password that worked once should not be
+	// asked for again on the same connection — that was the friction: restart a
+	// unit with the password, ask to read its log, and the same dialog came
+	// back a second later. But a read that happened to elevate must not make
+	// the security tab report itself as unlocked, or a poll could open the
+	// privileged half of a screen nobody asked to open.
+	turned bool
 }
 
 func newSudoUnlock() *sudoUnlock { return &sudoUnlock{byID: map[string]sudoUnlockEntry{}} }
@@ -287,19 +305,64 @@ func (u *sudoUnlock) get(id string, gen uint64) (string, bool) {
 	if !ok || e.gen != gen {
 		return "", false
 	}
-	return e.password, true
+	// Bytes, not String: String is deliberately "«secret»" so an accidental %v
+	// on an enclosing struct cannot print it. The copy this makes is the one at
+	// the moment of use, which is the half internal/secret says it cannot fix.
+	return string(e.password.Bytes()), true
 }
 
+// put stores a password the user turned the lock with.
 func (u *sudoUnlock) put(id string, gen uint64, password string) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	u.byID[id] = sudoUnlockEntry{gen: gen, password: password}
+	u.wipeLocked(id)
+	u.byID[id] = sudoUnlockEntry{gen: gen, password: secret.NewBuffer(password), turned: true}
+}
+
+// remember stores a password that worked for one action, so the next action on
+// the same connection does not ask again. It does not turn the lock.
+func (u *sudoUnlock) remember(id string, gen uint64, password string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if e, ok := u.byID[id]; ok && e.gen == gen && e.turned {
+		return // already open; do not downgrade it
+	}
+	u.wipeLocked(id)
+	u.byID[id] = sudoUnlockEntry{gen: gen, password: secret.NewBuffer(password)}
+}
+
+// getTurned is get, but only for a lock the user opened on purpose.
+func (u *sudoUnlock) getTurned(id string, gen uint64) (string, bool) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	e, ok := u.byID[id]
+	if !ok || e.gen != gen || !e.turned {
+		return "", false
+	}
+	// Bytes, not String: String is deliberately "«secret»" so an accidental %v
+	// on an enclosing struct cannot print it. The copy this makes is the one at
+	// the moment of use, which is the half internal/secret says it cannot fix.
+	return string(e.password.Bytes()), true
+}
+
+// isTurned reports whether the lock was opened on purpose.
+func (u *sudoUnlock) isTurned(id string, gen uint64) bool {
+	_, ok := u.getTurned(id, gen)
+	return ok
 }
 
 func (u *sudoUnlock) forget(id string) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
+	u.wipeLocked(id)
 	delete(u.byID, id)
+}
+
+// wipeLocked zeroes the password held for a host, if any. Called with the lock.
+func (u *sudoUnlock) wipeLocked(id string) {
+	if e, ok := u.byID[id]; ok {
+		e.password.Wipe()
+	}
 }
 
 // HostSecurity reads what is guarding a host.
@@ -319,7 +382,7 @@ func (a *App) HostSecurity(hostID string, elevate, force bool) (SecurityView, er
 	if err != nil {
 		return SecurityView{}, err
 	}
-	gen := a.mgr.Generation(hostID)
+	gen := a.connGeneration(hostID)
 	if !force {
 		if cached, ok := a.security.get(hostID, gen, elevate); ok {
 			return cached, nil
@@ -429,7 +492,7 @@ func (a *App) HostSecurity(hostID string, elevate, force bool) (SecurityView, er
 		view.Mismatches = adapter.JailMismatches(jailDeclared, jail)
 	}
 	if strings.TrimSpace(banLog) != "" {
-		h := adapter.ParseBanLog(banLog)
+		h := adapter.ParseBanLog(banLog, a.serverLocation(hostID))
 		view.BanHistory = &h
 	}
 	// The delta is what says whether it is still dropping, and it needs the
@@ -445,12 +508,37 @@ func (a *App) HostSecurity(hostID string, elevate, force bool) (SecurityView, er
 		view.Dropped += c.Packets
 	}
 	view.DroppedSince = a.dropped.since(hostID, gen, view.Dropped)
+	// The unlocked read is cached too. It was the one path that returned
+	// without a put, so the entry the cache keeps an `elevated` flag for could
+	// never be hit: after turning the lock, every tab switch re-ran the free
+	// script, the attacker scan, the 24-hour failure bucket and the whole
+	// elevated script again. The commit that added this cache was fixing
+	// exactly that, and it stopped at the lock.
+	//
+	// DroppedSince is the reason to be careful here rather than a reason not to
+	// cache: it is a delta against the previous reading, so re-reading on every
+	// tab switch made it "since the last time you looked at this tab" instead
+	// of "since you last looked at this server".
+	a.security.put(hostID, gen, elevate, view)
 	return view, nil
 }
 
 // securityRulesScript is the elevated read. A compile-time constant, like the
 // free one, so passing it to `sh -c` stays inside the argv-only rule (§3.2b).
-const securityRulesScript = `echo '#rules'
+//
+// LC_ALL=C for the same reason the five adapter scripts pin it, and this one
+// needed it most: `ufw status verbose` is fully translated. Measured on Ubuntu
+// 24.04 with language-pack-ko and language-pack-de installed —
+//
+//	Status: active     →  상태: 활성        →  Status: Aktiv
+//	Default: deny …    →  기본 설정: deny … →  Voreinstellung: deny …
+//
+// and ParseUfwStatus keys on the literal "Status:" prefix, so on a Korean or
+// German server the security tab reported a live firewall as switched off. Not
+// "could not read", which the tab knows how to say — off. sudo resets the
+// environment, so the pin has to be inside the script rather than around it.
+const securityRulesScript = `LC_ALL=C; export LC_ALL
+echo '#rules'
 ufw status verbose 2>/dev/null
 echo '#ruleset'
 nft list ruleset 2>/dev/null
@@ -495,7 +583,10 @@ func (a *App) securityRules(
 	if info.SudoNoPasswd {
 		res, err = conn.Exec(ctx, "sudo", "-n", "--", "sh", "-c", script)
 	} else {
-		password, ok := a.unlocked.get(hostID, a.mgr.Generation(hostID))
+		// The lock, not a password remembered from some other action. This
+		// half of the tab opens because somebody asked it to; a read that
+		// happened to elevate elsewhere is not that request.
+		password, ok := a.unlocked.getTurned(hostID, a.connGeneration(hostID))
 		if !ok {
 			return "", "", "", "", "", i18n.Errorf("잠겨 있습니다")
 		}
@@ -559,7 +650,7 @@ func (a *App) readAttackers(
 	// thousands of lines.
 	if hours, err := a.execMaybeElevated(ctx, conn, hostID, elevate && !info.CanReadJournal,
 		"sh", "-c", adapter.FailuresScript); err == nil {
-		view.Failures = adapter.ParseFailureBuckets(string(hours.Stdout))
+		view.Failures = adapter.ParseFailureBuckets(string(hours.Stdout), a.serverLocation(hostID))
 	}
 	// Without the lock the only blocked addresses known are fail2ban's, from
 	// its own status. That is better than nothing and less than the ruleset.
@@ -666,7 +757,15 @@ func (a *App) UnlockSecurity(hostID string) (bool, error) {
 	// Already open on this connection. Turning the lock in one tab and then
 	// turning it in another asked for the password twice for the same
 	// permission, which is exactly the thing this lock exists to avoid.
-	if _, ok := a.unlocked.get(hostID, a.mgr.Generation(hostID)); ok {
+	//
+	// A password merely remembered from an earlier action opens it without
+	// asking again: the user has already proved they know it, and making them
+	// type it a second time for the same connection is the friction this lock
+	// was built to remove.
+	gen := a.connGeneration(hostID)
+	if pw, ok := a.unlocked.get(hostID, gen); ok {
+		a.unlocked.put(hostID, gen, pw)
+		a.emitSudoState(hostID)
 		return true, nil
 	}
 	// Deliberately not secretFunc: that one reads the keychain and offers to
@@ -679,7 +778,7 @@ func (a *App) UnlockSecurity(hostID string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	a.unlocked.put(hostID, a.mgr.Generation(hostID), password)
+	a.unlocked.put(hostID, a.connGeneration(hostID), password)
 	a.emitSudoState(hostID)
 	return true, nil
 }
@@ -698,14 +797,17 @@ func (a *App) LockSecurity(hostID string) {
 // somebody who has already proved they may have it should not be asked again to
 // see process names.
 func (a *App) SudoUnlocked(hostID string) bool {
-	if _, ok := a.unlocked.get(hostID, a.mgr.Generation(hostID)); ok {
+	// Turned, not merely remembered. A read that elevated to fetch attackers
+	// must not report the tab as unlocked — a poll would then open the
+	// privileged half of a screen nobody asked to open.
+	if a.unlocked.isTurned(hostID, a.connGeneration(hostID)) {
 		return true
 	}
 	// Only what detection already found. Calling DetectHost here would probe —
 	// and this runs on the disconnect path, where it repopulated the cache that
 	// had just been dropped and sent commands down a connection being torn
 	// down. A host that has not been detected yet simply reads as locked.
-	info, ok := a.detected.get(hostID)
+	info, ok := a.detected.get(hostID, a.connGeneration(hostID))
 	return ok && info.SudoNoPasswd
 }
 
@@ -725,7 +827,7 @@ type SudoState struct {
 // a detection by the time it renders.
 func (a *App) HostSudoState(hostID string) SudoState {
 	st := SudoState{HostID: hostID, Unlocked: a.SudoUnlocked(hostID)}
-	if info, ok := a.detected.get(hostID); ok {
+	if info, ok := a.detected.get(hostID, a.connGeneration(hostID)); ok {
 		st.Available = info.HasSudo
 	}
 	return st

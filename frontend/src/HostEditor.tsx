@@ -32,17 +32,31 @@ function editorDraft(host: Host): Host {
 
 export function HostEditor({
   host,
+  others,
   onClose,
   onSaved,
   onError,
 }: {
   host: Host
+  /** The hosts already registered, so a second entry for the same machine can
+   *  be pointed out. Registering one twice is allowed — two accounts on one box
+   *  is an ordinary thing to want — but doing it by accident and then wondering
+   *  why the second one never asks about the fingerprint is not. */
+  others: Host[]
   onClose: () => void
   onSaved: () => void
   onError: (msg: string) => void
 }) {
   const [draft, setDraft] = useState<Host>(() => editorDraft(host))
   const [busy, setBusy] = useState(false)
+
+  const duplicate = others.find(
+    (h) =>
+      h.id !== draft.id &&
+      h.hostname.trim() === draft.hostname.trim() &&
+      (h.port || 22) === (draft.port || 22) &&
+      h.user.trim() === draft.user.trim(),
+  )
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   useEffect(() => setDraft(editorDraft(host)), [host])
@@ -133,8 +147,18 @@ export function HostEditor({
             type="number"
             min={1}
             max={65535}
-            value={draft.port}
-            onChange={(e) => set('port', Number(e.target.value))}
+            value={draft.port || ''}
+            onChange={(e) => {
+              // Empty means empty, not zero. `Number('')` is 0, so clearing the
+              // field to type a new port snapped it to "0" under the cursor.
+              const v = e.target.value.trim()
+              set('port', v === '' ? 0 : Number(v))
+            }}
+            onBlur={() => {
+              // Leaving it empty falls back to the SSH default rather than
+              // saving a port nothing listens on.
+              if (!draft.port) set('port', 22)
+            }}
           />
 
           <label>{t('사용자')}</label>
@@ -190,6 +214,23 @@ export function HostEditor({
             onChange={(e) => set('proxyJump', e.target.value)}
           />
         </div>
+
+        {/* One hop. The Go side dials exactly one bastion, so a comma-separated
+            chain would silently use the first and ignore the rest — the user
+            would think they were going through two and be going through one. */}
+        {(draft.proxyJump ?? '').includes(',') && (
+          <p className="warn-text">
+            {t('경유 서버는 한 단계만 지원합니다. 쉼표 뒤는 무시됩니다.')}
+          </p>
+        )}
+
+        {duplicate && (
+          <p className="muted small">
+            {t('{name} 이(가) 같은 서버를 같은 계정으로 이미 가리킵니다. 둘 다 두어도 됩니다.', {
+              name: duplicate.name || duplicate.hostname,
+            })}
+          </p>
+        )}
 
         {needsKeyFile && (
           <p className="warn-text">{t('개인키 인증을 쓰려면 키 파일 경로가 필요합니다.')}</p>

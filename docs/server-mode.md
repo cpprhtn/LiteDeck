@@ -26,6 +26,21 @@ Wails 웹뷰 대신 HTTP로 UI를 서빙하고, 웹뷰가 없어 **웹킷·GTK �
 동작합니다 — 호스트를 등록하고, 접속하고(호스트키·비밀번호는 브라우저 대화상자로
 물어봅니다), 파일·터미널·모니터링·MCP를 씁니다.
 
+## 「이 서버」 모드 (`--self`)
+
+박스가 자기를 보여주게 하는 옵션입니다. 켜 두면 시작할 때 자기 sshd 에 붙어서,
+브라우저를 열면 이미 그 서버 안에 들어가 있습니다. 그라파나·Cockpit 과 같은 모양입니다.
+
+| 플래그 | 기본값 | 뜻 |
+|---|---|---|
+| `--self <user>` | 없음 | 이 계정으로 자기 sshd 에 접속합니다. 비면 이 기능이 꺼집니다 |
+| `--self-port <n>` | `22` | 로컬 sshd 포트 |
+| `--self-key <path>` | 없음 | 접속에 쓸 개인키. **암호 없는 키가 깔끔한 자격증명입니다** |
+| `--self-agent` | 꺼짐 | 키 파일 대신 ssh-agent 를 씁니다 |
+| `LITEDECK_SELF_PASSWORD` | 없음 | 비밀번호 인증을 쓸 때. **환경변수뿐입니다** — argv 는 `ps` 에 보입니다 |
+
+접속에 실패해도 서버는 뜹니다. 로그에 한 줄 남고, 사용자가 직접 호스트를 추가하면 됩니다.
+
 ## 외부 공개 및 인증 구성
 
 이 엔드포인트는 **여러분의 서버들에 SSH 세션을 엽니다.** 그 포트에 닿는 사람은
@@ -39,6 +54,11 @@ Wails 웹뷰 대신 HTTP로 UI를 서빙하고, 웹뷰가 없어 **웹킷·GTK �
 ```nginx
 # nginx 예시 — 인증(auth_request 등)은 여기서 걸고, LiteDeck 은 loopback 에
 location / {
+    # Origin 검사가 Host 헤더와 대조합니다. nginx 기본값($proxy_host)을 그대로
+    # 두면 브라우저가 보낸 Origin 과 달라 /rpc 와 /ws 가 전부 403 입니다.
+    proxy_set_header Host $host;
+    # 이게 없으면 세션 쿠키에 Secure 가 붙지 않습니다.
+    proxy_set_header X-Forwarded-Proto $scheme;
     proxy_pass http://127.0.0.1:8765;
     proxy_http_version 1.1;
     # WebSocket(이벤트·터미널·로그)을 위해

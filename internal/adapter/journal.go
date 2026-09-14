@@ -67,6 +67,10 @@ const (
 	EventOther EventKind = "other"
 )
 
+// informationalIDs are the kinds systemd writes below the warning floor. They
+// have to be asked for by id or the priority filter removes them.
+var informationalIDs = []string{msgBootDone, msgShutdown, msgSessionNew, msgRestartSched}
+
 // eventKinds maps a message ID onto its kind. Anything absent is EventOther.
 var eventKinds = map[string]EventKind{
 	msgOOMKill:      EventOOM,
@@ -119,6 +123,21 @@ func JournalArgs(since string, maxPriority, limit int) []string {
 		"-q",
 		"-p", strconv.Itoa(maxPriority),
 		"-n", strconv.Itoa(limit),
+	}
+	// The four informational kinds, added back by message id.
+	//
+	// systemd writes "Startup finished", "Shutting down", "New session" and
+	// "Scheduled restart job" at LOG_INFO, which is below the warning floor, so
+	// the priority filter dropped every one of them: EventBoot, EventShutdown,
+	// EventSession and EventRestart were kinds the timeline could name and
+	// never received. The golden capture proves it — provenance.txt says a
+	// restart was provoked on purpose and the file holds no such id.
+	//
+	// journalctl ORs a MESSAGE_ID= match with the rest of the filter rather
+	// than narrowing it, which is exactly what is wanted here: warning-and-worse
+	// *plus* these four, whatever their priority.
+	for _, id := range informationalIDs {
+		args = append(args, "+", "MESSAGE_ID="+id)
 	}
 	// Omitted rather than passed empty: `--since ""` is not "no window", it is
 	// an argument journalctl rejects.

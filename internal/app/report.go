@@ -87,6 +87,12 @@ func (a *App) BenchMode() bool {
 
 // ReportSample records one measured polling cycle.
 func (a *App) ReportSample(s RenderSample) string {
+	if a.headless {
+		// Writes under the running user's cache directory. Named ReportSample
+		// rather than BenchSample, so the Bench* exclusion in webrpc does not
+		// cover it — the guard has to be here.
+		return ""
+	}
 	a.rep.write(s)
 	return a.rep.path
 }

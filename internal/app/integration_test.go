@@ -336,7 +336,7 @@ func TestFullConnectFlow(t *testing.T) {
 	if err := a.DisconnectHost("fixture"); err != nil {
 		t.Fatalf("DisconnectHost: %v", err)
 	}
-	if _, ok := a.detected.get("fixture"); ok {
+	if _, ok := a.detected.get("fixture", a.connGeneration("fixture")); ok {
 		t.Error("detection cache survived a disconnect")
 	}
 	if _, err := a.ListServices("fixture"); err == nil {

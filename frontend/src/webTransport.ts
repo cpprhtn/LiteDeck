@@ -20,6 +20,22 @@ type Handler = (payload: unknown) => void
 // auth there is no token and this stays empty.
 const authToken = new URLSearchParams(window.location.search).get('token') ?? ''
 
+// Taken out of the address bar once it has been read. The token opens SSH
+// sessions to every saved host, and a query string lands in browser history, in
+// the referrer of anything the page links to, and in the title of a bookmark
+// somebody makes. It stays in memory for the life of the tab, which is all it
+// is needed for; a reload without the query simply asks again.
+if (authToken) {
+  try {
+    const clean = new URL(window.location.href)
+    clean.searchParams.delete('token')
+    window.history.replaceState(null, '', clean.toString())
+  } catch {
+    // A browser that will not rewrite its own history is not a reason to fail
+    // to start; the token still works.
+  }
+}
+
 function authHeaders(): Record<string, string> {
   return authToken ? { Authorization: `Bearer ${authToken}` } : {}
 }
@@ -83,7 +99,29 @@ class EventBus {
     const ws = new WebSocket(withToken(`${scheme}://${window.location.host}${basePath()}ws`))
 
     ws.onopen = () => {
+      const reconnected = this.retry > 0
       this.retry = 0
+      if (!reconnected) return
+      // Events that arrived while the socket was down are gone, and Go is still
+      // waiting for an answer to any prompt among them. A laptop lid or a proxy
+      // idle timeout was enough: the page came back with no dialog on it and
+      // ConnectHost sat there until the prompt timed out two minutes later,
+      // with nothing on screen to say why.
+      void rpc('PendingPrompts', [])
+        .then((p: unknown) => {
+          const pending = p as {
+            hostKeys?: unknown[]
+            secrets?: unknown[]
+            writes?: unknown[]
+          }
+          for (const k of pending.hostKeys ?? []) this.handlers.get('prompt:hostkey')?.forEach((h) => h(k))
+          for (const k of pending.secrets ?? []) this.handlers.get('prompt:secret')?.forEach((h) => h(k))
+          for (const k of pending.writes ?? []) this.handlers.get('prompt:mcpwrite')?.forEach((h) => h(k))
+        })
+        .catch(() => {
+          // An older server has no such binding. Nothing is lost that was not
+          // already lost.
+        })
     }
     ws.onmessage = (e) => {
       try {

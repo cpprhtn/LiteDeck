@@ -10,22 +10,29 @@ import (
 
 	"github.com/cpprhtn/LiteDeck/internal/mcp"
 	"github.com/cpprhtn/LiteDeck/internal/rollback"
+	"os"
 )
 
 // The write tools (§5.3 of the MCP design note).
 //
-// Every one of these passes through approveWrite before it touches a server,
-// and none of them can reach a host the user has not shared. Two things are
-// deliberately absent:
+// Six of them. Every one passes through approveWrite before it touches a
+// server, and none can reach a host the user has not shared.
 //
-// **run_command.** An arbitrary-command tool makes the per-tool allowlist
-// decorative — switching svc_restart off means nothing when the same thing can
-// be done by typing it. The design note gives it its own toggle for that
-// reason, and that toggle is not built.
+// Whether approveWrite *stops to ask* depends on the host's mode, and that is
+// not the same statement: in the default mode only the three that touch files
+// or run a shell line raise a dialog. The guarantee that holds in every mode is
+// the Command Log, not the prompt.
 //
-// **Deletion.** No fs_delete, no container_remove, no image or volume pruning.
-// A restart is recoverable by restarting again; a deletion is not, and the
-// asymmetry is worth a deliberate gap while this is new.
+// Two of these arrived after this comment first said they never would, and the
+// reasoning for each is worth keeping:
+//
+// **run_command** makes the per-tool allowlist decorative — switching
+// svc_control off means nothing when the same thing can be typed. It has its
+// own per-host toggle for that reason, off by default.
+//
+// **fs_delete** is the only irreversible one, so it is the only one with a
+// rollback copy behind it, and it has its own toggle too. Container removal and
+// image pruning are still absent: those cannot be put back at all.
 
 // elevate is never true here. Silently escalating for an AI would put a sudo
 // password behind a decision no person made; when a server refuses, the answer
@@ -45,9 +52,10 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 	// it, not the way the protocol does.
 	s.Register(mcp.Tool{
 		Name: "svc_control",
-		Description: "Start, stop or restart a systemd unit or Windows service. The user is " +
-			"shown the exact command and approves it before anything runs, unless they have " +
-			"turned that off for this host.",
+		Description: "Start, stop or restart a systemd unit or Windows service. Whether the " +
+			"user is asked first is their setting for this host: in the default mode this " +
+			"runs without a prompt, and every call appears in the app's Command Log either " +
+			"way. Do not assume a human sees it before it happens.",
 		InputSchema: obj(map[string]any{
 			"hostId": hostArg,
 			"unit":   map[string]any{"type": "string", "description": "Exact unit name from svc_list."},
@@ -69,6 +77,11 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 				hostID:  id,
 				tool:    "svc_control",
 				summary: fmt.Sprintf("%s %s", action, unit),
+				// A readable summary, not the argv. Windows runs a
+				// PowerShell cmdlet for the same request and podman runs its
+				// own binary; writing the real command here would mean building
+				// it twice and letting the two drift. The dialog says what is
+				// about to happen, and docs/mcp.md says that is what it is.
 				command: fmt.Sprintf("systemctl %s -- %s", action, unit),
 			})
 			if err != nil {
@@ -181,11 +194,28 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 			// a creation, which is fine and shows as a diff against nothing.
 			var before string
 			existed := false
-			if existing, err := a.ReadTextFile(hostID, path); err == nil {
-				if existing.Binary {
-					return nil, fmt.Errorf("%s is a binary file", path)
-				}
+			existing, readErr := a.ReadTextFile(hostID, path)
+			switch {
+			case readErr == nil && existing.Binary:
+				return nil, fmt.Errorf("%s is a binary file", path)
+			case readErr == nil && existing.TooLarge:
+				// TooLarge returns an empty Content and a nil error, so this
+				// used to read as "the file is empty": the diff showed the
+				// whole file being created, and the rollback copy was saved as
+				// nothing — restoring it would have truncated the file to zero.
+				return nil, fmt.Errorf(
+					"%s is %d bytes, larger than this tool will read (%d). "+
+						"Edit it in the app, or work on it over the terminal",
+					path, existing.Size, maxEditableBytes)
+			case readErr == nil:
 				before, existed = existing.Content, true
+			case !errors.Is(readErr, os.ErrNotExist):
+				// Every other failure — permission denied, a directory, a
+				// broken link — used to fall through as "does not exist", which
+				// marks the change Created. Undoing a Created change deletes
+				// the file, so a read this tool was not allowed to do would end
+				// in a deletion it was not allowed to do either.
+				return nil, readErr
 			}
 			if before == content {
 				return map[string]any{

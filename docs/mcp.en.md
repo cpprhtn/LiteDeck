@@ -108,10 +108,27 @@ claude mcp add --transport http litedeck http://127.0.0.1:<port>/mcp \
   --header "Authorization: Bearer <token>"
 
 # Codex CLI — the variable's name goes in the command, the token goes in the environment
-export LITEDECK_MCP_TOKEN=<token>
+export LITEDECK_MCP_TOKEN="<token>"
 codex mcp add litedeck --url http://127.0.0.1:<port>/mcp \
   --bearer-token-env-var LITEDECK_MCP_TOKEN
 ```
+
+On Windows the first line depends on the shell. `export` is bash and works in
+neither PowerShell nor cmd, so the snippet the app hands you uses PowerShell.
+
+```powershell
+# PowerShell
+$env:LITEDECK_MCP_TOKEN = "<token>"
+```
+
+```bat
+:: Command Prompt (cmd)
+set LITEDECK_MCP_TOKEN=<token>
+```
+
+> If the first line looks broken at the `=` after you paste it into Notepad,
+> that is word wrap. The token is one run of 64 hex characters with nowhere for
+> a line break to go. Turn off Format → Word Wrap to see it on one line.
 
 > [!NOTE]
 > **The two statuses are different and are written down separately.**

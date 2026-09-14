@@ -37,6 +37,8 @@ type App struct {
 	ifaces    *ifaceCache
 	digests   *digestCache
 	unlocked  *sudoUnlock
+	logins    *loginsCache
+	unitDescs *unitDescCache
 	dropped   *dropCounts
 	security  *securityCache
 	updates   updateChecker
@@ -99,6 +101,8 @@ func New() *App {
 	a.ifaces = newIfaceCache()
 	a.digests = newDigestCache()
 	a.unlocked = newSudoUnlock()
+	a.logins = newLoginsCache()
+	a.unitDescs = newUnitDescCache()
 	a.dropped = newDropCounts()
 	a.security = newSecurityCache()
 	a.gens = newGenCache()
