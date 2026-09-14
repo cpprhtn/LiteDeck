@@ -37,7 +37,7 @@
 </p>
 
 <p align="center">
-  <sub>One connection covers <b>files, the editor, services, processes, containers, the network, sessions and a terminal</b>.<br>
+  <sub>One connection covers <b>files, the editor, services, processes, containers, the network, sessions, monitoring and a terminal</b>.<br>
   Nothing was installed on the server.</sub>
 </p>
 

@@ -132,8 +132,11 @@ safe ([`internal/mcp/http.go`](../internal/mcp/http.go)).
   transferred — the 64KB before the resume point. A source edited to exactly the same length,
   outside that window, could get through
   ([features in detail](features.en.md#transfers-whole-folders-and-resuming-after-an-interruption))
-- **On real Linux hardware only the read side and file writes have been exercised**; transfers, completing a sudo escalation, the terminal PTY and log tailing are still container-only. See
-  [what is and is not verified](support.en.md)
+- **What has been exercised on real hardware is listed in
+  [what is and is not verified](support.en.md).** On a Raspberry Pi 4 that is whole-folder
+  transfers with resume, a completed sudo escalation, the terminal PTY and live log
+  tailing; on a real Windows server, ending a session and a cold WSL start. What has not
+  been exercised is in the same table
 - There is no audit log. The Command Log stays on your machine and goes nowhere.
   **A log the client writes is not an audit**
 - Dependency vulnerabilities are checked by `govulncheck ./...` in CI, on pushes to `main` and every PR

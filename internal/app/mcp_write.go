@@ -77,6 +77,11 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 				hostID:  id,
 				tool:    "svc_control",
 				summary: fmt.Sprintf("%s %s", action, unit),
+				// A readable summary, not the argv. Windows runs a
+				// PowerShell cmdlet for the same request and podman runs its
+				// own binary; writing the real command here would mean building
+				// it twice and letting the two drift. The dialog says what is
+				// about to happen, and docs/mcp.md says that is what it is.
 				command: fmt.Sprintf("systemctl %s -- %s", action, unit),
 			})
 			if err != nil {

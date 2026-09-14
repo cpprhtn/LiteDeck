@@ -28,7 +28,24 @@ Open that address in a browser. Servers, credentials and connections behave
 exactly as on the desktop: register a host, connect (host keys and passwords are
 asked in browser dialogs), use files, terminal, monitoring and MCP.
 
-## Exposure and authentication are your job
+
+## "This server" mode (`--self`)
+
+Makes the box show itself: the server connects to its own sshd at start-up, so
+opening the browser lands already inside it. The shape Grafana and Cockpit use.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--self <user>` | none | Connect to this machine's own sshd as this account. Empty turns the feature off |
+| `--self-port <n>` | `22` | Port of the local sshd |
+| `--self-key <path>` | none | Identity file. **A passphrase-less key is the clean credential** |
+| `--self-agent` | off | Use ssh-agent instead of a key file |
+| `LITEDECK_SELF_PASSWORD` | none | For password authentication. **Environment only** — argv is visible in `ps` |
+
+A failure here is logged, not fatal: the UI still comes up and the user can add
+a host by hand.
+
+## Exposure and authentication
 
 This endpoint **opens SSH sessions to your servers.** Anyone who can reach the
 port can drive them. So:
@@ -42,6 +59,12 @@ port can drive them. So:
 ```nginx
 # nginx example — do auth here (auth_request etc.), keep LiteDeck on loopback
 location / {
+    # The Origin check compares against the Host header. Leave nginx's default
+    # ($proxy_host) in place and the browser's Origin will not match, so /rpc
+    # and /ws answer 403 for everything.
+    proxy_set_header Host $host;
+    # Without this the session cookie is issued without Secure.
+    proxy_set_header X-Forwarded-Proto $scheme;
     proxy_pass http://127.0.0.1:8765;
     proxy_http_version 1.1;
     # for the WebSocket (events, terminal, logs)
@@ -83,7 +106,7 @@ page; pass it and a session cookie lets you in — no URL token, no reverse prox
 - To turn login off entirely, `--no-auth` (loopback only — refused on a
   non-loopback bind).
 
-## What to know (verification and limits)
+## Limits and things to know (with what has been verified)
 
 - **Passwords leave the process over the network.** A headless server has no OS
   keychain, so it asks for each server's password in the browser, and that value
