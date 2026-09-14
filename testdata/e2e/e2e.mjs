@@ -59,8 +59,23 @@ page.on('console', (m) => {
 })
 page.on('pageerror', (e) => consoleErrors.push(String(e)))
 
-const visible = (loc, ms) =>
-  loc.waitFor({ state: 'visible', timeout: ms }).then(() => true, () => false)
+// Every wait is scaled, and the scale is generous by default.
+//
+// A timeout costs nothing on a run that passes — nobody waits it out — and it
+// is the whole of the answer on a run that does not. This harness was written
+// against a laptop with the demo image already built, and the first time it met
+// a loaded runner it failed: the same checks that take fifty seconds there took
+// two minutes eighteen and then gave up. The waits were sized for the fast
+// machine, which is the one case that never needed them.
+//
+// The demo container is the reason a runner can be this slow. Its first boot
+// pulls three images through Docker-in-Docker on the vfs storage driver, and
+// that runs while these checks do.
+const SCALE = Number(process.env.LITEDECK_E2E_TIMEOUT_SCALE ?? 3)
+const ms = (base) => Math.round(base * SCALE)
+
+const visible = (loc, timeout) =>
+  loc.waitFor({ state: 'visible', timeout }).then(() => true, () => false)
 
 // row addresses one line of the file tree by its exact name.
 //
@@ -96,29 +111,29 @@ try {
     // First contact with this host key. Answering it is part of the path under
     // test: the prompt travels over the web transport like everything else.
     const trust = page.getByRole('button', { name: 'Always trust' })
-    const asked = await visible(trust, 15000)
+    const asked = await visible(trust, ms(15000))
     if (asked) await trust.click()
     check('the host key prompt is offered and answered', asked)
   }
 
   const files = page.getByRole('button', { name: 'Files', exact: true })
-  check('the tabs appear once the host is connected', await visible(files, 30000))
+  check('the tabs appear once the host is connected', await visible(files, ms(30000)))
   await files.click()
 
   // -- navigate ----------------------------------------------------------
   const pathBox = page.locator('.file-tree .view-toolbar input.search').first()
-  await pathBox.waitFor({ state: 'visible', timeout: 15000 })
+  await pathBox.waitFor({ state: 'visible', timeout: ms(15000) })
   // The path box is empty until the home listing lands. Typing into it before
   // then is typing into a control the app is about to overwrite.
   await page
     .waitForFunction(() => {
       const el = document.querySelector('.file-tree .view-toolbar input.search')
       return el && el.value.length > 0
-    }, null, { timeout: 30000 })
+    }, null, { timeout: ms(30000) })
     .catch(() => {})
   await pathBox.fill(DIR)
   await pathBox.press('Enter')
-  const listed = await visible(row('README.md').first(), 20000)
+  const listed = await visible(row('README.md').first(), ms(20000))
   check(`${DIR} lists its contents`, listed)
   if (!listed) throw new Error('the listing never arrived; nothing after this could mean anything')
 
@@ -126,7 +141,7 @@ try {
   const marker = `e2e-${Date.now()}`
   await open('README.md')
   const editor = page.locator('.cm-content')
-  await editor.waitFor({ state: 'visible', timeout: 20000 })
+  await editor.waitFor({ state: 'visible', timeout: ms(20000) })
   await editor.click()
   await page.keyboard.press('ControlOrMeta+End')
   await page.keyboard.type(`\n${marker}\n`)
@@ -141,12 +156,12 @@ try {
   // part of the path, and the dialog appearing at all is worth asserting: it is
   // the last thing between a stale editor buffer and somebody's file.
   const diff = page.locator('.diff-dialog')
-  const shownDiff = await visible(diff, 15000)
+  const shownDiff = await visible(diff, ms(15000))
   check('saving shows the diff against the server copy first', shownDiff)
   if (shownDiff) await diff.locator('button').filter({ hasText: /^Save/ }).first().click()
 
   let saved = false
-  for (let i = 0; i < 40 && !saved; i++) {
+  for (let i = 0; i < 40 * SCALE && !saved; i++) {
     await page.waitForTimeout(500)
     try {
       saved = onServer(`grep -c ${JSON.stringify(marker)} ${DIR}/README.md || true`) !== '0'
@@ -164,13 +179,13 @@ try {
   const sub = `e2e-sub-${Date.now()}`
   await page.getByRole('button', { name: 'New folder' }).click()
   const nameBox = page.locator('form.dialog input').first()
-  const asked = await visible(nameBox, 10000)
+  const asked = await visible(nameBox, ms(10000))
   if (asked) {
     await nameBox.fill(sub)
     await nameBox.press('Enter')
   }
   let made = false
-  for (let i = 0; i < 20 && asked && !made; i++) {
+  for (let i = 0; i < 20 * SCALE && asked && !made; i++) {
     await page.waitForTimeout(500)
     made = exists(`${DIR}/${sub}`)
   }
@@ -181,9 +196,9 @@ try {
     await row(sub).first().click()
     await page.locator('.view-toolbar').getByRole('button', { name: 'Delete', exact: true }).click()
     const confirm = page.locator('form.dialog, .dialog').getByRole('button', { name: /Delete|OK/ }).last()
-    if (await visible(confirm, 8000)) await confirm.click()
+    if (await visible(confirm, ms(8000))) await confirm.click()
     let gone = false
-    for (let i = 0; i < 20 && !gone; i++) {
+    for (let i = 0; i < 20 * SCALE && !gone; i++) {
       await page.waitForTimeout(500)
       gone = !exists(`${DIR}/${sub}`)
     }
@@ -197,19 +212,19 @@ try {
   // dropped, leaving a connection waiting for an answer nobody would be asked.
   await page.getByRole('button', { name: 'Disconnect', exact: true }).click()
   const reconnect = page.getByRole('button', { name: 'Connect', exact: true })
-  await reconnect.waitFor({ state: 'visible', timeout: 20000 })
+  await reconnect.waitFor({ state: 'visible', timeout: ms(20000) })
   await page.waitForTimeout(500)
   await reconnect.click()
-  const backAgain = await visible(page.getByRole('button', { name: 'Files', exact: true }), 30000)
+  const backAgain = await visible(page.getByRole('button', { name: 'Files', exact: true }), ms(30000))
   check('the host reconnects after a disconnect', backAgain)
 
   if (backAgain) {
     await page.getByRole('button', { name: 'Files', exact: true }).click()
     const again = page.locator('.file-tree .view-toolbar input.search').first()
-    await again.waitFor({ state: 'visible', timeout: 15000 })
+    await again.waitFor({ state: 'visible', timeout: ms(15000) })
     await again.fill(DIR)
     await again.press('Enter')
-    const relisted = await visible(row('README.md').first(), 20000)
+    const relisted = await visible(row('README.md').first(), ms(20000))
     check('the file listing works on the second connection', relisted)
   }
 
@@ -225,7 +240,7 @@ try {
   // opens on is known: nothing is stored on a fresh config, and an unstored
   // theme resolves against the OS.
   const picker = page.locator('select[aria-label="테마"], select[aria-label="Theme"]').first()
-  if (await visible(picker, 10000)) {
+  if (await visible(picker, ms(10000))) {
     const at = () => page.evaluate(() => document.documentElement.dataset.theme)
     const opened = await picker.inputValue()
     check('the picker opens on what the desktop is set to', opened === 'light', `it reads ${opened}`)
@@ -234,9 +249,18 @@ try {
     // Back to light at the end so the run leaves the config as it found it.
     for (const want of ['dark', 'light', 'dark', 'light']) {
       await picker.selectOption(want)
-      await page.waitForTimeout(700)
-      const shown = await picker.inputValue()
-      const stamped = await at()
+      // Polled rather than slept through. A fixed pause is a guess about the
+      // slowest machine that will ever run this, and the guess was wrong once
+      // already; waiting for the state itself is right on every machine and
+      // faster on most.
+      let shown = ''
+      let stamped = ''
+      for (let i = 0; i < 20 * SCALE; i++) {
+        shown = await picker.inputValue()
+        stamped = await at()
+        if (shown === want && stamped === want) break
+        await page.waitForTimeout(100)
+      }
       if (shown !== want || stamped !== want) {
         ok = false
         check(

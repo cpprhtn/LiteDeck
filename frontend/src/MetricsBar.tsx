@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { HostMetrics, type GPU, type MetricsView } from './ipc'
 import { usePoll } from './usePoll'
 import { GAP_MS, publishMetrics, useMetricsHistory, type Sample } from './metricsStore'
@@ -13,6 +13,80 @@ import { bytes, uptime } from './format'
 // monitoring stack does the rest, and §1.5 keeps LiteDeck out of that business.
 
 const POLL_MS = 2000
+
+/**
+ * How many things the row can drop before it gives up.
+ *
+ * Three steps: the notes, then the sparklines and the third-rank tiles, then
+ * the second-rank ones. What is left is CPU, memory and disk, which is the
+ * least this bar can say and still be worth the space.
+ *
+ * Sized against the window's own floor: main.go sets MinWidth to 900, and at
+ * 900 the last step fits with room over — in Korean, on a host with a GPU,
+ * which is the widest this gets. Narrower than that only happens in a browser,
+ * where the row is clipped rather than made illegible.
+ */
+const MAX_SHED = 3
+
+/**
+ * How much of the row to drop so it fits, measured rather than guessed.
+ *
+ * This used to be three container queries — hide the notes under 1250px, the
+ * sparklines and the low-priority tiles under 1100px, and so on. Width is the
+ * wrong question, because it says nothing about what has to fit inside it. The
+ * same header holds four tiles in English and seven in Korean, where "시스템
+ * 부하" and "가동 28일 19시간" are several times the width of "Load" and
+ * "Up 28d 19h"; add a GPU and a pair of "357G / 457G" notes and the row that
+ * fitted on the machine this was written on runs off the end of the window.
+ * Reported from a 1512px Mac, where the uptime was cut in half — comfortably
+ * inside every breakpoint that was supposed to prevent exactly that.
+ *
+ * So: render, look, and drop one more thing if it still does not fit. The walk
+ * runs in a layout effect, before the browser paints, so nothing flickers
+ * through the intermediate steps.
+ *
+ * Only upward, except on a resize, which starts again from nothing dropped.
+ * Walking back down as the content narrows would need to know whether the next
+ * level up fits, which cannot be known without rendering it, and guessing there
+ * is what makes a bar that flickers between two layouts forever. The content
+ * here grows and does not shrink — an uptime gets longer, a disk fills — so the
+ * one case that needs the walk is the one it handles.
+ */
+function useShed(deps: unknown[]): [number, React.RefObject<HTMLDivElement | null>] {
+  const ref = useRef<HTMLDivElement>(null)
+  // gen exists so a resize always causes a render. Without it, narrowing the
+  // window from one width where nothing had been dropped to another where
+  // something must be sets the same 0 back, React skips the render, and the
+  // measurement below never runs — which looked exactly like the bug this
+  // replaced: an uptime cut in half at 1512px.
+  const [state, setState] = useState({ shed: 0, gen: 0 })
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    // A pixel of slack: sub-pixel layout makes scrollWidth exceed clientWidth
+    // by a fraction on rows that fit perfectly well.
+    if (el.scrollWidth > el.clientWidth + 1 && state.shed < MAX_SHED) {
+      setState((s) => ({ ...s, shed: s.shed + 1 }))
+    }
+  })
+
+  useEffect(() => {
+    // The header, not the row itself. Shedding changes the row's own width, so
+    // watching the row means every step of the walk wakes the observer, which
+    // resets the walk, which changes the width again. It settles — on whatever
+    // it happened to land on — and the visible symptom is a bar that hides its
+    // notes on a 1800px window with room to spare.
+    const parent = ref.current?.parentElement
+    if (!parent || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => setState((s) => ({ shed: 0, gen: s.gen + 1 })))
+    ro.observe(parent)
+    return () => ro.disconnect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps)
+
+  return [state.shed, ref]
+}
 
 
 
@@ -116,6 +190,7 @@ function Stat({
   warn,
   title,
   p,
+  keepNote,
 }: {
   label: string
   value: string
@@ -130,9 +205,22 @@ function Stat({
   title?: string
   /** What to drop first when the row runs out of window. 1 never goes. */
   p?: 1 | 2 | 3
+  /** Keep the note past the point where the others go.
+   *
+   *  For the two that read as an amount rather than a decoration: memory and
+   *  disk are the tiles where "13%" on its own is not the answer — 13% of 8 GB
+   *  and 13% of 64 GB are different servers. A core count or a fan speed is a
+   *  detail; "8.0G / 63G" is the number. */
+  keepNote?: boolean
 }) {
   return (
-    <div className="metric" data-p={p ?? 1} data-warn={warn || undefined} title={title}>
+    <div
+      className="metric"
+      data-p={p ?? 1}
+      data-keep-note={keepNote || undefined}
+      data-warn={warn || undefined}
+      title={title}
+    >
       <div className="metric-label">{label}</div>
       <div className="metric-row">
         <span className="metric-value">
@@ -206,17 +294,18 @@ export function MetricsBar({ hostID }: { hostID: string }) {
   }, [hostID])
 
   usePoll(tick, POLL_MS)
+  const [shed, barRef] = useShed([hostID])
 
   if (failed && !m) {
     return (
-      <div className="metrics-bar">
+      <div className="metrics-bar" ref={barRef}>
         <span className="muted small">{t('상태를 읽지 못했습니다 — {err}', { err: failed })}</span>
       </div>
     )
   }
   if (!m) {
     return (
-      <div className="metrics-bar">
+      <div className="metrics-bar" ref={barRef}>
         <span className="muted small">{t('상태를 읽는 중…')}</span>
       </div>
     )
@@ -230,7 +319,7 @@ export function MetricsBar({ hostID }: { hostID: string }) {
   const gpuFan = gpus.reduce((a, g) => Math.max(a, g.fan), -1)
 
   return (
-    <div className="metrics-bar">
+    <div className="metrics-bar" ref={barRef} data-shed={shed || undefined}>
       <Stat
         label="CPU"
         value={m.cpu < 0 ? '—' : m.cpu.toFixed(0)}
@@ -251,6 +340,7 @@ export function MetricsBar({ hostID }: { hostID: string }) {
         // percentage alone never says it. It was in the tooltip, which is where
         // things go to be found by nobody.
         note={`${bytes(m.memUsed)} / ${bytes(m.memTotal)}`}
+        keepNote
         warn={m.memPercent >= 90}
         title={`${bytes(m.memUsed)} / ${bytes(m.memTotal)}`}
       />
@@ -340,6 +430,7 @@ export function MetricsBar({ hostID }: { hostID: string }) {
           value={disk.percent.toFixed(0)}
           unit="%"
           note={`${bytes(disk.used)} / ${bytes(disk.size)}`}
+        keepNote
           warn={disk.percent >= 90}
           title={t('{used} / {size} · 사용 가능 {free}', {
             used: bytes(disk.used),

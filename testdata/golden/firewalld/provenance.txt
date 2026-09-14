@@ -1,0 +1,28 @@
+2026-09-14, 컨테이너로 띄운 Rocky Linux 9.8 (Blue Onyx) 과 CentOS Stream 9.
+둘 다 firewalld 가 기본으로 켜져 있고, systemd 는 252 다.
+
+보안 탭의 규칙 칸이 이 두 배포판에서 비어 있다는 제보를 받고 재현하다 받았다.
+탭이 거짓말을 하지는 않았다 — firewalld 를 이름까지 맞게 짚고 켜져 있다고
+말했다. 다만 「무엇이 들어올 수 있나」를 답하는 칸이 `ufw status verbose` 를
+읽는데, 저 기계들에는 ufw 가 없다.
+
+  rocky9-public.txt    firewall-cmd --state · 구분선 `--` · firewall-cmd --list-all
+  centos9-public.txt   같은 모양
+  rocky9-stopped.txt   서비스를 내린 상태
+
+읽히는 것이 있도록 기본 zone 에 몇 가지를 넣고 찍었다. http · https ·
+8443/tcp · 9090-9095/udp, 그리고 rich rule 하나. 주소는 RFC 5737 문서용이다.
+
+  public
+    target: default
+    services: cockpit dhcpv6-client http https ssh
+    ports: 8443/tcp 9090-9095/udp
+
+**꺼졌을 때와 없을 때는 둘 다 stderr 로 나온다.** `firewall-cmd --state` 는
+「not running」을, `--list-all` 은 「FirewallD is not running」을 표준 오류로
+쓴다. 없는 기계에서는 셸이 「command not found」를 같은 곳에 쓴다. 그래서
+앱은 `2>/dev/null` 로 읽는다 — 답한 firewalld 만 표준 출력에 나타난다.
+
+파일에는 `--state` 줄이 남아 있지만 앱은 더 이상 그걸 부르지 않는다. zone 이
+돌아왔다는 것 자체가 돌고 있다는 뜻이라 한 번의 호출로 충분하다. 캡처를
+그대로 두는 쪽이, 왜 두 줄이 필요 없는지 확인할 수 있어서 낫다.

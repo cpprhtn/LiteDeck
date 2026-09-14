@@ -89,16 +89,33 @@ func (a *App) HostEvents(hostID string, rng adapter.EventRange, elevate bool) (E
 	ctx, cancel := context.WithTimeout(context.Background(), pollTimeout)
 	defer cancel()
 
-	args := adapter.JournalArgs(rng.Since(), journalPriority, 0)
-	res, err := a.execMaybeElevated(ctx, conn, hostID, elevate, "journalctl", args...)
+	// Two reads, not one. journalctl cannot be asked for "warning and worse, or
+	// any of these four message ids": `-p` filters the whole read rather than
+	// joining the matches, so the second half has to be fetched on its own and
+	// merged here. See adapter.JournalArgs for what the single-read version did
+	// instead, which was to produce a command every systemd rejects.
+	//
+	// The extra round trip is on a tab somebody opens to read, not on a poll.
+	read := func(args []string) ([]adapter.Event, error) {
+		res, err := a.execMaybeElevated(ctx, conn, hostID, elevate, "journalctl", args...)
+		if err != nil {
+			return nil, err
+		}
+		if !res.OK() && len(res.Stdout) == 0 {
+			return nil, res.Err()
+		}
+		return adapter.ParseJournal(res.Stdout), nil
+	}
+
+	bySeverity, err := read(adapter.JournalArgs(rng.Since(), journalPriority, 0))
 	if err != nil {
 		return EventsView{}, err
 	}
-	if !res.OK() && len(res.Stdout) == 0 {
-		return EventsView{}, res.Err()
-	}
+	// A failure here loses the boot and session lines and keeps the rest. The
+	// severity read is the one the tab cannot do without; this one is context.
+	byKind, _ := read(adapter.JournalKindArgs(rng.Since(), 0))
 
-	view.Events = adapter.ParseJournal(res.Stdout)
+	view.Events = adapter.MergeEvents(bySeverity, byKind)
 	view.Access = EventAccessOK
 	view.Truncated = len(view.Events) >= adapter.JournalMaxLines
 	return view, nil

@@ -25,7 +25,28 @@ import (
 // connection attempt forever.
 
 // PromptTimeout bounds how long a handshake waits for a human.
-const PromptTimeout = 3 * time.Minute
+//
+// Ninety seconds, and the number is not arbitrary: sshd's LoginGraceTime is two
+// minutes by default, and both prompts this bounds — the host key and the
+// password — are answered from inside the handshake. Waiting longer than the
+// server does cannot help, because the server has already hung up.
+//
+// From OpenSSH 9.8 it is worse than a wasted wait. sshd now penalises the
+// source address for exceeding the grace time — `persourcepenalties
+// grace-exceeded:10 … min:15 max:600` — and while that penalty stands every
+// connection from that address is dropped, not just the slow one. Measured on
+// CentOS Stream 9 with OpenSSH 9.9: two dialogs left open past the grace time
+// and the box refused this machine outright, ssh-keyscan included, with an
+// error that says nothing about why.
+//
+// So the timeout gives up first. A dialog nobody answered in ninety seconds is
+// one nobody is sitting in front of, and failing is better than being locked
+// out of the server for the next ten minutes.
+//
+// This also bounds the sudo prompts, which are not inside a handshake. Ninety
+// seconds is the right order there too — a password dialog left that long has
+// been abandoned — so it stays one constant.
+const PromptTimeout = 90 * time.Second
 
 // ErrPromptCancelled reports that the user dismissed a dialog.
 var ErrPromptCancelled = errors.New("app: cancelled by user")

@@ -574,6 +574,14 @@ function RuleTable({
 }) {
   const open = new Set(listening.filter((l) => l.exposed).map((l) => l.port))
   const heard = (r: FirewallRule) => (r.ports ?? []).some((p) => open.has(p))
+  // firewalld names a service — ssh, cockpit — where ufw names a port, and this
+  // reading does not resolve one into the other. With no port to look for there
+  // is no answer to give, and "미사용" would be the wrong one: ssh is in use on
+  // every host this could be read from. So those rows say nothing.
+  //
+  // ufw rows always carry something here, even when it is the word "Anywhere",
+  // so nothing about a Debian or Ubuntu host changes.
+  const known = (r: FirewallRule) => (r.ports ?? []).length > 0
   return (
     <>
       {/* The default policy first: a rule list under `allow (incoming)` is
@@ -587,7 +595,11 @@ function RuleTable({
 
       <div className="security-rules">
         {status.rules.map((r, i) => (
-          <div className="security-rule" key={`${r.to}-${i}`} data-idle={!heard(r) || undefined}>
+          <div
+            className="security-rule"
+            key={`${r.to}-${i}`}
+            data-idle={(known(r) && !heard(r)) || undefined}
+          >
             <span className="mono security-rule-to">{r.to}</span>
             <span className="small">{r.action}</span>
             <span className="muted small">{r.from}</span>
@@ -596,7 +608,7 @@ function RuleTable({
               {r.v4 && r.v6 ? ' v4·v6' : r.v6 ? ' v6' : ' v4'}
             </span>
             <span className="small security-heard">
-              {heard(r) ? t('사용 중') : t('미사용')}
+              {known(r) ? (heard(r) ? t('사용 중') : t('미사용')) : ''}
             </span>
           </div>
         ))}

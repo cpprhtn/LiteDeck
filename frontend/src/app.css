@@ -2006,33 +2006,51 @@ button.danger {
    three somebody actually scans for: is it busy, is it out of memory, is it
    full.
 
-   Keyed on the header's own width, not the window's. A media query got this
-   wrong in a way that only showed on screenshots: with the rail open the header
-   is 248px narrower than the window, so at 1440px the breakpoints all said
-   "plenty of room" while 스왑 was being cut in half at the right edge. */
-/* Detail goes before whole tiles do.
-   The note ("/ 7.7G", "팬 40%") and the sparkline are the widest parts of a
-   tile and the least of its meaning, so they are shed first. Dropping a tile
-   whole was the visible fault: at 980px the GPU panel vanished from a machine
-   that has a GPU, which reads as "no card" rather than as "no room". */
-@container head (max-width: 1250px) {
-  .metric-note {
-    display: none;
-  }
+   Driven by measurement, not by width. These used to be container queries on
+   the header — hide the notes under 1250px, the sparklines under 1100px — and
+   the trouble with a width is that it says nothing about what has to fit inside
+   it. The same header holds four tiles in English and seven in Korean, where
+   「시스템 부하」 and 「가동 28일 19시간」 are several times the width of "Load"
+   and "Up 28d 19h". Add a GPU and two "357G / 457G" notes and the row runs off
+   the end of a 1512px window — well inside every breakpoint that was meant to
+   prevent it, which is how it was reported.
+
+   So MetricsBar renders, measures, and sets data-shed to the number of things
+   it had to drop. See useShed for why the walk only goes one way.
+
+   Detail goes before whole tiles do. The note and the sparkline are the widest
+   parts of a tile and the least of its meaning, so they are shed first.
+   Dropping a tile whole was the visible fault the other way: the GPU panel
+   vanished from a machine that has a GPU, which reads as "no card" rather than
+   as "no room". */
+/* The ladder, widest-and-least-meaningful first.
+   1. the sparklines
+   2. the third-rank tiles, and the notes that are decoration
+   3. the second-rank tiles, and what is left of the notes
+
+   The sparkline goes before the note now, which is the other way round from how
+   this started. The two notes that survive are memory's and disk's, because on
+   those tiles the percentage alone is not the answer: 13% of 8 GB and 13% of
+   64 GB are different servers, and the question somebody has about a disk is
+   how much is left, in gigabytes. A core count or a fan speed is a detail and
+   goes with the rest. */
+.metrics-bar[data-shed] .metric .spark,
+.metrics-bar[data-shed] .metric svg {
+  display: none;
 }
-@container head (max-width: 1100px) {
-  .metric .spark,
-  .metric svg {
-    display: none;
-  }
-  [data-p='3'] {
-    display: none;
-  }
+.metrics-bar[data-shed='2'] .metric:not([data-keep-note]) .metric-note,
+.metrics-bar[data-shed='3'] .metric:not([data-keep-note]) .metric-note {
+  display: none;
 }
-@container head (max-width: 900px) {
-  [data-p='2'] {
-    display: none;
-  }
+.metrics-bar[data-shed='2'] [data-p='3'],
+.metrics-bar[data-shed='3'] [data-p='3'] {
+  display: none;
+}
+.metrics-bar[data-shed='3'] .metric-note {
+  display: none;
+}
+.metrics-bar[data-shed='3'] [data-p='2'] {
+  display: none;
 }
 .metric-label {
   font-size: var(--text-xs);
@@ -2059,16 +2077,6 @@ button.danger {
   color: var(--fg-muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-/* The absolute figures go first when the bar runs out of room.
-   The summary bar's job is the glance, and a percentage answers that on its
-   own — 62G is the number you read, 7% is the one you see. Anybody who wants
-   the bytes on a narrow window has the monitoring tab, which has had them all
-   along. */
-@media (max-width: 1180px) {
-  .metric-note {
-    display: none;
-  }
 }
 .metric[data-warn] .metric-value {
   color: var(--danger);
