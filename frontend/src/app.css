@@ -2337,9 +2337,15 @@ button.danger {
 }
 /* The snippet is long and must stay copyable in one piece, so it wraps rather
    than scrolling out of reach. */
+/* The snippet is two commands, and one of them carries a 64-character token.
+   `break-all` folded that token wherever the box ended — usually straight after
+   the `=` — which reads as a line break in a place a shell would not accept
+   one. It is not one, and the copy button never had it, but somebody checking
+   the line by eye cannot tell that. Real newlines only, and scroll for the rest. */
 .mcp-snippet {
-  white-space: pre-wrap;
-  word-break: break-all;
+  display: block;
+  white-space: pre;
+  overflow-x: auto;
 }
 .mcp-row {
   display: flex;

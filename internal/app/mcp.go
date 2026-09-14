@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"net"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -241,6 +242,37 @@ func clipArg(s string) string {
 	return s
 }
 
+// codexSnippet is the two lines that register this app with Codex.
+//
+// # Why there is an environment variable at all
+//
+// `--bearer-token-env-var` takes the variable's *name*, not its value: Codex
+// reads the variable when it connects, so the token never lands in its config
+// file. There is no flag that takes the token directly, so the line that sets
+// the variable has to come first — and that line is shell syntax, which is
+// where the platforms part company.
+//
+// # Why goos decides the first line
+//
+// `export` is bash. On Windows it is not a command at all, so the snippet this
+// used to hand out could not work on the machine it was copied from: Codex
+// would register and then fail to authenticate, which reads as our bug rather
+// than as a snippet for the wrong shell.
+//
+// PowerShell rather than cmd for the Windows form. `set NAME=value` works in
+// cmd and does not in PowerShell, while `$env:NAME` works in PowerShell and not
+// in cmd; PowerShell is what Windows opens by default from Terminal and what
+// Codex's own documentation shows. The cmd form is in docs/mcp.md for whoever
+// wants it.
+func codexSnippet(token, url, goos string) string {
+	set := fmt.Sprintf("export LITEDECK_MCP_TOKEN=%q", token)
+	if goos == "windows" {
+		set = fmt.Sprintf("$env:LITEDECK_MCP_TOKEN = %q", token)
+	}
+	return set + fmt.Sprintf(
+		"\ncodex mcp add litedeck --url %s --bearer-token-env-var LITEDECK_MCP_TOKEN", url)
+}
+
 /* ------------------------------------------------------------- bindings */
 
 // MCPState reports the integration's current state.
@@ -287,12 +319,7 @@ func (a *App) MCPState() MCPStatus {
 		out.Snippet = fmt.Sprintf(
 			"claude mcp add --transport http litedeck %s --header \"Authorization: Bearer %s\"",
 			out.URL, out.Token)
-		// Codex reads the token from the environment and wants the variable's
-		// name, not its value. Handing it the header form produces a server that
-		// registers and then fails to authenticate, which reads as our bug.
-		out.CodexSnippet = fmt.Sprintf(
-			"export LITEDECK_MCP_TOKEN=%s\ncodex mcp add litedeck --url %s --bearer-token-env-var LITEDECK_MCP_TOKEN",
-			out.Token, out.URL)
+		out.CodexSnippet = codexSnippet(out.Token, out.URL, runtime.GOOS)
 	}
 	return out
 }

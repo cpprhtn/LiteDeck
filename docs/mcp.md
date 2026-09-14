@@ -107,10 +107,27 @@ claude mcp add --transport http litedeck http://127.0.0.1:<포트>/mcp \
   --header "Authorization: Bearer <토큰>"
 
 # Codex CLI — 토큰 값이 아니라 환경변수 이름을 넘깁니다
-export LITEDECK_MCP_TOKEN=<토큰>
+export LITEDECK_MCP_TOKEN="<토큰>"
 codex mcp add litedeck --url http://127.0.0.1:<포트>/mcp \
   --bearer-token-env-var LITEDECK_MCP_TOKEN
 ```
+
+Windows에서는 첫 줄이 셸에 따라 다릅니다. `export`는 bash 문법이라 PowerShell에서도
+cmd에서도 동작하지 않습니다. 앱이 주는 스니펫은 PowerShell 문법으로 나옵니다.
+
+```powershell
+# PowerShell
+$env:LITEDECK_MCP_TOKEN = "<토큰>"
+```
+
+```bat
+:: 명령 프롬프트(cmd)
+set LITEDECK_MCP_TOKEN=<토큰>
+```
+
+> 붙여넣은 뒤 메모장에서 첫 줄이 `=` 에서 끊겨 보인다면 자동 줄 바꿈입니다.
+> 토큰은 64자 16진수 한 덩어리라 그 안에 줄바꿈이 들어갈 자리가 없습니다.
+> 서식 메뉴의 「자동 줄 바꿈」을 끄면 한 줄로 보입니다.
 
 > [!NOTE]
 > **검증 상태를 구분해서 적습니다.**

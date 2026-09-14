@@ -1265,3 +1265,40 @@ func TestSnapshotContainersDoNotRestateTheirStatus(t *testing.T) {
 		t.Error("exitCode restates what status already said")
 	}
 }
+
+// `export` is bash. On Windows it is not a command, so the snippet the app used
+// to hand out could not work on the machine it was copied from — Codex would
+// register and then fail to authenticate, which reads as this app's bug.
+func TestCodexSnippetUsesTheHostShell(t *testing.T) {
+	const tok = "0d4f0d4f0d4f0d4f0d4f0d4f0d4f0d4f0d4f0d4f0d4f0d4f0d4f0d4f0d4f0d4f"
+	const url = "http://127.0.0.1:8765/mcp"
+
+	posix := codexSnippet(tok, url, "darwin")
+	if !strings.HasPrefix(posix, `export LITEDECK_MCP_TOKEN="`+tok+`"`) {
+		t.Errorf("posix:\n%s", posix)
+	}
+
+	win := codexSnippet(tok, url, "windows")
+	if strings.Contains(win, "export ") {
+		t.Errorf("hands bash syntax to a Windows shell:\n%s", win)
+	}
+	if !strings.HasPrefix(win, `$env:LITEDECK_MCP_TOKEN = "`+tok+`"`) {
+		t.Errorf("windows:\n%s", win)
+	}
+
+	for name, s := range map[string]string{"posix": posix, "windows": win} {
+		// Codex wants the variable's name, never its value: handing it the
+		// value produces a server that registers and then cannot authenticate.
+		if !strings.HasSuffix(s, "--bearer-token-env-var LITEDECK_MCP_TOKEN") {
+			t.Errorf("%s does not end by naming the variable:\n%s", name, s)
+		}
+		if strings.Count(s, "\n") != 1 {
+			t.Errorf("%s has %d newlines, want exactly 1 — the token is 64 hex "+
+				"characters and nothing may break it across lines",
+				name, strings.Count(s, "\n"))
+		}
+		if !strings.Contains(s, url) {
+			t.Errorf("%s lost the url", name)
+		}
+	}
+}
