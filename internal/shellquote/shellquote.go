@@ -79,6 +79,15 @@ func Join(args ...string) (string, error) {
 // are not in the safe set, so non-ASCII arguments get quoted — correct, if
 // conservative, since a locale-dependent shell could otherwise reinterpret them.
 func isSafe(s string) bool {
+	// A leading = is not safe even though = itself is. zsh's EQUALS option is on
+	// by default and rewrites a word starting with = to the path of the command
+	// named after it, so a bare `=ls` reaches the server as `/bin/ls`. Measured
+	// in zsh 5.9. It only bites in first position, which is why this is a
+	// prefix rule rather than a character removed from safePunct — quoting
+	// every `--opt=value` would make the Command Log unreadable for nothing.
+	if strings.HasPrefix(s, "=") {
+		return false
+	}
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		switch {

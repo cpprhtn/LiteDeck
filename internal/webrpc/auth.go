@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -95,17 +96,35 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(loginPage("")))
 	case http.MethodPost:
+		// Same Origin rule as /rpc and /ws. Without it any page on the network
+		// can POST this form from a visitor's browser and use them as a guessing
+		// engine against a box they can reach and the attacker cannot.
+		if !originOK(r) {
+			http.Error(w, "forbidden origin", http.StatusForbidden)
+			return
+		}
+		who := clientAddr(r)
+		if !s.logins.allow(who, time.Now()) {
+			w.Header().Set("Retry-After", strconv.Itoa(int(loginWindow/time.Second)))
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(loginPage(
+				"잠시 뒤에 다시 시도하세요 · Too many attempts, try again shortly")))
+			return
+		}
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "bad form", http.StatusBadRequest)
 			return
 		}
 		got := r.PostFormValue("password")
 		if subtle.ConstantTimeCompare([]byte(got), []byte(s.password)) != 1 {
+			s.logins.fail(who, time.Now())
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = w.Write([]byte(loginPage("비밀번호가 올바르지 않습니다 · Wrong password")))
 			return
 		}
+		s.logins.succeed(who)
 		id, err := s.sessions.create()
 		if err != nil {
 			http.Error(w, "session error", http.StatusInternalServerError)

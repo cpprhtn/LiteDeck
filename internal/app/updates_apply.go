@@ -102,6 +102,12 @@ func (a *App) setUpdateState(s UpdateState) {
 // updateEventName. A download that reported its result only at the end would
 // leave the button dead for however long the network takes.
 func (a *App) DownloadUpdate() error {
+	if a.headless {
+		// The asset this would fetch is the desktop build — a binary that needs
+		// a webview and is not what is running here. Swapping it in would take
+		// the server down and leave something that cannot start.
+		return i18n.Errorf("서버 모드에서는 앱을 스스로 업데이트하지 않습니다 — 패키지나 바이너리를 교체하세요")
+	}
 	a.installer.mu.Lock()
 	if a.installer.busy {
 		a.installer.mu.Unlock()
@@ -261,6 +267,12 @@ func (a *App) download(ctx context.Context, url, path string) (string, error) {
 // new one in, starts it, and removes the leftovers. If anything fails before
 // the move, the old copy is still there and untouched.
 func (a *App) ApplyUpdate() error {
+	if a.headless {
+		// The asset this would fetch is the desktop build — a binary that needs
+		// a webview and is not what is running here. Swapping it in would take
+		// the server down and leave something that cannot start.
+		return i18n.Errorf("서버 모드에서는 앱을 스스로 업데이트하지 않습니다 — 패키지나 바이너리를 교체하세요")
+	}
 	a.installer.mu.Lock()
 	staged := a.installer.staged
 	a.installer.mu.Unlock()

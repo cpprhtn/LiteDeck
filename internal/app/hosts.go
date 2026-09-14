@@ -62,6 +62,11 @@ type ImportSSHConfigResult struct {
 // Entries the user has already edited are left alone: a re-import must not
 // silently undo their changes. Only rows this importer created are refreshed.
 func (a *App) ImportSSHConfig() (ImportSSHConfigResult, error) {
+	if a.headless {
+		// Reads ~/.ssh/config of whoever runs the process. In server mode that
+		// is the server's account, not the person at the browser.
+		return ImportSSHConfigResult{}, i18n.Errorf("서버 모드에서는 서버의 ~/.ssh/config 를 읽지 않습니다")
+	}
 	var res ImportSSHConfigResult
 
 	path, err := config.DefaultSSHConfigPath()

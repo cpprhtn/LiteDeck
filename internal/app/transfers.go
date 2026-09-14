@@ -276,7 +276,18 @@ func (w *progressWriter) Write(p []byte) (int, error) {
 }
 
 // StartUpload queues local files for upload into remoteDir (§4.2).
+//
+// Refused in server mode. "Local" here means the machine the app is running on,
+// which in server mode is the server box rather than the person's laptop — so
+// over /rpc this reads the server's own filesystem and puts it on a remote
+// host. A web session already holds every SSH host, but not the server
+// process's own disk, and where that process runs as root or a dedicated
+// account this is a real escalation. The browser uploads through /upload
+// instead, which carries the bytes rather than naming a path.
 func (a *App) StartUpload(hostID string, localPaths []string, remoteDir string) ([]string, error) {
+	if a.headless {
+		return nil, i18n.Errorf("서버 모드에서는 서버의 로컬 파일을 올릴 수 없습니다 — 브라우저에서 업로드하세요")
+	}
 	dir, err := CleanRemotePath(remoteDir)
 	if err != nil {
 		return nil, err
@@ -400,6 +411,13 @@ func (a *App) uploadOne(ctx context.Context, j *transferJob) error {
 
 // StartDownload queues remote files for download into localDir (§4.2).
 func (a *App) StartDownload(hostID string, remotePaths []string, localDir string) ([]string, error) {
+	if a.headless {
+		// The mirror of StartUpload: this writes remote files to an arbitrary
+		// path on the machine running the app, which in server mode is the
+		// server box. The desktop chooser (PickLocalDir) already refuses there,
+		// so nothing legitimate reaches this.
+		return nil, i18n.Errorf("서버 모드에서는 서버의 로컬 디스크로 받을 수 없습니다 — 브라우저에서 내려받으세요")
+	}
 	if localDir == "" {
 		return nil, errors.New("app: no local directory chosen")
 	}

@@ -20,6 +20,22 @@ type Handler = (payload: unknown) => void
 // auth there is no token and this stays empty.
 const authToken = new URLSearchParams(window.location.search).get('token') ?? ''
 
+// Taken out of the address bar once it has been read. The token opens SSH
+// sessions to every saved host, and a query string lands in browser history, in
+// the referrer of anything the page links to, and in the title of a bookmark
+// somebody makes. It stays in memory for the life of the tab, which is all it
+// is needed for; a reload without the query simply asks again.
+if (authToken) {
+  try {
+    const clean = new URL(window.location.href)
+    clean.searchParams.delete('token')
+    window.history.replaceState(null, '', clean.toString())
+  } catch {
+    // A browser that will not rewrite its own history is not a reason to fail
+    // to start; the token still works.
+  }
+}
+
 function authHeaders(): Record<string, string> {
   return authToken ? { Authorization: `Bearer ${authToken}` } : {}
 }

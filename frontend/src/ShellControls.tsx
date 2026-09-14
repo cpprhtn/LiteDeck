@@ -10,6 +10,7 @@ import {
   type UpdateState,
 } from './ipc'
 import { LANGUAGES, getLanguage, setLanguage, t, type Language } from './i18n'
+import { isWebMode } from './webTransport'
 
 // The version, the MCP button, and the language picker — the three shell
 // controls that live in the rail footer on the desktop. Extracted so the
@@ -54,6 +55,10 @@ export function ShellControls({
   }
 
   useEffect(() => {
+    // Nothing to update in server mode: the asset is the desktop build, and Go
+    // refuses to install it there. A button that cannot work is worse than no
+    // button — see DownloadUpdate.
+    if (isWebMode()) return
     const timer = setTimeout(check, FIRST_CHECK_MS)
     // The installer lives in Go and outlives this component, so its state is
     // asked for on mount as well as subscribed to.
@@ -112,6 +117,7 @@ export function ShellControls({
       <span className="muted small mono" title={t('버그 리포트에 이 버전을 함께 적어주세요')}>
         LiteDeck {version ?? '—'}
       </span>
+      {!isWebMode() && (
       <button
         className={primary ? 'small-btn update-ready' : 'ghost small-btn'}
         disabled={!onClick}
@@ -131,6 +137,7 @@ export function ShellControls({
         </span>
         {label}
       </button>
+      )}
       <span className="spacer" />
       <button className="ghost small-btn" onClick={onOpenMCP} title={t('MCP 연동 설정')}>
         MCP

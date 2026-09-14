@@ -278,6 +278,11 @@ const wslStuckSeconds = 180
 // also the thing warming the machine up, so waiting for it is both the safe
 // move and the useful one.
 func WSLProbeScript(distro string, seconds int) string {
+	// The name is quoted into a PowerShell single-quoted string, where the only
+	// escape is a doubled quote. plausibleDistro already refuses a name with one
+	// and pickShell only ever passes a name the server itself reported — but the
+	// defence should not live two files away from the interpolation.
+	distro = strings.ReplaceAll(distro, "'", "''")
 	return strings.Join([]string{
 		`$ErrorActionPreference = 'SilentlyContinue'`,
 		`function Probes { @(Get-CimInstance Win32_Process -Filter "Name='wsl.exe'" |`,
