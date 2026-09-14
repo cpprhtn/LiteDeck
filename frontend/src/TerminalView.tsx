@@ -24,6 +24,7 @@ import { LineWatcher } from './lineWatcher'
 import { requestReveal } from './openFiles'
 import { getPlatform } from './platform'
 import { t } from './i18n'
+import { onThemeChange } from './theme'
 import { isWebMode } from './webTransport'
 
 // The built-in terminal (§4.6).
@@ -138,15 +139,17 @@ function TerminalPane({
       macOptionIsMeta: false,
     })
     // The palette is read once at construction, so a terminal opened in
-    // daylight stayed light after the OS switched to dark while CodeMirror and
-    // the rest of the UI changed underneath it. The tokens are CSS variables;
-    // when the scheme flips they resolve to new values and the terminal has to
-    // be told.
-    const scheme = window.matchMedia?.('(prefers-color-scheme: dark)')
-    const onScheme = () => {
+    // daylight stayed light after the theme switched to dark while CodeMirror
+    // and the rest of the UI changed underneath it. The tokens are CSS
+    // variables; when the theme flips they resolve to new values and the
+    // terminal has to be told.
+    //
+    // Through theme.ts rather than matchMedia, because the OS is no longer the
+    // only thing that can change the answer — the picker in the rail footer can
+    // too, and a media query never hears about that.
+    const offTheme = onThemeChange(() => {
       term.options.theme = themeFromTokens()
-    }
-    scheme?.addEventListener('change', onScheme)
+    })
 
     const fit = new FitAddon()
     term.loadAddon(fit)
@@ -289,7 +292,7 @@ function TerminalPane({
       observer.disconnect()
       if (resizeTimer) clearTimeout(resizeTimer)
       disposeInput.dispose()
-      scheme?.removeEventListener('change', onScheme)
+      offTheme()
       offData()
       offExit()
       term.dispose()

@@ -27,6 +27,14 @@ type Settings struct {
 	// otherwise — an explicit choice is the only reason to write this file.
 	Language string `json:"language,omitempty"`
 
+	// Theme is "light", "dark", or empty for "follow the OS".
+	//
+	// Empty is the default and stays reachable, because it is the only setting
+	// that keeps being right: a desktop that switches at sunset should take the
+	// app with it. Stored next to Language because it is the same kind of
+	// thing — a choice about this window that nothing else records.
+	Theme string `json:"theme,omitempty"`
+
 	// MCP holds the AI integration's settings. Off until somebody turns it on:
 	// an endpoint that speaks for every connected server is not something to
 	// open because the app was installed.
@@ -235,6 +243,15 @@ func (s *SettingsStore) SetShellHistory(hostID string, allowed bool) error {
 func (s *SettingsStore) SetLanguage(tag string) error {
 	s.mu.Lock()
 	s.settings.Language = tag
+	s.mu.Unlock()
+	return s.save()
+}
+
+// SetTheme records an explicit choice. Empty means "follow the OS" and is a
+// legitimate value, for the same reason it is for the language.
+func (s *SettingsStore) SetTheme(theme string) error {
+	s.mu.Lock()
+	s.settings.Theme = theme
 	s.mu.Unlock()
 	return s.save()
 }

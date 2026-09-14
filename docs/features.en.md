@@ -26,6 +26,7 @@
 | **MCP** | Claude Code and Claude Desktop read and change your servers through this app. Per-server opt-in, changes are approved, **and can be undone** |
 | **Connecting** | Password, key, agent, 2FA. Import from `~/.ssh/config`. One **ProxyJump** hop |
 | **Language** | English and Korean. Uses whichever you last chose, or your OS language if you never have. Switch with `KO`/`EN` at the bottom of the sidebar |
+| **Theme** | Light and dark. Starts on whichever you last picked, or on the OS setting if you never have. Changed below the sidebar |
 
 ## The shell
 

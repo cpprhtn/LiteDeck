@@ -5,6 +5,35 @@
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <title>LiteDeck</title>
+    <!--
+      The theme, decided before the first paint.
+
+      Inline and in the head on purpose: this runs before the stylesheet is
+      applied, so the window opens in the right colours. A module script cannot
+      do that — it is deferred by definition, which means one frame of white on
+      a dark desktop, and the app opens often enough for that to be the thing
+      people remember about it.
+
+      The durable record is settings.json, which Go owns. localStorage is a copy
+      kept here only because it is the one store readable synchronously at this
+      moment; theme.ts reconciles the two on the first bootstrap, and Go wins.
+      An empty or unreadable value means "follow the OS", which is the default
+      and the answer on a fresh install.
+    -->
+    <script>
+      ;(function () {
+        var choice = ''
+        try {
+          choice = localStorage.getItem('litedeck.theme') || ''
+        } catch (e) {
+          /* a webview with site data blocked still gets to follow the OS */
+        }
+        if (choice !== 'light' && choice !== 'dark') {
+          choice = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        }
+        document.documentElement.dataset.theme = choice
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

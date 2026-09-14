@@ -345,3 +345,31 @@ func (a *App) SetLanguage(tag string) ActionResult {
 	}
 	return okResult()
 }
+
+// SetTheme records the light/dark choice. "" is "follow the OS".
+//
+// Nothing in Go draws anything, so this only stores. The frontend has already
+// applied it by the time this is called — a round trip is not something to make
+// somebody watch before the colours change.
+//
+// In server mode this settings.json is shared, so one person's choice becomes
+// what the next browser opens with. That is what already happens with the
+// language, and it is the mild end of it: the theme is applied per browser the
+// moment it is picked, so the shared write only moves the starting point.
+func (a *App) SetTheme(theme string) ActionResult {
+	switch theme {
+	case "", "light", "dark":
+	default:
+		// Not an error worth showing: the only caller is a picker with three
+		// positions. Anything else is a stale frontend, and "follow the OS" is
+		// the safe reading of a value this build does not know.
+		theme = ""
+	}
+	if a.settings == nil {
+		return okResult()
+	}
+	if err := a.settings.SetTheme(theme); err != nil {
+		return failResult(err)
+	}
+	return okResult()
+}

@@ -234,7 +234,11 @@ type Bootstrap struct {
 	// SystemLanguage is what the environment says, for the frontend to fall back
 	// on when the webview has nothing useful to report.
 	SystemLanguage string `json:"systemLanguage"`
-	StartupError   string `json:"startupError,omitempty"`
+	// Theme is "light", "dark", or "" for "follow the OS". The frontend has
+	// already painted from its own copy by now; this is the authoritative value
+	// it reconciles against.
+	Theme        string `json:"theme"`
+	StartupError string `json:"startupError,omitempty"`
 	// SelfMode tells the UI this is a "this server" instance: one auto-connected
 	// host, so the sidebar is redundant.
 	SelfMode bool `json:"selfMode,omitempty"`
@@ -255,6 +259,7 @@ func (a *App) Bootstrap() Bootstrap {
 	}
 	if a.settings != nil {
 		b.Language = a.settings.Get().Language
+		b.Theme = a.settings.Get().Theme
 	}
 	if a.hosts != nil {
 		b.HostsPath = a.hosts.Path()

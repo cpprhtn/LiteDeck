@@ -4,12 +4,14 @@ import {
   CheckForUpdate,
   DownloadUpdate,
   SetLanguage,
+  SetTheme,
   UpdateStatus,
   on,
   type UpdateInfo,
   type UpdateState,
 } from './ipc'
 import { LANGUAGES, getLanguage, setLanguage, t, type Language } from './i18n'
+import { THEMES, setTheme, useTheme, type Theme } from './theme'
 import { isWebMode } from './webTransport'
 
 // The version, the MCP button, and the language picker — the three shell
@@ -46,6 +48,7 @@ export function ShellControls({
   version?: string
   onOpenMCP: () => void
 }) {
+  const theme = useTheme()
   const [update, setUpdate] = useState<UpdateInfo | null>(null)
   const [checking, setChecking] = useState(false)
   const [install, setInstall] = useState<UpdateState>({ stage: 'idle', percent: 0 })
@@ -162,6 +165,30 @@ export function ShellControls({
       <button className="ghost small-btn" onClick={onOpenMCP} title={t('MCP 연동 설정')}>
         MCP
       </button>
+      {/* Two positions. Before the first pick there is a third state — nothing
+          stored — but it has no position here: the control shows what the theme
+          resolved to, which on a fresh install is whatever the desktop is set
+          to. Picking either half pins it.
+
+          Applied before it is stored: the colours change on the same frame as
+          the click, and Go hears about it afterwards. */}
+      <select
+        className="lang-select"
+        aria-label={t('테마')}
+        title={t('테마')}
+        value={theme}
+        onChange={(e) => {
+          const next = e.target.value as Theme
+          setTheme(next)
+          void SetTheme(next).catch(() => {})
+        }}
+      >
+        {THEMES.map((th) => (
+          <option key={th.id} value={th.id}>
+            {t(th.label)}
+          </option>
+        ))}
+      </select>
       {/* Each language is named in its own script: somebody who cannot read the
           current UI is exactly the person looking for this control. */}
       <select

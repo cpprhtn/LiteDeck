@@ -753,4 +753,7 @@ export const en: Record<string, string> = {
   '비밀번호 대화상자를 닫으면 잠금은 그대로입니다': 'Dismissing the password dialog leaves the lock as it was',
   '{name} 이(가) 같은 서버를 같은 계정으로 이미 가리킵니다. 둘 다 두어도 됩니다.': '{name} already points at this server with this account. Keeping both is fine.',
   '취소해도 서버 내용이 기준으로 바뀝니다. 다음 저장은 이 diff 없이 서버 내용을 덮어씁니다.': 'Cancelling still makes the server\'s version the baseline. The next save replaces it without showing this diff.',
+  '테마': 'Theme',
+  '라이트': 'Light',
+  '다크': 'Dark',
 }
