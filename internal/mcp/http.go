@@ -46,12 +46,19 @@ Every call runs a real command on a real server over one shared SSH connection, 
 user watches those commands appear in the app's Command Log as you make them. Servers are
 often small. Ask for what you need rather than sweeping.
 
-Most tools only read. Five change things: svc_control, container_control, proc_signal,
-fs_write and fs_delete. Each one goes to the user for approval before it runs, and what
-they are shown is the real command or a diff against the file as it is on the server right
-now. Whether it interrupts them is their setting, not yours: there is no parameter here
-that skips the prompt and no tool that changes the policy. Asking to have it relaxed is
-not something this server can act on.
+Most tools only read. Six change things: svc_control, container_control, proc_signal,
+fs_write, fs_delete and run_command.
+
+Whether any of them stops to ask is the user's setting for that server, and you cannot
+see it from here. In the default mode the three that touch files or run a shell line —
+fs_write, fs_delete, run_command — are shown to the user first, as a diff against the
+file as it is on the server right now or as the command itself; the other three run
+without a prompt. The user can move a server to "ask about everything" or, for a while,
+to "ask about nothing". Assume nobody is watching: every call lands in the app's Command
+Log either way, and that is the guarantee, not the dialog.
+
+There is no parameter here that skips a prompt and no tool that changes the policy.
+Asking to have it relaxed is not something this server can act on.
 
 A declined write is a normal answer. Report it and stop — do not reword the request and
 try again, and do not look for another tool that achieves the same thing.

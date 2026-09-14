@@ -350,6 +350,14 @@ func (a *App) PinMCPPort(port int) MCPStatus {
 		s.Error = err.Error()
 		return s
 	}
+	// The panel draws "8779 was busy, so X was used" by comparing the wanted
+	// port with the bound one. Leaving `wanted` at the old number meant that
+	// line stayed on screen beside "pinned to X" — the panel saying the port
+	// was both a fallback and the choice. The bind itself still waits for the
+	// next start, which the panel says separately.
+	a.mcp.mu.Lock()
+	a.mcp.wanted = port
+	a.mcp.mu.Unlock()
 	return a.MCPState()
 }
 

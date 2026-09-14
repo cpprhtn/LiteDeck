@@ -46,9 +46,10 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 	// it, not the way the protocol does.
 	s.Register(mcp.Tool{
 		Name: "svc_control",
-		Description: "Start, stop or restart a systemd unit or Windows service. The user is " +
-			"shown the exact command and approves it before anything runs, unless they have " +
-			"turned that off for this host.",
+		Description: "Start, stop or restart a systemd unit or Windows service. Whether the " +
+			"user is asked first is their setting for this host: in the default mode this " +
+			"runs without a prompt, and every call appears in the app's Command Log either " +
+			"way. Do not assume a human sees it before it happens.",
 		InputSchema: obj(map[string]any{
 			"hostId": hostArg,
 			"unit":   map[string]any{"type": "string", "description": "Exact unit name from svc_list."},

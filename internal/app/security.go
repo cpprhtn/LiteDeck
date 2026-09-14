@@ -484,6 +484,18 @@ func (a *App) HostSecurity(hostID string, elevate, force bool) (SecurityView, er
 		view.Dropped += c.Packets
 	}
 	view.DroppedSince = a.dropped.since(hostID, gen, view.Dropped)
+	// The unlocked read is cached too. It was the one path that returned
+	// without a put, so the entry the cache keeps an `elevated` flag for could
+	// never be hit: after turning the lock, every tab switch re-ran the free
+	// script, the attacker scan, the 24-hour failure bucket and the whole
+	// elevated script again. The commit that added this cache was fixing
+	// exactly that, and it stopped at the lock.
+	//
+	// DroppedSince is the reason to be careful here rather than a reason not to
+	// cache: it is a delta against the previous reading, so re-reading on every
+	// tab switch made it "since the last time you looked at this tab" instead
+	// of "since you last looked at this server".
+	a.security.put(hostID, gen, elevate, view)
 	return view, nil
 }
 

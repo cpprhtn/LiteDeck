@@ -91,11 +91,21 @@ func TestHandshakeOverHTTP(t *testing.T) {
 	// write tools while five of them were on the wire, so somebody auditing
 	// their setup by reading the handshake was told the wrong thing.
 	instr := init.Result.Instructions
-	for _, want := range []string{"fs_delete", "approval"} {
+	for _, want := range []string{"fs_delete", "run_command", "Command Log"} {
 		if !strings.Contains(instr, want) {
 			t.Errorf("instructions never mention %q — a model reading them would "+
-				"not know writes exist or that they are gated", want)
+				"not know writes exist or what actually records them", want)
 		}
+	}
+	// The gate is named, and named honestly: three of the six run without a
+	// prompt in the default mode, so "each one is approved first" was a promise
+	// the server does not keep. What it does keep is the log.
+	if !strings.Contains(instr, "default mode") {
+		t.Error("instructions do not say that whether a write is shown first depends on the mode")
+	}
+	if strings.Contains(instr, "Each one goes to the user for approval") {
+		t.Error("instructions still promise a prompt for every write; three of six have none " +
+			"in the default mode")
 	}
 	// The specific sentence that was wrong, and any obvious rewording of it.
 	for _, gone := range []string{
