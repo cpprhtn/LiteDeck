@@ -81,7 +81,7 @@ func (a *App) HostLogins(hostID string, elevate bool) (LoginsView, error) {
 
 	view := LoginsView{Logins: []adapter.Login{}, Window: authWindow}
 	last, auth := splitLoginsOutput(string(res.Stdout))
-	view.Logins = adapter.ParseLast(last)
+	view.Logins = adapter.ParseLast(last, a.serverLocation(hostID))
 
 	switch {
 	case !info.HasSystemd:

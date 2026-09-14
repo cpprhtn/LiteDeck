@@ -63,7 +63,16 @@ var SecurityUnits = []string{
 // something to separate the sections an absent ufw.conf would look like an
 // empty jail.local. `2>/dev/null` because "no such file" is an answer here, not
 // an error, and `:` so a missing file does not make the whole read fail.
-const SecurityScript = `echo '#units'
+// Every script here opens by pinning the locale. pam_env hands a non-interactive
+// exec the machine's LANG, and everything these parse is English — `last -F`'s
+// weekday, ufw's "Status: active", journalctl's month names. On a server
+// installed in another language the parsers match nothing and return empty,
+// which reads on screen as "nobody logged in" and "no attackers": the shape of
+// wrong answer this app is built not to give. Setenv is asked for as well (see
+// sshcore.ExecOpts) but only works where sshd lists the variable in AcceptEnv,
+// so each script says it too.
+const SecurityScript = `LC_ALL=C; export LC_ALL
+echo '#units'
 systemctl show --no-pager -p Id -p LoadState -p UnitFileState -p ActiveState -p SubState ` +
 	"ufw.service nftables.service iptables.service firewalld.service fail2ban.service" + ` 2>/dev/null
 echo '#ufw'
@@ -817,7 +826,8 @@ func ParseNftCounters(out string) []NftCounter {
 //
 // journald filters by identifier so awk only sees sshd, and the counting is
 // done on the server: the point is a dozen rows, not twenty thousand lines.
-const AttackersScript = `journalctl -t sshd -t sshd-session --since '-15 min' --no-pager -q -o cat 2>/dev/null | awk '
+const AttackersScript = `LC_ALL=C; export LC_ALL
+journalctl -t sshd -t sshd-session --since '-15 min' --no-pager -q -o cat 2>/dev/null | awk '
 /Failed password|Invalid user/ {
   for (i = 1; i <= NF; i++) if ($i == "from") { print $(i+1); break }
 }' | sort | uniq -c | sort -rn | head -40
@@ -987,7 +997,18 @@ func (h BanHistory) Repeats() float64 {
 // Unban lines are left out on purpose: this counts what happened, and a ban
 // that has since lifted still happened. Counting both would make the busiest
 // server look like the quietest.
-func ParseBanLog(text string) BanHistory {
+// ParseBanLog reads fail2ban's log.
+//
+// loc is the server's timezone. These stamps are the server's wall clock with
+// no offset on them, so parsing them in the viewer's zone put every ban hours
+// away from when it happened — and the failure chart draws ban marks against
+// the same axis, so the marks and the bars disagreed. Nil falls back to the
+// viewer's zone, which is the old behaviour and right when the server never
+// said.
+func ParseBanLog(text string, loc *time.Location) BanHistory {
+	if loc == nil {
+		loc = time.Local
+	}
 	var h BanHistory
 	seen := map[string]bool{}
 
@@ -1012,7 +1033,7 @@ func ParseBanLog(text string) BanHistory {
 		if i := strings.IndexByte(stamp, ','); i >= 0 {
 			stamp = stamp[:i]
 		}
-		at, err := time.ParseInLocation("2006-01-02 15:04:05", stamp, time.Local)
+		at, err := time.ParseInLocation("2006-01-02 15:04:05", stamp, loc)
 		if err != nil {
 			continue
 		}
@@ -1039,7 +1060,8 @@ type FailureBucket struct {
 // holds tens of thousands of lines — on the box this was measured against, over
 // three thousand failures a day. Sending them all to count them here would be
 // sending the haystack to report the number of straws.
-const FailuresScript = `journalctl -t sshd -t sshd-session --since '-24 hours' --no-pager -q -o short-iso 2>/dev/null | awk '
+const FailuresScript = `LC_ALL=C; export LC_ALL
+journalctl -t sshd -t sshd-session --since '-24 hours' --no-pager -q -o short-iso 2>/dev/null | awk '
 /Failed password|Invalid user/ {
   split($1, p, "T")
   split(p[2], h, ":")
@@ -1050,14 +1072,19 @@ END { for (k in n) print k, n[k] }' | sort
 :`
 
 // ParseFailureBuckets reads "2026-09-08 20 931" lines.
-func ParseFailureBuckets(out string) []FailureBucket {
+// ParseFailureBuckets counts failures per hour. loc is the server's timezone;
+// see ParseBanLog for why it matters and why nil is the viewer's.
+func ParseFailureBuckets(out string, loc *time.Location) []FailureBucket {
+	if loc == nil {
+		loc = time.Local
+	}
 	var buckets []FailureBucket
 	for _, line := range strings.Split(out, "\n") {
 		f := strings.Fields(line)
 		if len(f) != 3 {
 			continue
 		}
-		at, err := time.ParseInLocation("2006-01-02 15", f[0]+" "+f[1], time.Local)
+		at, err := time.ParseInLocation("2006-01-02 15", f[0]+" "+f[1], loc)
 		if err != nil {
 			continue
 		}

@@ -8,6 +8,8 @@ import (
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
 	"github.com/cpprhtn/LiteDeck/internal/i18n"
+	"github.com/pkg/sftp"
+	"io"
 )
 
 // The shell's own history file (T-23, 명령 이력 C-1).
@@ -189,10 +191,10 @@ func (a *App) HostShellHistory(hostID string, elevate bool) (ShellHistoryView, e
 	var cmds []adapter.ShellCommand
 	// bash first because it is the default shell nearly everywhere, and its
 	// file is the one that was measured.
-	if text, err := readSmallFile(client, home+"/.bash_history"); err == nil && text != "" {
+	if text, err := readHistoryTail(client, home+"/.bash_history"); err == nil && text != "" {
 		view.File = "~/.bash_history"
 		cmds = adapter.ParseBashHistory(text)
-	} else if text, err := readSmallFile(client, home+"/.zsh_history"); err == nil && text != "" {
+	} else if text, err := readHistoryTail(client, home+"/.zsh_history"); err == nil && text != "" {
 		view.File = "~/.zsh_history"
 		cmds = adapter.ParseZshHistory(text)
 	}
@@ -291,4 +293,45 @@ func anyTimed(cmds []adapter.ShellCommand) bool {
 		}
 	}
 	return false
+}
+
+// maxHistoryBytes is how much of a history file is read.
+//
+// The same 64 KB the update files get, from the other end. A history file is
+// appended to, so the bytes nearest the end are the most recent commands and
+// the ones at the start can be years old — reading the front of an oh-my-zsh
+// `.zsh_history`, routinely one to five megabytes, showed commands from months
+// ago under a heading that says "most recent".
+const maxHistoryBytes = 64 << 10
+
+// readHistoryTail reads the last maxHistoryBytes of a file.
+func readHistoryTail(client *sftp.Client, path string) (string, error) {
+	f, err := client.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		return "", err
+	}
+	if fi.Size() > maxHistoryBytes {
+		if _, err := f.Seek(fi.Size()-maxHistoryBytes, io.SeekStart); err != nil {
+			return "", err
+		}
+	}
+	b, err := io.ReadAll(io.LimitReader(f, maxHistoryBytes))
+	if err != nil && err != io.EOF {
+		return "", err
+	}
+	text := string(b)
+	// The seek lands mid-line. Dropping that fragment costs one command and
+	// avoids showing half of one as if it were whole.
+	if fi.Size() > maxHistoryBytes {
+		if i := strings.IndexByte(text, '\n'); i >= 0 {
+			text = text[i+1:]
+		}
+	}
+	return text, nil
 }

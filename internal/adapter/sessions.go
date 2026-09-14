@@ -81,7 +81,8 @@ func SessionPSArgs() []string {
 // Killing the second ends the connection; killing the third ends sshd for
 // everybody.
 const SelfAncestorsScript = `p=$$; out=""; while [ "$p" -gt 1 ]; do ` +
-	`if [ "$(cat /proc/$p/comm 2>/dev/null)" = "sshd" ]; then out="$out $p"; fi; ` +
+	`c=$(cat /proc/$p/comm 2>/dev/null); ` +
+	`if [ "$c" = "sshd" ] || [ "$c" = "sshd-session" ]; then out="$out $p"; fi; ` +
 	`p=$(awk '{print $4}' /proc/$p/stat 2>/dev/null); done; echo "$out"`
 
 // ParseSelfAncestors reads the ancestor script's output.
@@ -97,14 +98,22 @@ func ParseSelfAncestors(data []byte) map[int]bool {
 
 // sshdSession matches "sshd: alice@pts/0" and "sshd: alice@notty".
 //
+// `sshd-session` as well as `sshd`: OpenSSH 9.8 split the per-session work into
+// a separate binary and the process title went with it, so on Debian 13,
+// Fedora 41+, Ubuntu 25.04+ and Arch every title reads "sshd-session:
+// alice@pts/0". Matching only the old name made the sessions tab come back
+// empty on those servers — not "could not read", which the tab knows how to
+// say, but "nobody is logged in", which is the kind of lie this app is built
+// not to tell.
+//
 // The user name is taken up to the last @ because a login name cannot contain
 // one but the field after it — the terminal — is fixed vocabulary.
-var sshdSession = regexp.MustCompile(`^sshd:\s+(\S+)@(\S+)$`)
+var sshdSession = regexp.MustCompile(`^sshd(?:-session)?:\s+(\S+)@(\S+)$`)
 
 // sshdPriv matches "sshd: alice [priv]", the privileged half of a connection.
 // It is not a session and is never listed, but it is the process that owns the
 // connection, so it matters for the self check.
-var sshdPriv = regexp.MustCompile(`^sshd:\s+(\S+)\s+\[priv\]$`)
+var sshdPriv = regexp.MustCompile(`^sshd(?:-session)?:\s+(\S+)\s+\[priv\]$`)
 
 // ParseSSHSessions builds the session list from ps output.
 //
@@ -176,7 +185,7 @@ func SessionListenerPIDs(data []byte) map[int]bool {
 			continue
 		}
 		args := strings.TrimSpace(strings.Join(fields[4:], " "))
-		if !strings.HasPrefix(args, "sshd:") {
+		if !strings.HasPrefix(args, "sshd:") && !strings.HasPrefix(args, "sshd-session:") {
 			continue
 		}
 		if sshdPriv.MatchString(args) || strings.Contains(args, "[listener]") {

@@ -108,6 +108,29 @@ func (a *App) connGeneration(hostID string) uint64 {
 	return a.mgr.Generation(hostID)
 }
 
+// serverLocation is the timezone the server said it is in.
+//
+// Several sources print the server's wall clock with no offset attached —
+// `last -F`, fail2ban's log, journalctl's short-iso hours. Reading those in the
+// viewer's zone moves every timestamp by the difference between the two, which
+// on a UTC server and a KST desktop is nine hours in the direction that hides
+// recent events. Detection already asks the server for its zone.
+//
+// nil where the server did not say or the name is not one this machine knows,
+// which leaves the parsers on the viewer's zone — the old behaviour, and the
+// only honest fallback.
+func (a *App) serverLocation(hostID string) *time.Location {
+	info, ok := a.detected.get(hostID, a.connGeneration(hostID))
+	if !ok || info.Timezone == "" {
+		return nil
+	}
+	loc, err := time.LoadLocation(info.Timezone)
+	if err != nil {
+		return nil
+	}
+	return loc
+}
+
 func (c *detectCache) forget(id string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -372,6 +395,15 @@ func isPermissionDenied(res *sshcore.Result) bool {
 	for _, marker := range []string{
 		"access denied", "interactive authentication required",
 		"permission denied", "must be root",
+		// EPERM's own text. `kill` and `renice` are shell builtins, so their
+		// refusal comes back as "bash: line 1: kill: (78) - Operation not
+		// permitted" rather than anything systemd would say — and without this
+		// marker the process tab reported the raw error with no "retry as
+		// administrator" beside it, which is the one thing that would have
+		// worked. `not owner` is the same errno on older userlands.
+		"operation not permitted", "not owner",
+		// EACCES from a C library that spells it out.
+		"insufficient privileges",
 	} {
 		if strings.Contains(s, marker) {
 			return true

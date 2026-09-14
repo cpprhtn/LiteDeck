@@ -52,3 +52,51 @@ func TestDigestFirstVisitDoesNotReportHistoryAsNews(t *testing.T) {
 		t.Errorf("an unreadable journal came back with a window of %q", second.Window)
 	}
 }
+
+// The mark has to be planted by the read, not by a button on a strip that a
+// first visit never draws.
+//
+// The only writer used to be that button. So LastSeen stayed zero, First stayed
+// true, the strip returned null on every render, and "since you last looked"
+// never appeared on any host for anybody — the feature could not be reached.
+func TestDigestPlantsItsMarkOnTheFirstRead(t *testing.T) {
+	a := connectedApp(t)
+	a.settings = config.OpenSettings(a.configDir)
+
+	if got := a.settings.Get().LastSeen["fixture"]; got != 0 {
+		t.Fatalf("a fresh settings store already has a mark: %d", got)
+	}
+
+	first, err := a.HostDigest("fixture")
+	if err != nil {
+		t.Fatalf("HostDigest: %v", err)
+	}
+	// The first visit still says nothing: every count would be "since the
+	// journal began" dressed up as news.
+	if !first.First {
+		t.Error("the first visit was not reported as one")
+	}
+	// But the mark is now on disk, which is what the second visit needs.
+	mark := a.settings.Get().LastSeen["fixture"]
+	if mark == 0 {
+		t.Fatal("the first read left no mark — every later visit is a first visit again")
+	}
+
+	// A different connection, so the cache does not answer for it.
+	a.digests = newDigestCache()
+	second, err := a.HostDigest("fixture")
+	if err != nil {
+		t.Fatalf("HostDigest again: %v", err)
+	}
+	if second.First {
+		t.Error("still a first visit after the mark was planted")
+	}
+	if second.Since != mark {
+		t.Errorf("Since = %d, want the planted mark %d", second.Since, mark)
+	}
+	// Reading twice must not move the mark: the window would never cover
+	// anything that happened while the app was closed.
+	if now := a.settings.Get().LastSeen["fixture"]; now != mark {
+		t.Errorf("the mark moved on a later read: %d then %d", mark, now)
+	}
+}

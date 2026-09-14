@@ -418,7 +418,7 @@ func TestSubnetClustersAreFoundOnlyByGrouping(t *testing.T) {
 // status` gives the total and how many are banned right now, and dividing by
 // the second produced 143 on a server whose real figure was about four.
 func TestParseBanLogCountsDistinctAddresses(t *testing.T) {
-	h := ParseBanLog(golden(t, "ubuntu-24.04-fail2ban-bans.txt"))
+	h := ParseBanLog(golden(t, "ubuntu-24.04-fail2ban-bans.txt"), nil)
 	if len(h.Bans) != 10 {
 		t.Fatalf("밴 %d건, 기대 10건 — Unban은 빼야 한다", len(h.Bans))
 	}
@@ -440,7 +440,7 @@ func TestParseBanLogCountsDistinctAddresses(t *testing.T) {
 }
 
 func TestParseBanLogOnAnEmptyOrRotatedFile(t *testing.T) {
-	h := ParseBanLog("")
+	h := ParseBanLog("", nil)
 	if len(h.Bans) != 0 || h.Unique != 0 || h.Repeats() != 0 {
 		t.Errorf("빈 로그에서 값이 나왔다: %+v", h)
 	}
@@ -452,7 +452,7 @@ func TestParseBanLogOnAnEmptyOrRotatedFile(t *testing.T) {
 // total. Counting on the server keeps twenty thousand lines off the wire — the
 // screen wants twenty-four numbers.
 func TestParseFailureBuckets(t *testing.T) {
-	got := ParseFailureBuckets("2026-09-08 20 931\n2026-09-08 21 402\n2026-09-08 22 12\n")
+	got := ParseFailureBuckets("2026-09-08 20 931\n2026-09-08 21 402\n2026-09-08 22 12\n", nil)
 	if len(got) != 3 {
 		t.Fatalf("구간 %d개, 기대 3개", len(got))
 	}
@@ -469,7 +469,7 @@ func TestParseFailureBuckets(t *testing.T) {
 }
 
 func TestParseFailureBucketsIgnoresRubbish(t *testing.T) {
-	if got := ParseFailureBuckets("-- No entries --\n\nnonsense\n"); len(got) != 0 {
+	if got := ParseFailureBuckets("-- No entries --\n\nnonsense\n", nil); len(got) != 0 {
 		t.Errorf("쓰레기에서 구간이 나왔다: %+v", got)
 	}
 }

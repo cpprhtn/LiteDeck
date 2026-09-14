@@ -306,3 +306,51 @@ func TestKillSessionArgs(t *testing.T) {
 		t.Error("missing -- before the pid")
 	}
 }
+
+// OpenSSH 9.8 split the per-session work into a separate binary, and the
+// process title went with it: Debian 13, Fedora 41+, Ubuntu 25.04+ and Arch all
+// print "sshd-session: alice@pts/0". Matching only the old name emptied the
+// sessions tab on those servers — and an empty table is read as "nobody is
+// logged in", which is a different statement from "could not read".
+func TestSessionsReadOpenSSH98Titles(t *testing.T) {
+	const ps = `    1     0 root     00:00:01 /sbin/init
+  700     1 root     00:00:00 sshd-session: /usr/sbin/sshd [listener] 0 of 10-100 startups
+ 4321   700 root     00:00:00 sshd-session: alice [priv]
+ 4330  4321 alice    00:00:00 sshd-session: alice@pts/0
+ 4400   700 root     00:00:00 sshd-session: bob [priv]
+ 4402  4400 bob      00:00:00 sshd-session: bob@notty
+`
+	got, err := ParseSSHSessions([]byte(ps), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d sessions, want 2: %+v", len(got), got)
+	}
+	byUser := map[string]SSHSession{}
+	for _, s := range got {
+		byUser[s.User] = s
+	}
+	if a := byUser["alice"]; a.PID != 4330 || a.TTY != "pts/0" {
+		t.Errorf("alice = %+v", a)
+	}
+	// notty is a command or an SFTP transfer. It has no terminal, which the
+	// parser reports as an empty TTY rather than the literal word — but it is
+	// still a session and still has to be listed.
+	if b := byUser["bob"]; b.PID != 4402 || b.TTY != "" {
+		t.Errorf("bob = %+v", b)
+	}
+
+	// The listener and the privileged halves are not sessions, and killing the
+	// listener would stop sshd for everyone on the machine.
+	pids := SessionListenerPIDs([]byte(ps))
+	if len(pids) == 0 {
+		t.Error("no listener recognised under the new name — ending a session " +
+			"would not be blocked from ending sshd itself")
+	}
+	for _, s := range got {
+		if pids[s.PID] {
+			t.Errorf("pid %d is both a session and a listener", s.PID)
+		}
+	}
+}

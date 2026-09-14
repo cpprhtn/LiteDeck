@@ -7,6 +7,7 @@ import (
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
 	"github.com/cpprhtn/LiteDeck/internal/i18n"
+	"strconv"
 )
 
 // "What happened since you last looked" (T-29).
@@ -113,13 +114,30 @@ func (a *App) HostDigest(hostID string) (DigestView, error) {
 	if a.settings != nil {
 		since = a.settings.Get().LastSeen[hostID]
 	}
+	// A first visit plants the mark rather than waiting for somebody to press a
+	// button on a strip that a first visit never draws. The only writer used to
+	// be that button, so LastSeen stayed zero, First stayed true, the strip
+	// returned nothing on every render, and "since you last looked" never
+	// appeared on any host for anybody — the feature could not be reached.
+	//
+	// This read is still reported as the first one: every count would be "since
+	// the journal began" dressed up as news. What changes is that the next one
+	// has something to count from.
+	first := since == 0
+	if first && a.settings != nil {
+		if err := a.settings.SetLastSeen(hostID, time.Now().Unix()); err != nil {
+			// Not fatal. The digest is a convenience, and a settings file that
+			// will not take a write has louder problems than this.
+			_ = err
+		}
+	}
 	// Keyed on the mark as well as the connection, so dismissing the strip is
 	// what reopens the question — see digestCache for why there is no timer.
 	gen := a.connGeneration(hostID)
 	if cached, ok := a.digests.get(hostID, gen, since); ok {
 		return cached, nil
 	}
-	view := DigestView{Since: since, First: since == 0}
+	view := DigestView{Since: since, First: first}
 
 	if !info.HasSystemd || !info.CanReadJournal {
 		// No journal, or none this user can read. There is nothing to say —
@@ -136,9 +154,14 @@ func (a *App) HostDigest(hostID string) (DigestView, error) {
 			from = seen
 		}
 	}
-	// journalctl's own format, in the server's local time. A relative window
-	// ("-3h") would drift by however long this call took to arrive.
+	// What the screen says, in the viewer's own time.
 	view.Window = from.Format("2006-01-02 15:04:05")
+	// What journalctl gets: seconds since the epoch, which has no timezone to
+	// disagree about. The wall-clock form was formatted here and read there, so
+	// a server on UTC and a viewer on KST put the start of the window nine
+	// hours out — and the direction of the error is the bad one, the window
+	// opening later than asked and hiding what happened in between.
+	sinceArg := "@" + strconv.FormatInt(from.Unix(), 10)
 
 	conn, err := a.mgr.Conn(hostID)
 	if err != nil {
@@ -148,7 +171,7 @@ func (a *App) HostDigest(hostID string) (DigestView, error) {
 	defer cancel()
 
 	// The window is an argument, not part of the script — see DigestScript.
-	res, err := conn.Exec(ctx, "sh", "-c", adapter.DigestScript, "sh", view.Window)
+	res, err := conn.Exec(ctx, "sh", "-c", adapter.DigestScript, "sh", sinceArg)
 	if err != nil {
 		return DigestView{}, err
 	}

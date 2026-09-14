@@ -429,7 +429,7 @@ func (a *App) HostSecurity(hostID string, elevate, force bool) (SecurityView, er
 		view.Mismatches = adapter.JailMismatches(jailDeclared, jail)
 	}
 	if strings.TrimSpace(banLog) != "" {
-		h := adapter.ParseBanLog(banLog)
+		h := adapter.ParseBanLog(banLog, a.serverLocation(hostID))
 		view.BanHistory = &h
 	}
 	// The delta is what says whether it is still dropping, and it needs the
@@ -559,7 +559,7 @@ func (a *App) readAttackers(
 	// thousands of lines.
 	if hours, err := a.execMaybeElevated(ctx, conn, hostID, elevate && !info.CanReadJournal,
 		"sh", "-c", adapter.FailuresScript); err == nil {
-		view.Failures = adapter.ParseFailureBuckets(string(hours.Stdout))
+		view.Failures = adapter.ParseFailureBuckets(string(hours.Stdout), a.serverLocation(hostID))
 	}
 	// Without the lock the only blocked addresses known are fail2ban's, from
 	// its own status. That is better than nothing and less than the ruleset.

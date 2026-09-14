@@ -448,6 +448,19 @@ func (c *Conn) run(ctx context.Context, line string, stdin io.Reader) (*Result, 
 	if stdin != nil {
 		sess.Stdin = stdin
 	}
+	// Ask for the C locale, and do not mind being refused.
+	//
+	// Everything this app parses is English: `last -F`'s "%a %b", ufw's
+	// "Status: active", the shell's "Operation not permitted". pam_env gives a
+	// non-interactive exec the machine's LANG, so on a server installed in
+	// Korean those become "일 9월", "Status: 활성" and a translated errno — and
+	// the parsers return empty rather than wrong, which reads as "nothing is
+	// happening" on exactly the screens where that is the dangerous answer.
+	//
+	// Setenv only works where sshd lists the variable in AcceptEnv, which is
+	// why the scripts that depend on it also set it themselves. This costs
+	// nothing and covers the argv commands, which have nowhere to put it.
+	_ = sess.Setenv("LC_ALL", "C")
 
 	start := time.Now()
 	if err := sess.Start(line); err != nil {
