@@ -47,15 +47,28 @@ func (p ProcessInfo) KernelThread() bool {
 // Machine-oriented columns only, in a fixed order, with args last because it is
 // the one field that can contain anything (§3.2c). user:32 widens the column so
 // long names are not truncated.
-const psFields = "pid,ppid,user:32,%cpu,%mem,rss,stat,etimes,comm,args"
+// commWidth is the width comm is asked for, and therefore where args begins.
+//
+// Linux caps a process name at 15 characters (TASK_COMM_LEN - 1), so 20 never
+// truncates and always pads. Without a width the column is only as wide as the
+// widest name in the listing, and a name containing a space then cannot be told
+// from a name followed by its arguments.
+const commWidth = 20
+
+const psFields = "pid,ppid,user:32,%cpu,%mem,rss,stat,etimes,comm:20,args"
 
 // PSArgs returns the argv for listing processes.
 func PSArgs() []string {
 	return []string{"-eo", psFields, "--no-headers"}
 }
 
-// psSelfArgs is this app's own invocation, as `ps` reports it back.
-var psSelfArgs = strings.Join(append([]string{"ps"}, PSArgs()...), " ")
+// psSelfPrefix is how this app's own `ps` starts, as `ps` reports it back.
+//
+// A prefix rather than the whole line: the flags after it have changed once
+// already (comm gained a width), and an exact match would have quietly stopped
+// recognising the read itself the moment they changed again. A user's own
+// `ps aux` does not begin this way.
+const psSelfPrefix = "ps -eo pid,ppid,user:32"
 
 // fixedFields is how many whitespace-delimited columns precede comm.
 const fixedFields = 8
@@ -109,7 +122,7 @@ func ParsePS(data []byte) ([]ProcessInfo, error) {
 		// at number one and is gone by the next tick, on every server, forever.
 		// Matched on the argv this app sends rather than on the name, so a real
 		// `ps` somebody is running in a terminal still shows.
-		if comm == "ps" && args == psSelfArgs {
+		if comm == "ps" && strings.HasPrefix(args, psSelfPrefix) {
 			continue
 		}
 
@@ -146,6 +159,22 @@ func splitCommArgs(rest, state string) (comm, args string) {
 		}
 	}
 
+	// comm is a fixed-width column, so args begins at a known offset.
+	//
+	// It is not reliably one token: Firefox's content processes are called
+	// "Web Content" and `ps` prints the name with its space in it, so splitting
+	// at the first space left "Web" as the command and "Content
+	// /usr/lib/firefox/..." as the arguments. Every rule for guessing where the
+	// name ends gets something else wrong — "sshd" followed by the title "sshd:
+	// /usr/sbin/sshd -D" looks exactly like a two-word name — so the width is
+	// asked for instead of inferred. See psFields.
+	if len(rest) > commWidth {
+		if c := strings.TrimSpace(rest[:commWidth]); c != "" && rest[commWidth-1] == ' ' {
+			return c, strings.TrimLeft(rest[commWidth:], " \t")
+		}
+	}
+	// Narrower than the column: an older capture, or comm ran to the edge and
+	// ps widened it. One token is right in both.
 	i := strings.IndexAny(rest, " \t")
 	if i < 0 {
 		return rest, "" // kernel threads and exec'd-away processes have no args

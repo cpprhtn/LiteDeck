@@ -3,6 +3,7 @@ package adapter
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -216,8 +217,14 @@ func TestPSArgs(t *testing.T) {
 		t.Errorf("PSArgs() = %q", args)
 	}
 	// args must be last: it is the only column that can contain whitespace.
-	if got := args[1]; got[len(got)-len("comm,args"):] != "comm,args" {
-		t.Errorf("field list %q must end with comm,args", got)
+	if got := args[1]; !strings.HasSuffix(got, ",args") {
+		t.Errorf("field list %q must end with args", got)
+	}
+	// comm asks for a width, which is what lets a name containing a space be
+	// told apart from a name followed by its arguments. Without it the column
+	// is only as wide as the widest name in the listing.
+	if got := args[1]; !strings.Contains(got, "comm:"+strconv.Itoa(commWidth)+",args") {
+		t.Errorf("field list %q does not pin comm to a width", got)
 	}
 }
 
@@ -251,5 +258,44 @@ func TestParsePSDropsTheReadItself(t *testing.T) {
 	}
 	if len(got) != 1 {
 		t.Errorf("dropped a ps the user ran: %+v", got)
+	}
+}
+
+// A process name can contain a space. Firefox's content processes are called
+// "Web Content", and splitting at the first one left "Web" as the command and
+// "Content /usr/lib/firefox/…" as the arguments.
+//
+// Not fixed by guessing where the name ends — "sshd" followed by the title
+// "sshd: /usr/sbin/sshd -D" looks exactly like a two-word name — but by asking
+// ps for a fixed-width column, so args begins at a known offset.
+func TestParsePSKeepsASpaceInsideTheProcessName(t *testing.T) {
+	pad := func(comm string) string {
+		for len(comm) < 20 {
+			comm += " "
+		}
+		return comm
+	}
+	data := " 1000   900 deploy    1.0  2.0 90000 Sl    5000 " + pad("Web Content") +
+		"/usr/lib/firefox/firefox -contentproc -childID 3\n" +
+		"  700     1 root      0.0  0.0  9000 Ss   99999 " + pad("sshd") +
+		"sshd: /usr/sbin/sshd -D\n"
+
+	got, err := ParsePS([]byte(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d rows", len(got))
+	}
+	if got[0].Command != "Web Content" {
+		t.Errorf("command = %q, want %q", got[0].Command, "Web Content")
+	}
+	if !strings.HasPrefix(got[0].Args, "/usr/lib/firefox/firefox") {
+		t.Errorf("args = %q — the name's second word leaked into them", got[0].Args)
+	}
+	// The shape that makes every guessing rule wrong: one-word name, and a
+	// title that begins with that word and a colon.
+	if got[1].Command != "sshd" || !strings.HasPrefix(got[1].Args, "sshd:") {
+		t.Errorf("sshd = %q / %q", got[1].Command, got[1].Args)
 	}
 }

@@ -45,6 +45,7 @@ import {
   type MCPWritePrompt,
 } from './ipc'
 import { getLanguage, initLanguage, k, t, useT } from './i18n'
+import { isWebMode } from './webTransport'
 import { McpPanel } from './McpPanel'
 import { McpHostBadge } from './McpHostBadge'
 import { closeHost } from './openFiles'
@@ -155,7 +156,11 @@ export default function App() {
         // BenchMode is a dev-only spike (report.go); the server binary does not
         // expose it, so its absence means "not in bench mode", not a boot
         // failure. Catching keeps a missing dev endpoint from aborting boot.
-        if (await BenchMode().catch(() => false)) {
+        //
+        // Not asked at all in server mode. The binding is not registered there,
+        // so every boot left a 404 in the browser console — harmless, and the
+        // kind of harmless noise that trains people to ignore the console.
+        if (!isWebMode() && (await BenchMode().catch(() => false))) {
           setBenchMode(true)
           return
         }

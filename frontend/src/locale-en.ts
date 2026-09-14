@@ -748,4 +748,7 @@ export const en: Record<string, string> = {
   '접속해 있는 SSH 세션이 없습니다. 지금 이 연결은 목록에 나오지 않는 방식으로 붙어 있을 수 있습니다.': 'No SSH sessions are logged in. This connection may be attached in a way the list does not show.',
   '내려받은 이미지가 없습니다.': 'No images have been pulled.',
   '복사 {c} · 붙여넣기 {v}': 'Copy {c} \u00b7 Paste {v}',
+  '경유 서버는 한 단계만 지원합니다. 쉼표 뒤는 무시됩니다.': 'Only one hop is supported. Anything after the comma is ignored.',
+  '잠긴 채입니다': 'still locked',
+  '비밀번호 대화상자를 닫으면 잠금은 그대로입니다': 'Dismissing the password dialog leaves the lock as it was',
 }

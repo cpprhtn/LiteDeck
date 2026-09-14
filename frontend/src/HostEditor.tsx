@@ -133,8 +133,18 @@ export function HostEditor({
             type="number"
             min={1}
             max={65535}
-            value={draft.port}
-            onChange={(e) => set('port', Number(e.target.value))}
+            value={draft.port || ''}
+            onChange={(e) => {
+              // Empty means empty, not zero. `Number('')` is 0, so clearing the
+              // field to type a new port snapped it to "0" under the cursor.
+              const v = e.target.value.trim()
+              set('port', v === '' ? 0 : Number(v))
+            }}
+            onBlur={() => {
+              // Leaving it empty falls back to the SSH default rather than
+              // saving a port nothing listens on.
+              if (!draft.port) set('port', 22)
+            }}
           />
 
           <label>{t('사용자')}</label>
@@ -190,6 +200,15 @@ export function HostEditor({
             onChange={(e) => set('proxyJump', e.target.value)}
           />
         </div>
+
+        {/* One hop. The Go side dials exactly one bastion, so a comma-separated
+            chain would silently use the first and ignore the rest — the user
+            would think they were going through two and be going through one. */}
+        {(draft.proxyJump ?? '').includes(',') && (
+          <p className="warn-text">
+            {t('경유 서버는 한 단계만 지원합니다. 쉼표 뒤는 무시됩니다.')}
+          </p>
+        )}
 
         {needsKeyFile && (
           <p className="warn-text">{t('개인키 인증을 쓰려면 키 파일 경로가 필요합니다.')}</p>

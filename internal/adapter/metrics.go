@@ -529,9 +529,15 @@ func parseCPULine(line string) CPUTimes {
 		if err != nil {
 			continue
 		}
-		// Fields beyond guest are already included in user/nice on modern
-		// kernels; summing everything present is still the conventional total.
-		t.Total += n
+		// guest and guest_nice are *already inside* user and nice on every
+		// kernel since 2.6.24 — the kernel adds them to both. Summing all ten
+		// columns therefore counts a KVM host's guest time twice, which shows
+		// up as a busy hypervisor reporting a low CPU percentage: the
+		// denominator grows while the numerator does not. Nine columns, not
+		// ten.
+		if i < 8 {
+			t.Total += n
+		}
 		// Column order is fixed by the kernel: user nice system idle iowait
 		// irq softirq steal guest guest_nice.
 		switch i {

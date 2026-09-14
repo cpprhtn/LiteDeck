@@ -119,8 +119,9 @@ export function SecurityView({
   // that changes, so this screen never sits on the locked answer while the
   // permission is already in hand.
   useEffect(() => {
-    if (visible) void load(sudo.unlocked)
-  }, [visible, load, sudo.unlocked])
+    // Waits for the first answer rather than reading unelevated and then again.
+    if (visible && sudo) void load(sudo.unlocked)
+  }, [visible, load, sudo])
 
   if (!view) {
     return <div className="placeholder">{busy ? t('읽는 중…') : t('보안 상태를 읽는 중…')}</div>
