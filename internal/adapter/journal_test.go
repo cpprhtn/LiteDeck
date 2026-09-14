@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The golden file is real journalctl output, captured from the systemd fixture
@@ -168,16 +169,27 @@ func TestJournalArgsBounds(t *testing.T) {
 // Four of the eight kinds the timeline can name were unreachable.
 //
 // systemd writes "Startup finished", "Shutting down", "New session" and
-// "Scheduled restart job" at LOG_INFO, and the query asks for warning and
-// worse, so EventBoot, EventShutdown, EventSession and EventRestart never
+// "Scheduled restart job" at LOG_INFO, and the severity read asks for warning
+// and worse, so EventBoot, EventShutdown, EventSession and EventRestart never
 // arrived — dead code with a place in the UI. The golden capture proves it:
 // testdata/golden/journal/provenance.txt records that a restart was provoked on
 // purpose and the file contains no such message id.
+//
+// The first attempt at fixing it appended "+ MESSAGE_ID=…" to the severity
+// read. That was wrong twice over and the tab was broken everywhere it could be
+// reached — see TestJournalArgsAreAValidCommand. The ids now come from a second
+// read with no priority filter on it.
 func TestJournalArgsAskForTheInformationalKinds(t *testing.T) {
-	args := strings.Join(JournalArgs("-24h", 4, 100), " ")
+	sev := strings.Join(JournalArgs("-24h", 4, 100), " ")
+	kinds := strings.Join(JournalKindArgs("-24h", 100), " ")
 
-	if !strings.Contains(args, "-p 4") {
-		t.Fatalf("the severity floor is gone: %s", args)
+	if !strings.Contains(sev, "-p 4") {
+		t.Fatalf("the severity floor is gone: %s", sev)
+	}
+	// The priority floor is the thing the second read exists to bypass. With it
+	// there, the ids are filtered out again and the read returns nothing.
+	if strings.Contains(kinds, "-p ") {
+		t.Errorf("the kind read carries a priority floor, which removes what it asks for: %s", kinds)
 	}
 	for name, id := range map[string]string{
 		"boot":     msgBootDone,
@@ -185,14 +197,9 @@ func TestJournalArgsAskForTheInformationalKinds(t *testing.T) {
 		"session":  msgSessionNew,
 		"restart":  msgRestartSched,
 	} {
-		if !strings.Contains(args, "MESSAGE_ID="+id) {
-			t.Errorf("%s is never asked for, so its EventKind can never appear: %s", name, args)
+		if !strings.Contains(kinds, "MESSAGE_ID="+id) {
+			t.Errorf("%s is never asked for, so its EventKind can never appear: %s", name, kinds)
 		}
-	}
-	// `+` is journalctl's OR. Without it the ids narrow the filter instead of
-	// widening it and the result is empty rather than larger.
-	if !strings.Contains(args, "+ MESSAGE_ID=") {
-		t.Error("the ids are ANDed with the priority filter, which matches nothing")
 	}
 
 	// Every kind the parser knows should be reachable: either it clears the
@@ -207,6 +214,61 @@ func TestJournalArgsAskForTheInformationalKinds(t *testing.T) {
 			if !asked[id] {
 				t.Errorf("%s is written below the floor and is not asked for by id", kind)
 			}
+		}
+	}
+}
+
+// journalctl has to accept the command, which for a while it did not.
+//
+// `+` joins two field matches and must sit between them. The version that put
+// one straight after the option flags produced, on every systemd there is:
+//
+//	"+" can only be used between terms
+//
+// It went unnoticed because the events tab is gated on being able to read the
+// journal, and on the Debian and Ubuntu servers this was built against the
+// login user cannot. On Rocky Linux 9 and CentOS Stream 9 that user can, so
+// there the tab was simply broken — which is how it was reported.
+func TestJournalArgsAreAValidCommand(t *testing.T) {
+	for name, args := range map[string][]string{
+		"severity":  JournalArgs("-24h", 4, 100),
+		"kinds":     JournalKindArgs("-24h", 100),
+		"no window": JournalKindArgs("", 0),
+	} {
+		for i, a := range args {
+			if a != "+" {
+				continue
+			}
+			// Something has to precede it, and that something has to be a
+			// match rather than a flag or a flag's value.
+			if i == 0 || !strings.Contains(args[i-1], "=") {
+				t.Errorf("%s: \"+\" at position %d has no term before it: %s",
+					name, i, strings.Join(args, " "))
+			}
+			if i == len(args)-1 || !strings.Contains(args[i+1], "=") {
+				t.Errorf("%s: \"+\" at position %d has no term after it: %s",
+					name, i, strings.Join(args, " "))
+			}
+		}
+	}
+}
+
+// An event that answers both reads is one event.
+func TestMergeEventsDropsTheDuplicate(t *testing.T) {
+	at := time.Unix(1789000000, 0)
+	restart := Event{At: at, Kind: EventRestart, Severity: 4, Message: "Scheduled restart job"}
+	older := Event{At: at.Add(-time.Hour), Kind: EventOOM, Severity: 2, Message: "oom"}
+	newer := Event{At: at.Add(time.Hour), Kind: EventBoot, Severity: 6, Message: "Startup finished"}
+
+	got := MergeEvents([]Event{restart, older}, []Event{restart, newer})
+	if len(got) != 3 {
+		t.Fatalf("got %d events, want 3 — the restart is in both reads: %+v", len(got), got)
+	}
+	// Newest first, across both reads.
+	for i := 1; i < len(got); i++ {
+		if got[i].At.After(got[i-1].At) {
+			t.Errorf("out of order: %+v", got)
+			break
 		}
 	}
 }

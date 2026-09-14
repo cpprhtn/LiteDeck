@@ -98,53 +98,115 @@ type Event struct {
 	BootID string `json:"bootId"`
 }
 
-// JournalArgs builds the argv for one timeline read.
+// JournalArgs builds the argv for the severity half of one timeline read.
 //
 // argv, never a shell string (§3.2b). `since` never carries user text either:
-// the UI picks a range and the caller maps it to one of a fixed set, because
 // journalctl's `--since` accepts free English ("2 hours ago") and validating
-// that is a worse job than not accepting it.
+// that is not a job worth taking on, so the caller passes one of a closed set.
 //
 // `-q` is not cosmetic. journalctl prints "you are currently not seeing
-// messages from other users and the system" **into its own output**, and
-// without this it would be the first thing the parser reads. `--no-pager`
+// messages from other users" onto stdout, which is not JSON. `--no-pager`
 // likewise: journalctl pipes through less when it believes it has a terminal,
-// and the read would hang waiting for a keypress that never comes.
+// and the read then never returns.
+//
+// # Why this is only half
+//
+// The timeline wants warning-and-worse *plus* four informational kinds that
+// systemd writes below that floor. There is no way to ask journalctl for that
+// in one invocation, and the version that tried was wrong in two ways at once:
+//
+//	journalctl -p 4 + MESSAGE_ID=… + MESSAGE_ID=…
+//
+// `+` joins field matches and has to sit between two of them, so a leading one
+// is a syntax error — "+" can only be used between terms, on every systemd
+// there is. And even written correctly it would not have worked, because `-p`
+// is not a term: it filters the whole read, so the informational ids it is
+// meant to rescue would have been dropped again by the priority floor.
+//
+// So the caller makes two reads and merges them. See JournalKindArgs.
 func JournalArgs(since string, maxPriority, limit int) []string {
-	if limit <= 0 || limit > journalMaxLines {
-		limit = journalMaxLines
-	}
-	if maxPriority < 0 || maxPriority > 7 {
-		maxPriority = 4 // warning
-	}
 	args := []string{
 		"-o", "json",
 		"--no-pager",
 		"-q",
-		"-p", strconv.Itoa(maxPriority),
-		"-n", strconv.Itoa(limit),
+		"-p", strconv.Itoa(clampPriority(maxPriority)),
+		"-n", strconv.Itoa(clampLimit(limit)),
 	}
-	// The four informational kinds, added back by message id.
-	//
-	// systemd writes "Startup finished", "Shutting down", "New session" and
-	// "Scheduled restart job" at LOG_INFO, which is below the warning floor, so
-	// the priority filter dropped every one of them: EventBoot, EventShutdown,
-	// EventSession and EventRestart were kinds the timeline could name and
-	// never received. The golden capture proves it — provenance.txt says a
-	// restart was provoked on purpose and the file holds no such id.
-	//
-	// journalctl ORs a MESSAGE_ID= match with the rest of the filter rather
-	// than narrowing it, which is exactly what is wanted here: warning-and-worse
-	// *plus* these four, whatever their priority.
-	for _, id := range informationalIDs {
-		args = append(args, "+", "MESSAGE_ID="+id)
+	return appendSince(args, since)
+}
+
+// JournalKindArgs builds the argv for the other half: the four informational
+// kinds, by message id, at whatever priority systemd gave them.
+//
+// systemd writes "Startup finished", "Shutting down", "New session" and
+// "Scheduled restart job" at LOG_INFO, below the warning floor, so the priority
+// read never sees one. These are the boundaries the timeline draws its lines
+// across — a run of failures reads differently either side of a reboot — which
+// is why they are worth a second round trip.
+//
+// No `-p` here, deliberately: the priority is the thing being bypassed.
+func JournalKindArgs(since string, limit int) []string {
+	args := []string{
+		"-o", "json",
+		"--no-pager",
+		"-q",
+		"-n", strconv.Itoa(clampLimit(limit)),
 	}
-	// Omitted rather than passed empty: `--since ""` is not "no window", it is
-	// an argument journalctl rejects.
+	for i, id := range informationalIDs {
+		// Between terms, never before the first one.
+		if i > 0 {
+			args = append(args, "+")
+		}
+		args = append(args, "MESSAGE_ID="+id)
+	}
+	return appendSince(args, since)
+}
+
+func clampLimit(limit int) int {
+	if limit <= 0 || limit > journalMaxLines {
+		return journalMaxLines
+	}
+	return limit
+}
+
+func clampPriority(p int) int {
+	if p < 0 || p > 7 {
+		return 4 // warning
+	}
+	return p
+}
+
+// appendSince omits the flag rather than passing it empty: `--since ""` is not
+// "no window", it is an argument journalctl rejects.
+func appendSince(args []string, since string) []string {
 	if since != "" {
 		args = append(args, "--since", since)
 	}
 	return args
+}
+
+// MergeEvents folds the two reads into one timeline.
+//
+// Newest first, and de-duplicated: an event can answer both reads at once —
+// a scheduled restart logged at warning, say — and the screen must not show it
+// twice. Identity is the timestamp and the message, which is what a reader
+// would use to call two rows the same thing.
+func MergeEvents(a, b []Event) []Event {
+	out := make([]Event, 0, len(a)+len(b))
+	seen := make(map[string]bool, len(a)+len(b))
+	for _, e := range append(append([]Event{}, a...), b...) {
+		key := strconv.FormatInt(e.At.UnixNano(), 10) + "\x00" + e.Message
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, e)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].At.After(out[j].At) })
+	if len(out) > journalMaxLines {
+		out = out[:journalMaxLines]
+	}
+	return out
 }
 
 // EventRange is how far back the timeline looks. A closed set, so that nothing
