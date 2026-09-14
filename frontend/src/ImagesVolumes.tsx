@@ -160,7 +160,7 @@ export function ImagesVolumes({
               {t('— 큰 순서. 사용 중이면 데몬이 삭제를 거부합니다')}
             </span>
           </h3>
-          {images.length === 0 && <div className="placeholder small">{t('이미지가 없습니다.')}</div>}
+          {images.length === 0 && <div className="placeholder small">{t('내려받은 이미지가 없습니다.')}</div>}
           {images.length > 0 && (
             <div className="table net-table">
               <div className="thead" style={{ gridTemplateColumns: '1fr 120px 100px 90px 80px' }}>

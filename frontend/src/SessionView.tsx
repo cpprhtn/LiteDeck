@@ -86,7 +86,7 @@ export function SessionView({
   if (sessions.length === 0) {
     return (
       <div className="view">
-        <div className="placeholder">{t('SSH 세션이 없습니다.')}</div>
+        <div className="placeholder">{t('접속해 있는 SSH 세션이 없습니다. 지금 이 연결은 목록에 나오지 않는 방식으로 붙어 있을 수 있습니다.')}</div>
         <LoginHistory hostID={hostID} />
       </div>
     )

@@ -51,7 +51,12 @@ export function ServiceView({
   onError: (msg: string) => void
 }) {
   const [units, setUnits] = useState<ServiceUnit[]>([])
+  // Failed first when there is anything failed. "All" on a stock Ubuntu is 156
+  // units and the first screen is `apt-daily` and `autovt@` — a list nobody
+  // came to read. The moment something is wrong, that is what the tab is for.
   const [filter, setFilter] = useState<Filter>('all')
+  /** Whether the first reading has already decided the filter. */
+  const chose = useRef(false)
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
   const [pending, setPending] = useState<string | null>(null)
@@ -161,6 +166,10 @@ export function ServiceView({
   })
 
   const failedCount = units.filter((u) => statusOf(u) === 'failed').length
+  if (!chose.current && units.length > 0) {
+    chose.current = true
+    if (failedCount > 0) setFilter('failed')
+  }
   const chosen = rows.find((u) => u.name === selected)
 
   if (pane === 'timers') {
@@ -196,7 +205,7 @@ export function ServiceView({
             data-danger={failedCount > 0 || undefined}
             onClick={() => setFilter('failed')}
           >
-            failed {failedCount}
+            {t('실패 {n}', { n: failedCount })}
           </button>
         </div>
         <input

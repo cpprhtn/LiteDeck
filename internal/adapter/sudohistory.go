@@ -264,15 +264,14 @@ func ClassifyCommand(cmd string) SudoEffect {
 // the point is that a screen full of history should not put a password in front
 // of somebody who was looking for a systemctl call.
 var secretish = []*regexp.Regexp{
-	// -pPASSWORD, the MySQL shape, where the value is glued to the flag. The
-	// leading boundary is not decoration: without it this matched the `--p` of
-	// `--password` and masked the word "assword" while leaving the actual
-	// secret, one space away, in the clear.
-	regexp.MustCompile(`(?i)(?:^|\s)(-p)([^\s\-=][^\s]*)`),
 	// --password=x, --token x, --api-key=x and friends.
 	regexp.MustCompile(`(?i)(--?(?:password|passwd|pass|token|secret|api[-_]?key|access[-_]?key)[= ])([^\s]+)`),
 	// FOO_TOKEN=x as an assignment or an export.
-	regexp.MustCompile(`(?i)([A-Z0-9_]*(?:PASSWORD|PASSWD|TOKEN|SECRET|KEY)[A-Z0-9_]*=)([^\s]+)`),
+	//
+	// The name has to *end* in one of these words. Allowing anything after it
+	// matched `keyboard=` — KEY followed by "board" — so `mount -o
+	// ...,keyboard=us` came back redacted.
+	regexp.MustCompile(`(?i)([A-Z0-9_]*(?:PASSWORD|PASSWD|TOKEN|SECRET|KEY)=)([^\s]+)`),
 	// Authorization: Bearer x
 	regexp.MustCompile(`(?i)(authorization:\s*(?:bearer|basic)\s+)([^\s"']+)`),
 }
@@ -283,9 +282,39 @@ var secretish = []*regexp.Regexp{
 // The flag is as useful as the masking: "this server's history has 12 lines
 // with a password in them" is a finding somebody will want to act on, which is
 // the same shape as the sshd config review.
+// gluedPassword is the MySQL shape, `-phunter2`, where the value has no space
+// in front of it.
+//
+// Applied only to the handful of commands that mean "password" by `-p`.
+// Everywhere else that flag means something else entirely — `ss -plnt`,
+// `cp -pr`, `mkdir -pv`, `ps -p 1234` — and masking those produced a history
+// full of redactions that hide nothing while making the real command
+// unreadable to whoever is auditing it.
+var (
+	gluedPasswordCmd = regexp.MustCompile(`(?i)\b(?:mysql|mysqldump|mysqladmin|mariadb|mariadb-dump|redis-cli)\b`)
+	// Not a bare digit run: `redis-cli -p6379` is the port, and it comes before
+	// the password on the same line.
+	gluedPassword = regexp.MustCompile(`(?:^|\s)(-p)([^\s\-=][^\s]*)`)
+)
+
 func MaskSecrets(cmd string) (string, bool) {
 	found := false
 	out := cmd
+
+	if gluedPasswordCmd.MatchString(out) {
+		out = gluedPassword.ReplaceAllStringFunc(out, func(m string) string {
+			g := gluedPassword.FindStringSubmatch(m)
+			// All digits is a port, not a password. `redis-cli -p6379 -pSECRET`
+			// has both on one line and only the second is worth hiding.
+			if g[2] == "" || strings.IndexFunc(g[2], func(r rune) bool {
+				return r < '0' || r > '9'
+			}) < 0 {
+				return m
+			}
+			found = true
+			return strings.TrimSuffix(m, g[2]) + "••••••"
+		})
+	}
 	for _, re := range secretish {
 		out = re.ReplaceAllStringFunc(out, func(m string) string {
 			g := re.FindStringSubmatch(m)

@@ -828,7 +828,12 @@ func ParseNftCounters(out string) []NftCounter {
 // done on the server: the point is a dozen rows, not twenty thousand lines.
 const AttackersScript = `LC_ALL=C; export LC_ALL
 journalctl -t sshd -t sshd-session --since '-15 min' --no-pager -q -o cat 2>/dev/null | awk '
-/Failed password|Invalid user/ {
+# "Failed password" only. An attempt on an account that does not exist is
+# written twice — "Invalid user root from X" and then "Failed password for
+# invalid user root from X" — so counting both doubled every number on the
+# screen for exactly the attackers that matter most. The Windows reader has
+# always counted it once.
+/Failed password/ {
   for (i = 1; i <= NF; i++) if ($i == "from") { print $(i+1); break }
 }' | sort | uniq -c | sort -rn | head -40
 :`
@@ -1062,7 +1067,9 @@ type FailureBucket struct {
 // sending the haystack to report the number of straws.
 const FailuresScript = `LC_ALL=C; export LC_ALL
 journalctl -t sshd -t sshd-session --since '-24 hours' --no-pager -q -o short-iso 2>/dev/null | awk '
-/Failed password|Invalid user/ {
+# "Failed password" only — see AttackersScript for why counting "Invalid user"
+# as well doubled the chart.
+/Failed password/ {
   split($1, p, "T")
   split(p[2], h, ":")
   key = p[1] " " h[1]

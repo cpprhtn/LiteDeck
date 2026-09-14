@@ -43,7 +43,13 @@ func (a *App) SaveHost(h config.Host) error {
 
 // DeleteHost removes a host, disconnecting it first and forgetting its secrets.
 func (a *App) DeleteHost(id string) error {
-	_ = a.mgr.Disconnect(id)
+	// Through DisconnectHost, not straight to the manager. This used to call
+	// mgr.Disconnect on its own and skip everything DisconnectHost does after
+	// it — the detection cache, the CPU baseline, the interface list, the
+	// digest, the sudo unlock, the shell list and the host's terminals. Adding
+	// a new host that happened to reuse the id then found the deleted one's
+	// answers waiting for it.
+	_ = a.DisconnectHost(id)
 	for _, k := range []secret.Kind{secret.KindPassword, secret.KindPassphrase, secret.KindSudo} {
 		_ = a.secrets.Delete(id, k)
 	}
