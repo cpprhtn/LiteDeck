@@ -76,6 +76,14 @@ type ServerInfo struct {
 
 	// Container runtimes.
 	HasDocker bool `json:"hasDocker"`
+	// HasProcps is whether `ps` is the procps one.
+	//
+	// The process and session tabs ask for `-eo pid,ppid,user:32,etimes,args
+	// --no-headers`, and every part of that is procps-only: busybox's ps takes
+	// none of it and answers "unrecognized option". Alpine and most container
+	// images ship busybox, and the capability used to be true regardless, so
+	// both tabs opened and then showed an error on every poll.
+	HasProcps bool `json:"hasProcps"`
 	HasPodman bool `json:"hasPodman"`
 	// HasCompose reports that `<runtime> compose` answers — the v2 plugin.
 	// Probed here, once per host, rather than before each action.
@@ -194,12 +202,14 @@ func (i ServerInfo) Capabilities() map[Capability]bool {
 		}
 	}
 	return map[Capability]bool{
-		CapServices:   i.HasSystemd,
-		CapProcesses:  true, // ps is on every POSIX host
+		CapServices: i.HasSystemd,
+		// procps, not just "a ps". busybox has one and it rejects every flag
+		// these two tabs send.
+		CapProcesses:  i.HasProcps,
 		CapContainers: i.HasDocker || i.HasPodman,
 		CapMetrics:    true, // /proc, df
 		CapNetwork:    true, // iproute2; the tab degrades per-command if partial
-		CapSessions:   true, // ps; w/ss/loginctl only enrich
+		CapSessions:   i.HasProcps,
 		CapEvents:     i.HasSystemd,
 		CapFirewall:   i.HasSystemd,
 	}
@@ -306,6 +316,11 @@ func Detect(ctx context.Context, r Runner) (ServerInfo, error) {
 		}
 	}
 
+	// Asked with the flags the two tabs actually use, rather than by looking for
+	// the binary: busybox has a `ps`, it just cannot answer this question.
+	if res, err := r.Exec(ctx, "ps", "-eo", "pid=", "--no-headers"); err == nil && res.OK() {
+		info.HasProcps = true
+	}
 	info.HasDocker = commandExists(ctx, r, "docker")
 	info.HasPodman = commandExists(ctx, r, "podman")
 	info.HasSudo = commandExists(ctx, r, "sudo")

@@ -43,7 +43,11 @@ func TestSupportedPlatformsHaveCapabilities(t *testing.T) {
 	}{
 		{
 			name: "linux with systemd",
-			info: adapter.ServerInfo{Platform: adapter.PlatformLinux, HasSystemd: true},
+			// HasProcps too: the process and session tabs need procps' flags,
+			// which busybox rejects, so the capability is no longer a constant.
+			info: adapter.ServerInfo{
+				Platform: adapter.PlatformLinux, HasSystemd: true, HasProcps: true,
+			},
 			want: []adapter.Capability{
 				adapter.CapServices, adapter.CapProcesses,
 				adapter.CapMetrics, adapter.CapNetwork,

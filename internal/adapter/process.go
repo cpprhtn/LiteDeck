@@ -54,6 +54,9 @@ func PSArgs() []string {
 	return []string{"-eo", psFields, "--no-headers"}
 }
 
+// psSelfArgs is this app's own invocation, as `ps` reports it back.
+var psSelfArgs = strings.Join(append([]string{"ps"}, PSArgs()...), " ")
+
 // fixedFields is how many whitespace-delimited columns precede comm.
 const fixedFields = 8
 
@@ -99,6 +102,16 @@ func ParsePS(data []byte) ([]ProcessInfo, error) {
 		elapsed, _ := strconv.ParseInt(fields[7], 10, 64)
 
 		comm, args := splitCommArgs(rest, state)
+
+		// The poll's own `ps` is not a process anybody wants to see. It is
+		// alive for the length of the read, so its %CPU comes back as 100 and
+		// it sorts to the top of a list ordered by CPU — a row that flashes in
+		// at number one and is gone by the next tick, on every server, forever.
+		// Matched on the argv this app sends rather than on the name, so a real
+		// `ps` somebody is running in a terminal still shows.
+		if comm == "ps" && args == psSelfArgs {
+			continue
+		}
 
 		out = append(out, ProcessInfo{
 			PID:     pid,

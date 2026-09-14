@@ -745,4 +745,5 @@ export const en: Record<string, string> = {
   '아직 아무것도 막고 있지 않은 주소': 'Addresses nothing is blocking yet',
   '하위까지 지우려면 경로를 직접 입력해야 합니다': 'Deleting this and everything under it needs the path typed out',
   '비어 있는 디렉터리입니다. 위의 도구 모음에서 폴더를 만들거나 파일을 올릴 수 있습니다.': 'This directory is empty. The toolbar above can make a folder or upload files.',
+  '{what} 을(를) 읽지 못했습니다. 그 자리는 비어 있는 것이 아니라 모르는 것입니다.': 'Could not read {what}. That part is unknown, not empty.',
 }

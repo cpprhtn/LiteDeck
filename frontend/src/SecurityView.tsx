@@ -59,6 +59,8 @@ export function SecurityView({
   const [logins, setLogins] = useState<Login[]>([])
   const [fresh, setFresh] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
+  /** Which halves of this screen could not be read. Named, not hidden. */
+  const [partial, setPartial] = useState<string[]>([])
   // The lock is the connection's, not this tab's. Unlocking in the network tab
   // has to land here too, which is why the state comes from Go rather than from
   // whatever this screen last read.
@@ -72,19 +74,33 @@ export function SecurityView({
         // read of `ss` from inside the security script: two reads of the same
         // thing can disagree, and a security screen disagreeing with the
         // network screen about which ports are open is worse than a round trip.
+        // A failure is kept apart from an empty answer. `catch(() => null)`
+        // turned "could not read the ports" into "no ports are open" and
+        // "could not read the logins" into "nothing has been recorded" — which
+        // is the one thing this tab is built not to do.
         const [sec, net, who] = await Promise.all([
           HostSecurity(hostID, elevate, force),
-          HostNetwork(hostID).catch(() => null),
-          SecurityLogins(hostID).catch(() => null),
+          HostNetwork(hostID).then(
+            (n) => ({ ok: true as const, n }),
+            (e) => ({ ok: false as const, e: String(e) }),
+          ),
+          SecurityLogins(hostID).then(
+            (w) => ({ ok: true as const, w }),
+            (e) => ({ ok: false as const, e: String(e) }),
+          ),
         ])
         setView(sec)
-        setListening(net?.listeners ?? [])
-        if (who) {
-          setLogins(who.logins ?? [])
-          setFresh(new Set(who.fresh ?? []))
+        setListening(net.ok ? (net.n?.listeners ?? []) : [])
+        setPartial(
+          [net.ok ? '' : t('열린 포트'), who.ok ? '' : t('최근 접속')].filter(Boolean),
+        )
+        if (who.ok && who.w) {
+          const w = who.w
+          setLogins(w.logins ?? [])
+          setFresh(new Set(w.fresh ?? []))
           // Marked only now, after the list is on screen. Doing it inside the
           // read would spend the surprise before anybody had it.
-          if (who.fresh?.length) void RememberSecurityLogins(hostID, who.fresh).catch(() => {})
+          if (w.fresh?.length) void RememberSecurityLogins(hostID, w.fresh).catch(() => {})
         }
       } catch (e) {
         onError(String(e))
@@ -116,7 +132,17 @@ export function SecurityView({
   if (view.windows) {
     return (
       <div className="view security-view">
-        <div className="security-body">
+        {partial.length > 0 && (
+        /* Named rather than blanked. A read that failed used to leave an empty
+           list behind, which this screen renders as "no open ports" and "no
+           logins recorded" — the exact inversion of what happened. */
+        <p className="security-cluster small">
+          {t('{what} 을(를) 읽지 못했습니다. 그 자리는 비어 있는 것이 아니라 모르는 것입니다.', {
+            what: partial.join(' · '),
+          })}
+        </p>
+      )}
+      <div className="security-body">
           <WindowsSecurityView win={view.windows} listening={listening} />
           <Logins logins={logins} fresh={fresh} />
         </div>

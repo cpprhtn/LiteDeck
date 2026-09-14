@@ -34,12 +34,13 @@ import (
 // normal condition would show up in the Command Log as a red row with a failure
 // count climbing behind it. That log is the one place this app asks to be
 // believed, so a normal condition must not appear there as a failure.
-const MetricsScript = `echo '#stat'; grep -E '^(cpu|procs_|ctxt)' /proc/stat 2>/dev/null
+const MetricsScript = `TO=; command -v timeout >/dev/null 2>&1 && TO='timeout 5'
+echo '#stat'; grep -E '^(cpu|procs_|ctxt)' /proc/stat 2>/dev/null
 echo '#mem'; cat /proc/meminfo 2>/dev/null
 echo '#load'; cat /proc/loadavg 2>/dev/null
 echo '#up'; cat /proc/uptime 2>/dev/null
-echo '#df'; df -P -B1 2>/dev/null
-echo '#di'; df -P -i 2>/dev/null
+echo '#df'; $TO df -P -B1 2>/dev/null
+echo '#di'; $TO df -P -i 2>/dev/null
 echo '#net'; cat /proc/net/dev 2>/dev/null
 echo '#io'; cat /proc/diskstats 2>/dev/null
 echo '#fd'; cat /proc/sys/fs/file-nr 2>/dev/null
@@ -54,7 +55,13 @@ echo '#psi'; for z in cpu io memory; do echo "@$z"; cat /proc/pressure/$z 2>/dev
 // nvidia-smi write a line at a time, and when either is missing the summary bar
 // falls back here rather than dropping the tiles. Slower, never wrong.
 //
-// nvidia-smi is the one line that can hang. A wedged driver — an Xid fault, a
+// nvidia-smi is not the only line that can hang. `df` walks every mount, and a
+// stale NFS or CIFS one blocks it in the kernel exactly the same way — and
+// because this is one script, CPU and memory go dark with it for the whole of
+// pollTimeout, at the moment somebody is looking at the machine to find out
+// why it is slow. Both are bounded now.
+//
+// nvidia-smi is the other line that can hang. A wedged driver — an Xid fault, a
 // card that has fallen off the bus — leaves it blocked in the kernel, and
 // because this is one script the whole poll blocks with it: CPU, memory and disk
 // would go dark for the twenty seconds of pollTimeout, at exactly the moment
@@ -65,18 +72,18 @@ echo '#psi'; for z in cpu io memory; do echo "@$z"; cat /proc/pressure/$z 2>/dev
 //
 // Windows has no cheap equivalent — a PowerShell job per poll is worse than the
 // problem — so WindowsMetricsScript keeps only its Get-Command guard.
-const MetricsScriptWithGPU = `echo '#stat'; grep -E '^(cpu|procs_|ctxt)' /proc/stat 2>/dev/null
+const MetricsScriptWithGPU = `TO=; command -v timeout >/dev/null 2>&1 && TO='timeout 5'
+echo '#stat'; grep -E '^(cpu|procs_|ctxt)' /proc/stat 2>/dev/null
 echo '#mem'; cat /proc/meminfo 2>/dev/null
 echo '#load'; cat /proc/loadavg 2>/dev/null
 echo '#up'; cat /proc/uptime 2>/dev/null
-echo '#df'; df -P -B1 2>/dev/null
-echo '#di'; df -P -i 2>/dev/null
+echo '#df'; $TO df -P -B1 2>/dev/null
+echo '#di'; $TO df -P -i 2>/dev/null
 echo '#net'; cat /proc/net/dev 2>/dev/null
 echo '#io'; cat /proc/diskstats 2>/dev/null
 echo '#fd'; cat /proc/sys/fs/file-nr 2>/dev/null
 echo '#psi'; for z in cpu io memory; do echo "@$z"; cat /proc/pressure/$z 2>/dev/null; done
-echo '#gpu'; GPUTO=; command -v timeout >/dev/null 2>&1 && GPUTO='timeout 5'
-$GPUTO nvidia-smi --query-gpu=` + gpuQueryFields + ` --format=csv,noheader,nounits 2>/dev/null
+echo '#gpu'; $TO nvidia-smi --query-gpu=` + gpuQueryFields + ` --format=csv,noheader,nounits 2>/dev/null
 :`
 
 // gpuQueryFields is the one list both readings ask for, so the inline poll and
