@@ -55,7 +55,10 @@ fi
 docker rm -f "$CONTAINER" >/dev/null 2>&1
 docker run -d --name "$CONTAINER" --privileged --cgroupns=host \
 	-v /sys/fs/cgroup:/sys/fs/cgroup:rw -p "$SSH_PORT:22" litedeck-demo >/dev/null || exit 1
-for _ in $(seq 1 60); do
+# Sized for a loaded CI runner rather than a laptop: the image has just been
+# built, systemd is coming up, and the fixture's first boot pulls three images
+# through Docker-in-Docker. None of this costs anything when the box is quick.
+for _ in $(seq 1 180); do
 	nc -z 127.0.0.1 "$SSH_PORT" 2>/dev/null && break
 	sleep 1
 done
@@ -107,7 +110,7 @@ HOME="$WORK" XDG_CONFIG_HOME="$WORK/config" \
 	"$WORK/litedeck-server" --addr "127.0.0.1:$PORT" --no-auth \
 	>"$WORK/server.log" 2>&1 &
 SERVER_PID=$!
-for _ in $(seq 1 40); do
+for _ in $(seq 1 120); do
 	curl -fsS "http://127.0.0.1:$PORT/" >/dev/null 2>&1 && break
 	sleep 0.5
 done
