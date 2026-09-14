@@ -10,6 +10,7 @@ import (
 
 	"github.com/cpprhtn/LiteDeck/internal/mcp"
 	"github.com/cpprhtn/LiteDeck/internal/rollback"
+	"os"
 )
 
 // The write tools (§5.3 of the MCP design note).
@@ -181,11 +182,28 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 			// a creation, which is fine and shows as a diff against nothing.
 			var before string
 			existed := false
-			if existing, err := a.ReadTextFile(hostID, path); err == nil {
-				if existing.Binary {
-					return nil, fmt.Errorf("%s is a binary file", path)
-				}
+			existing, readErr := a.ReadTextFile(hostID, path)
+			switch {
+			case readErr == nil && existing.Binary:
+				return nil, fmt.Errorf("%s is a binary file", path)
+			case readErr == nil && existing.TooLarge:
+				// TooLarge returns an empty Content and a nil error, so this
+				// used to read as "the file is empty": the diff showed the
+				// whole file being created, and the rollback copy was saved as
+				// nothing — restoring it would have truncated the file to zero.
+				return nil, fmt.Errorf(
+					"%s is %d bytes, larger than this tool will read (%d). "+
+						"Edit it in the app, or work on it over the terminal",
+					path, existing.Size, maxEditableBytes)
+			case readErr == nil:
 				before, existed = existing.Content, true
+			case !errors.Is(readErr, os.ErrNotExist):
+				// Every other failure — permission denied, a directory, a
+				// broken link — used to fall through as "does not exist", which
+				// marks the change Created. Undoing a Created change deletes
+				// the file, so a read this tool was not allowed to do would end
+				// in a deletion it was not allowed to do either.
+				return nil, readErr
 			}
 			if before == content {
 				return map[string]any{

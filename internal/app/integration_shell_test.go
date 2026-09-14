@@ -155,11 +155,11 @@ func TestJoinRemoteAcrossPlatforms(t *testing.T) {
 
 func TestWindowsShellIsRecognised(t *testing.T) {
 	a := New()
-	a.detected.put("w", adapter.ServerInfo{Platform: adapter.PlatformWindows})
+	a.detected.put("w", a.connGeneration("w"), adapter.ServerInfo{Platform: adapter.PlatformWindows})
 	if !a.isWindows("w") {
 		t.Error("did not recognise a Windows host")
 	}
-	a.detected.put("l", adapter.ServerInfo{Platform: adapter.PlatformLinux})
+	a.detected.put("l", a.connGeneration("l"), adapter.ServerInfo{Platform: adapter.PlatformLinux})
 	if a.isWindows("l") {
 		t.Error("called a Linux host Windows")
 	}

@@ -127,4 +127,5 @@ var english = map[string]string{
 	"서버 모드에서는 서버의 로컬 디스크로 받을 수 없습니다 — 브라우저에서 내려받으세요":                          "Server mode will not download onto the server's own disk \u2014 download from the browser instead",
 	"서버 모드에서는 앱을 스스로 업데이트하지 않습니다 — 패키지나 바이너리를 교체하세요":                          "Server mode does not update itself \u2014 replace the package or the binary",
 	"서버 모드에서는 서버의 ~/.ssh/config 를 읽지 않습니다":                                    "Server mode does not read the server account's ~/.ssh/config",
+	"%s: 심볼릭 링크가 너무 깊습니다":                                                     "%s: too many symbolic links",
 }

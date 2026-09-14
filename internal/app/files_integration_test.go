@@ -1241,3 +1241,88 @@ func cutBetweenFiles(t *testing.T, a *App, id string) {
 		time.Sleep(5 * time.Millisecond)
 	}
 }
+
+// Saving through a symlink must keep the link and rewrite what it points at.
+//
+// The atomic save stages a sibling file and renames it onto the target, and
+// rename replaces a link with a regular file. Every `sites-enabled/*`,
+// `/etc/alternatives/*` and dotfile-manager symlink is this case: the link
+// became a copy and the real file kept its old contents.
+func TestSaveFollowsASymlinkInsteadOfReplacingIt(t *testing.T) {
+	a := connectedApp(t)
+	dir := scratchDir(t, a, "litedeck-symlink")
+	target := path.Join(dir, "target.conf")
+	link := path.Join(dir, "link.conf")
+
+	client, err := a.mgr.SFTP("fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res := a.SaveTextFile("fixture", SaveRequest{Path: target, Content: "old\n"}); !res.OK {
+		t.Fatalf("seed: %+v", res)
+	}
+	if err := client.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	if res := a.SaveTextFile("fixture", SaveRequest{Path: link, Content: "new\n"}); !res.OK {
+		t.Fatalf("save through link: %+v", res)
+	}
+
+	fi, err := client.Lstat(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("%s is a %s now — the save landed on the link instead of through it",
+			link, fi.Mode())
+	}
+	got, err := a.ReadTextFile("fixture", target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Content != "new\n" {
+		t.Errorf("target content = %q, want the saved text", got.Content)
+	}
+
+	// A link pointing nowhere is followed too: writing it creates the file the
+	// link names, which is what following a link means.
+	dangling := path.Join(dir, "dangling.conf")
+	if err := client.Symlink(path.Join(dir, "not-there.conf"), dangling); err != nil {
+		t.Fatal(err)
+	}
+	if res := a.SaveTextFile("fixture", SaveRequest{Path: dangling, Content: "made\n"}); !res.OK {
+		t.Fatalf("save through a broken link: %+v", res)
+	}
+	if made, err := a.ReadTextFile("fixture", path.Join(dir, "not-there.conf")); err != nil {
+		t.Errorf("the broken link's target was not created: %v", err)
+	} else if made.Content != "made\n" {
+		t.Errorf("target content = %q", made.Content)
+	}
+}
+
+// Selecting two folders and deleting them used to remove the first and answer
+// ok:true. The loop returned at its first directory, and the frontend sorts
+// directories first, so this was the common case rather than a corner.
+func TestDeleteRemovesEveryDirectoryItWasGiven(t *testing.T) {
+	a := connectedApp(t)
+	dir := scratchDir(t, a, "litedeck-multidelete")
+	d1, d2 := path.Join(dir, "d1"), path.Join(dir, "d2")
+	for _, d := range []string{d1, d2} {
+		if res := a.MakeDir("fixture", d); !res.OK {
+			t.Fatalf("mkdir %s: %+v", d, res)
+		}
+		if res := a.WriteTextFile("fixture", path.Join(d, "f"), "x"); !res.OK {
+			t.Fatalf("seed %s: %+v", d, res)
+		}
+	}
+
+	if res := a.DeletePaths("fixture", []string{d1, d2}, true, ""); !res.OK {
+		t.Fatalf("delete: %+v", res)
+	}
+	for _, d := range []string{d1, d2} {
+		if st, _ := a.StatPath("fixture", d); st.Exists {
+			t.Errorf("%s survived a delete that reported success", d)
+		}
+	}
+}

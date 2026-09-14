@@ -297,7 +297,7 @@ func (a *App) CloseTerminal(id string) error {
 // can read, not a broken terminal — the shell is never handed anything at
 // session start any more.
 func (a *App) isWindows(hostID string) bool {
-	info, ok := a.detected.get(hostID)
+	info, ok := a.detected.get(hostID, a.connGeneration(hostID))
 	return ok && info.Platform == adapter.PlatformWindows
 }
 
@@ -484,7 +484,7 @@ func (a *App) HostShells(hostID string) ([]adapter.Shell, error) {
 		// a POSIX host is the login shell the account already has.
 		return []adapter.Shell{{ID: "login", Label: i18n.T("로그인 셸")}}, nil
 	}
-	gen := a.mgr.Generation(hostID)
+	gen := a.connGeneration(hostID)
 	if got, ok := a.shells.get(hostID, gen); ok {
 		return got, nil
 	}

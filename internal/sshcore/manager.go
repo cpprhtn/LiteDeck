@@ -119,6 +119,18 @@ type managedHost struct {
 	// answers on, what the OS supports — is only true of the connection it was
 	// read through.
 	gen uint64
+	// dropped is set by shutdown. Connect inserts the host into the map before
+	// it dials, because two Connects for the same ID must not both proceed —
+	// but that leaves a window where Disconnect arrives while the dial is
+	// blocked on a fingerprint or a password. shutdown then found conn and
+	// cancel still nil and returned happily, and the dial went on to succeed
+	// into a host nobody was holding: a connection running keepalives and
+	// reconnecting forever, invisible, and a second one if the user connected
+	// again.
+	dropped bool
+	// dialCancel aborts an in-flight dial so Disconnect takes effect at once
+	// rather than after the prompt times out.
+	dialCancel context.CancelFunc
 }
 
 // Connect dials a host and begins watching it. Connecting an already-connected
@@ -138,7 +150,13 @@ func (m *Manager) Connect(ctx context.Context, cfg HostConfig, obs Observer) err
 	m.mu.Unlock()
 
 	h.setState(StateConnecting, nil)
-	conn, err := Dial(ctx, cfg)
+	dialCtx, cancelDial := context.WithCancel(ctx)
+	h.mu.Lock()
+	h.dialCancel = cancelDial
+	h.mu.Unlock()
+
+	conn, err := Dial(dialCtx, cfg)
+	cancelDial()
 	if err != nil {
 		m.mu.Lock()
 		delete(m.hosts, cfg.ID)
@@ -149,6 +167,13 @@ func (m *Manager) Connect(ctx context.Context, cfg HostConfig, obs Observer) err
 	conn.SetObserver(obs)
 
 	h.mu.Lock()
+	if h.dropped {
+		// Disconnected while this was dialling. Adopting it now would start a
+		// watch loop on a host the manager has already forgotten.
+		h.mu.Unlock()
+		_ = conn.Close()
+		return fmt.Errorf("sshcore: %s was disconnected while connecting", cfg.ID)
+	}
 	h.conn = conn
 	h.gen = m.genSeq.Add(1)
 	h.mu.Unlock()
@@ -263,6 +288,16 @@ func (m *Manager) Close() error {
 }
 
 func (h *managedHost) shutdown() error {
+	// Marked before anything else, so a dial that finishes during this call
+	// finds it and closes what it made instead of adopting it.
+	h.mu.Lock()
+	h.dropped = true
+	cancelDial := h.dialCancel
+	h.mu.Unlock()
+	if cancelDial != nil {
+		cancelDial()
+	}
+
 	if h.cancel != nil {
 		h.cancel()
 		<-h.stopped
@@ -297,10 +332,49 @@ func (h *managedHost) watch(ctx context.Context) {
 	defer ticker.Stop()
 
 	missed := 0
+	// The transport says when it dies, and it says so at once. Waiting for three
+	// missed keepalives instead meant the server could reboot and the app would
+	// go on showing a green dot with stale numbers for 87 seconds, every action
+	// failing with "open session: EOF" — measured by restarting the fixture's
+	// sshd. Meanwhile Connect refused to reconnect because the host was "already
+	// connected". The keepalive is still needed for the other half: a network
+	// that swallows packets without closing anything, where nothing arrives to
+	// be noticed.
+	gone := make(chan struct{}, 1)
+	watchClient := func(c *Conn) {
+		if c == nil {
+			return
+		}
+		go func() {
+			_ = c.client.Wait()
+			select {
+			case gone <- struct{}{}:
+			default:
+			}
+		}()
+	}
+	h.mu.RLock()
+	watchClient(h.conn)
+	h.mu.RUnlock()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-gone:
+			// Drain anything the old connection queued while we get a new one.
+			h.mu.RLock()
+			conn := h.conn
+			h.mu.RUnlock()
+			if conn == nil {
+				continue
+			}
+			missed = 0
+			h.reconnect(ctx)
+			h.mu.RLock()
+			watchClient(h.conn)
+			h.mu.RUnlock()
+			continue
 		case <-ticker.C:
 		}
 
@@ -318,6 +392,9 @@ func (h *managedHost) watch(ctx context.Context) {
 			}
 			missed = 0
 			h.reconnect(ctx)
+			h.mu.RLock()
+			watchClient(h.conn)
+			h.mu.RUnlock()
 			continue
 		}
 		missed = 0

@@ -12,6 +12,7 @@ import (
 	"github.com/cpprhtn/LiteDeck/internal/mcp"
 	"github.com/cpprhtn/LiteDeck/internal/rollback"
 	"github.com/cpprhtn/LiteDeck/internal/sshcore"
+	"path"
 )
 
 func appWithSettings(t *testing.T) *App {
@@ -327,8 +328,53 @@ func TestFileWritesAreNotSilentByDefault(t *testing.T) {
 	if err == nil {
 		t.Fatal("a file write ran with nobody approving it")
 	}
+	// The host in this test is registered but not connected, so the read that
+	// builds the diff cannot happen — and a write whose "before" is unknown is
+	// refused rather than shown as a file being created. That used to be the
+	// bug: any read failure became created=true, the prompt showed the whole
+	// file as new, and undoing the change deleted the file.
+	if !strings.Contains(err.Error(), "not connected") {
+		t.Errorf("failed for the wrong reason: %v", err)
+	}
+}
+
+// The approval prompt is the gate, and nobody answering it means nothing runs.
+//
+// Separate from the test above because it needs a server: the diff is read
+// before the prompt is raised, so a host that cannot be reached never gets that
+// far — which is itself the point of the other test.
+func TestFileWriteWithNobodyAnsweringRunsNothing(t *testing.T) {
+	a := connectedApp(t)
+	// liveApp wires a connection but no settings store, and the sharing flag
+	// lives in settings. The fixture host has to be shared before an AI client
+	// may touch it — registering a server in LiteDeck is not what hands it over.
+	a.settings = config.OpenSettings(a.configDir)
+	a.rollback = rollback.Open(a.configDir)
+	a.SetMCPHost("fixture", true)
+	restore := WriteApprovalTimeoutForTest(150 * time.Millisecond)
+	defer restore()
+
+	byName := map[string]mcp.Tool{}
+	for _, tool := range registered(t, a).Tools() {
+		byName[tool.Name] = tool
+	}
+	dir := scratchDir(t, a, "litedeck-mcp-approval")
+	file := path.Join(dir, "conf")
+	if res := a.WriteTextFile("fixture", file, "old\n"); !res.OK {
+		t.Fatalf("seed: %+v", res)
+	}
+
+	_, err := byName["fs_write"].Handler(context.Background(), map[string]any{
+		"hostId": "fixture", "path": file, "content": "new\n",
+	})
+	if err == nil {
+		t.Fatal("a file write ran with nobody approving it")
+	}
 	if !strings.Contains(err.Error(), "nobody answered") {
 		t.Errorf("failed for the wrong reason: %v", err)
+	}
+	if got, _ := a.ReadTextFile("fixture", file); got.Content != "old\n" {
+		t.Errorf("the file changed anyway: %q", got.Content)
 	}
 
 	var timeouts int

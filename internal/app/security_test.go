@@ -40,7 +40,7 @@ func TestUnlockDiesWithTheConnection(t *testing.T) {
 // to see that is to look.
 func TestDisconnectDropsTheHeldPassword(t *testing.T) {
 	a := connectedApp(t)
-	a.unlocked.put("fixture", a.mgr.Generation("fixture"), "hunter2")
+	a.unlocked.put("fixture", a.connGeneration("fixture"), "hunter2")
 
 	if err := a.DisconnectHost("fixture"); err != nil {
 		t.Fatalf("DisconnectHost: %v", err)

@@ -68,7 +68,7 @@ func (a *App) execMaybeElevated(
 	// second time to read the journal, having just been handed it — and the
 	// network tab could unlock and then watch the security tab ask again for
 	// the same permission on the same connection.
-	if password, ok := a.unlocked.get(hostID, a.mgr.Generation(hostID)); ok {
+	if password, ok := a.unlocked.get(hostID, a.connGeneration(hostID)); ok {
 		return conn.ExecOpts(ctx,
 			sshcore.ExecOptions{Stdin: strings.NewReader(password + "\n")},
 			"sudo", append([]string{"-S", "-p", "", "--", cmd}, args...)...)
@@ -149,7 +149,7 @@ func (a *App) execUnlocked(
 			"sudo", append([]string{"-n", "--", cmd}, args...)...)
 		return res, err == nil, err
 	}
-	if password, ok := a.unlocked.get(hostID, a.mgr.Generation(hostID)); ok {
+	if password, ok := a.unlocked.get(hostID, a.connGeneration(hostID)); ok {
 		// The password goes on stdin, never in argv — argv is visible in the
 		// remote process table and in the Command Log (§7.2).
 		res, err := conn.ExecOpts(ctx, sshcore.ExecOptions{

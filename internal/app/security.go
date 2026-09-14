@@ -319,7 +319,7 @@ func (a *App) HostSecurity(hostID string, elevate, force bool) (SecurityView, er
 	if err != nil {
 		return SecurityView{}, err
 	}
-	gen := a.mgr.Generation(hostID)
+	gen := a.connGeneration(hostID)
 	if !force {
 		if cached, ok := a.security.get(hostID, gen, elevate); ok {
 			return cached, nil
@@ -495,7 +495,7 @@ func (a *App) securityRules(
 	if info.SudoNoPasswd {
 		res, err = conn.Exec(ctx, "sudo", "-n", "--", "sh", "-c", script)
 	} else {
-		password, ok := a.unlocked.get(hostID, a.mgr.Generation(hostID))
+		password, ok := a.unlocked.get(hostID, a.connGeneration(hostID))
 		if !ok {
 			return "", "", "", "", "", i18n.Errorf("잠겨 있습니다")
 		}
@@ -666,7 +666,7 @@ func (a *App) UnlockSecurity(hostID string) (bool, error) {
 	// Already open on this connection. Turning the lock in one tab and then
 	// turning it in another asked for the password twice for the same
 	// permission, which is exactly the thing this lock exists to avoid.
-	if _, ok := a.unlocked.get(hostID, a.mgr.Generation(hostID)); ok {
+	if _, ok := a.unlocked.get(hostID, a.connGeneration(hostID)); ok {
 		return true, nil
 	}
 	// Deliberately not secretFunc: that one reads the keychain and offers to
@@ -679,7 +679,7 @@ func (a *App) UnlockSecurity(hostID string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	a.unlocked.put(hostID, a.mgr.Generation(hostID), password)
+	a.unlocked.put(hostID, a.connGeneration(hostID), password)
 	a.emitSudoState(hostID)
 	return true, nil
 }
@@ -698,14 +698,14 @@ func (a *App) LockSecurity(hostID string) {
 // somebody who has already proved they may have it should not be asked again to
 // see process names.
 func (a *App) SudoUnlocked(hostID string) bool {
-	if _, ok := a.unlocked.get(hostID, a.mgr.Generation(hostID)); ok {
+	if _, ok := a.unlocked.get(hostID, a.connGeneration(hostID)); ok {
 		return true
 	}
 	// Only what detection already found. Calling DetectHost here would probe —
 	// and this runs on the disconnect path, where it repopulated the cache that
 	// had just been dropped and sent commands down a connection being torn
 	// down. A host that has not been detected yet simply reads as locked.
-	info, ok := a.detected.get(hostID)
+	info, ok := a.detected.get(hostID, a.connGeneration(hostID))
 	return ok && info.SudoNoPasswd
 }
 
@@ -725,7 +725,7 @@ type SudoState struct {
 // a detection by the time it renders.
 func (a *App) HostSudoState(hostID string) SudoState {
 	st := SudoState{HostID: hostID, Unlocked: a.SudoUnlocked(hostID)}
-	if info, ok := a.detected.get(hostID); ok {
+	if info, ok := a.detected.get(hostID, a.connGeneration(hostID)); ok {
 		st.Available = info.HasSudo
 	}
 	return st

@@ -284,13 +284,30 @@ func Dial(ctx context.Context, cfg HostConfig) (*Conn, error) {
 	// transport out from under it instead. A deadline would have done for a
 	// socket, but a forwarded channel does not carry one — and this way the
 	// caller's cancellation reaches the handshake too, which it never did.
+	//
+	// The fixed timeout applies only when the caller set no deadline. The host
+	// key callback and the password and 2FA prompts all run *inside*
+	// ssh.NewClientConn, so a flat 15 seconds counted a person reading a
+	// fingerprint and typing a password against the network budget: answering
+	// after 20 seconds ended in "use of closed network connection", which reads
+	// as "the first connection to a new server always fails, the second works".
+	// A one-time-code login never had a chance. How long a login may take,
+	// including the human, is the caller's decision — hosts.go budgets
+	// PromptTimeout + 30s, and twice that through a bastion.
+	watchdog := time.After(timeout)
+	if _, ok := ctx.Deadline(); ok {
+		// A caller who set a deadline has already said how long this may take.
+		// Leaving the flat timer armed would override them with the smaller
+		// number, which is the bug.
+		watchdog = nil
+	}
 	handshake := make(chan struct{})
 	go func() {
 		select {
 		case <-handshake:
 		case <-ctx.Done():
 			_ = tcp.Close()
-		case <-time.After(timeout):
+		case <-watchdog:
 			_ = tcp.Close()
 		}
 	}()

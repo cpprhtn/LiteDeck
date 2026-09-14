@@ -115,7 +115,7 @@ func (a *App) HostDigest(hostID string) (DigestView, error) {
 	}
 	// Keyed on the mark as well as the connection, so dismissing the strip is
 	// what reopens the question — see digestCache for why there is no timer.
-	gen := a.mgr.Generation(hostID)
+	gen := a.connGeneration(hostID)
 	if cached, ok := a.digests.get(hostID, gen, since); ok {
 		return cached, nil
 	}

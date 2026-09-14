@@ -312,7 +312,14 @@ func (a *App) DeletePaths(hostID string, paths []string, recursive bool, typed s
 		case !recursive:
 			err = client.RemoveDirectory(p)
 		default:
-			return a.removeRecursive(hostID, p)
+			// Not `return`: this used to end the whole loop at the first
+			// directory, so selecting two folders deleted one and answered
+			// ok:true. The frontend sorts directories first, which made it the
+			// common case rather than the rare one.
+			if res := a.removeRecursive(hostID, p); !res.OK {
+				return res
+			}
+			continue
 		}
 		if err != nil {
 			return a.fileFailure(hostID, p, err)
@@ -605,6 +612,19 @@ func (a *App) SaveTextFile(hostID string, req SaveRequest) SaveResult {
 	perm := os.FileMode(0o644)
 	var owner *sftp.FileStat
 
+	// Write through a symlink rather than over it. The atomic save stages a
+	// sibling file and renames it onto the target, and rename replaces a link
+	// with the regular file it was pointing past — so saving
+	// `sites-enabled/app` used to turn that link into a copy and leave the file
+	// in `sites-available` at its old contents. Every dotfile-manager symlink
+	// and `/etc/alternatives` entry is this case. `vi` follows the link, and so
+	// does this now.
+	target, err := followSymlink(client, cleaned)
+	if err != nil {
+		return SaveResult{ActionResult: a.fileFailure(hostID, cleaned, err)}
+	}
+	cleaned = target
+
 	fi, statErr := client.Stat(cleaned)
 	switch {
 	case statErr == nil:
@@ -682,6 +702,41 @@ var errCannotStage = errors.New(i18n.S("app: 임시 파일을 만들 수 없습�
 var stageSeq atomic.Uint64
 
 func init() { stageSeq.Store(uint64(time.Now().UnixNano())) }
+
+// symlinkHops bounds the walk. A link that points at itself is legal to create
+// and would otherwise spin here forever; the kernel uses a small limit for the
+// same reason.
+const symlinkHops = 16
+
+// followSymlink resolves p to the file a write should actually land on.
+//
+// Returns p unchanged when it is not a link, and when the link is broken —
+// writing then creates the file the link names, which is what following it
+// means. A relative target resolves against the link's own directory, not the
+// working directory, which is the mistake that makes `../foo` land in the wrong
+// place.
+func followSymlink(client *sftp.Client, p string) (string, error) {
+	for i := 0; i < symlinkHops; i++ {
+		fi, err := client.Lstat(p)
+		if err != nil {
+			// Does not exist yet: nothing to follow, and the caller handles the
+			// "gone since it was opened" case on its own.
+			return p, nil
+		}
+		if fi.Mode()&os.ModeSymlink == 0 {
+			return p, nil
+		}
+		dst, err := client.ReadLink(p)
+		if err != nil {
+			return "", err
+		}
+		if !path.IsAbs(dst) {
+			dst = path.Join(path.Dir(p), dst)
+		}
+		p = path.Clean(dst)
+	}
+	return "", i18n.Errorf("%s: 심볼릭 링크가 너무 깊습니다", p)
+}
 
 // stageAndRename writes content to a sibling temp file and moves it over target.
 func stageAndRename(
