@@ -456,7 +456,7 @@ func (a *App) HostSecurity(hostID string, elevate, force bool) (SecurityView, er
 		a.security.put(hostID, gen, elevate, view)
 		return view, nil
 	}
-	rules, ruleset, bans, jailOut, banLog, err := a.securityRules(ctx, conn, hostID, info)
+	rules, firewalld, ruleset, bans, jailOut, banLog, err := a.securityRules(ctx, conn, hostID, info)
 	if err != nil {
 		// A refused password is a normal answer. The free half stands.
 		view.RulesError = err.Error()
@@ -477,13 +477,10 @@ func (a *App) HostSecurity(hostID string, elevate, force bool) (SecurityView, er
 	// Parsed only for ufw. nft and iptables print something else entirely, and
 	// a half-understood ruleset is worse than a plain one because it looks like
 	// it was understood.
-	if strings.Contains(rules, "Status:") {
-		parsed := adapter.ParseUfwStatus(rules)
-		view.Firewall = &parsed
-	}
-	if rules == "" {
-		// No ufw on this host. The ruleset is all there is to show, and showing
-		// it is better than an empty pane.
+	view.Firewall = pickFirewall(rules, firewalld)
+	if rules == "" && view.Firewall == nil {
+		// Neither reader recognised anything. The kernel ruleset is all there is
+		// to show, and showing it is better than an empty pane.
 		view.Rules = ruleset
 	}
 	if strings.Contains(jailOut, "Status for the jail") {
@@ -540,6 +537,8 @@ func (a *App) HostSecurity(hostID string, elevate, force bool) (SecurityView, er
 const securityRulesScript = `LC_ALL=C; export LC_ALL
 echo '#rules'
 ufw status verbose 2>/dev/null
+echo '#firewalld'
+firewall-cmd --list-all 2>/dev/null
 echo '#ruleset'
 nft list ruleset 2>/dev/null
 echo '#iptables'
@@ -560,10 +559,35 @@ awk -v since="$(date -d '7 days ago' '+%Y-%m-%d' 2>/dev/null || date -v-7d '+%Y-
 echo '#end'
 :`
 
+// pickFirewall turns the two readings into the one the screen describes.
+//
+// ufw first and firewalld second, never the other way round. A host with both
+// installed is a host where ufw is the one somebody configured, and the reason
+// the order is a rule rather than a preference is that Debian and Ubuntu work
+// today: the firewalld reader was added for Rocky Linux and CentOS Stream, and
+// it is not allowed to change what a Debian box says about itself.
+//
+// nil when neither reader recognised anything, because the caller renders a
+// status as a table of rules and an empty table reads as "nothing is allowed
+// in" — a claim, and a false one, on a host that simply uses something else.
+func pickFirewall(ufwOut, firewalldZone string) *adapter.FirewallStatus {
+	// Parsed only for ufw. nft and iptables print something else entirely, and
+	// a half-understood ruleset is worse than a plain one because it looks like
+	// it was understood.
+	if strings.Contains(ufwOut, "Status:") {
+		parsed := adapter.ParseUfwStatus(ufwOut)
+		return &parsed
+	}
+	if parsed, ok := adapter.ParseFirewalld(firewalldZone); ok {
+		return &parsed
+	}
+	return nil
+}
+
 // securityRules reads the parts that need root, in one elevated round trip.
 func (a *App) securityRules(
 	ctx context.Context, conn *sshcore.Conn, hostID string, info ServerInfoView,
-) (rules, ruleset, bans, jail, banLog string, err error) {
+) (rules, firewalld, ruleset, bans, jail, banLog string, err error) {
 	// Compile-time constant, like the free script. `2>&1` because these tools
 	// explain a refusal on stderr and that explanation is the useful part.
 	// ufw's own summary and the kernel ruleset are read separately, not chained.
@@ -588,21 +612,23 @@ func (a *App) securityRules(
 		// happened to elevate elsewhere is not that request.
 		password, ok := a.unlocked.getTurned(hostID, a.connGeneration(hostID))
 		if !ok {
-			return "", "", "", "", "", i18n.Errorf("잠겨 있습니다")
+			return "", "", "", "", "", "", i18n.Errorf("잠겨 있습니다")
 		}
 		res, err = conn.ExecOpts(ctx,
 			sshcore.ExecOptions{Stdin: strings.NewReader(password + "\n")},
 			"sudo", "-S", "-p", "", "--", "sh", "-c", script)
 	}
 	if err != nil {
-		return "", "", "", "", "", err
+		return "", "", "", "", "", "", err
 	}
 	out := string(res.Stdout)
 	head, rest, _ := strings.Cut(out, "#bans")
 	bansPart, jailAndLog, _ := strings.Cut(rest, "#get sshd maxretry")
 	jailPart, banLogPart, _ := strings.Cut(jailAndLog, "#banlog")
 	rulesPart, kernelPart, _ := strings.Cut(head, "#ruleset")
-	rules = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(rulesPart), "#rules"))
+	ufwPart, firewalldPart, _ := strings.Cut(rulesPart, "#firewalld")
+	rules = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(ufwPart), "#rules"))
+	firewalld = strings.TrimSpace(firewalldPart)
 	// The kernel side is nft where it answered and iptables where it did not.
 	// Whichever spoke is what the sets and counters are read from.
 	nftPart, iptPart, _ := strings.Cut(kernelPart, "#iptables")
@@ -614,7 +640,7 @@ func (a *App) securityRules(
 	// Put the marker back: ParseJailStatus keys off it, and cutting on it is
 	// what found the boundary.
 	jail = strings.TrimSuffix(strings.TrimSpace("#get sshd maxretry"+jailPart), "#end")
-	return rules, ruleset, bans, strings.TrimSpace(jail),
+	return rules, firewalld, ruleset, bans, strings.TrimSpace(jail),
 		strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(banLogPart), "#end")), nil
 }
 

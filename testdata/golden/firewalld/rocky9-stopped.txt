@@ -1,0 +1,3 @@
+not running
+--
+FirewallD is not running

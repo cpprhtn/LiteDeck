@@ -359,6 +359,13 @@ disabled, and reading that as "no firewall" lights a red lamp on **nearly every
 Ubuntu server**. So the unit, the config file and the kernel are all read, and a
 disagreement between them is shown rather than resolved.
 
+**The rule list reads ufw and firewalld both.** ufw wins where it is installed —
+on a box with both, ufw is the one somebody configured. Where there is none,
+`firewall-cmd --list-all` describes the active zone, which is what RHEL, Rocky,
+CentOS Stream and Fedora run. firewalld names a service (`ssh`, `http`) where ufw
+names a port, so those rows are shown by name and left unjudged: with no port to
+look for, calling one "unused" would be saying something untrue.
+
 **"No firewall" is only said where the evidence supports it.** With no front end
 on but something using the kernel packet filter, the answer is "unclear" —
 Docker looks exactly like that, and calling it a firewall would be the opposite

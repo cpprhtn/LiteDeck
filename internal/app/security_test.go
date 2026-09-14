@@ -407,3 +407,51 @@ func TestElevatedSecurityReadPinsTheLocale(t *testing.T) {
 		t.Error("securityRulesScript does not open by pinning the locale")
 	}
 }
+
+// ufw is read first and firewalld only where there is none.
+//
+// The firewalld reader was added because the rules panel was blank on Rocky
+// Linux 9 and CentOS Stream 9. The condition on that work was that Debian and
+// Ubuntu keep showing exactly what they show today, and the way that is kept is
+// the order: a host with both installed is a host where ufw is the one somebody
+// configured.
+//
+// Pinned here rather than left to the reading, because the failure is silent —
+// a Debian box would go on working and quietly start describing itself from the
+// wrong tool.
+func TestUfwIsPreferredOverFirewalld(t *testing.T) {
+	const ufwOut = "Status: active\nDefault: deny (incoming), allow (outgoing), deny (routed)\n" +
+		"To                         Action      From\n" +
+		"--                         ------      ----\n" +
+		"22/tcp                     ALLOW IN    Anywhere\n"
+	// A zone that disagrees with it on every count, so picking the wrong one
+	// cannot look like picking the right one.
+	const zone = "public\n  target: ACCEPT\n  services: cockpit\n  ports: 9999/tcp\n  forward: yes\n"
+
+	both := pickFirewall(ufwOut, zone)
+	if both == nil {
+		t.Fatal("a host with ufw got no firewall at all")
+	}
+	if both.Incoming != "deny" {
+		t.Errorf("incoming = %q — that is the firewalld zone, not ufw", both.Incoming)
+	}
+	for _, r := range both.Rules {
+		if r.To == "cockpit" || r.To == "9999/tcp" {
+			t.Errorf("a firewalld rule reached a ufw host: %+v", r)
+		}
+	}
+
+	// No ufw: firewalld answers instead, which is the whole point.
+	only := pickFirewall("", zone)
+	if only == nil {
+		t.Fatal("a host with only firewalld still shows nothing")
+	}
+	if only.Incoming != "allow" {
+		t.Errorf("incoming = %q, want the zone's ACCEPT target", only.Incoming)
+	}
+
+	// Neither: nothing, rather than an empty table that reads as "all closed".
+	if none := pickFirewall("", ""); none != nil {
+		t.Errorf("invented a firewall out of nothing: %+v", none)
+	}
+}
