@@ -2023,17 +2023,30 @@ button.danger {
    Dropping a tile whole was the visible fault the other way: the GPU panel
    vanished from a machine that has a GPU, which reads as "no card" rather than
    as "no room". */
-.metrics-bar[data-shed] .metric-note {
+/* The ladder, widest-and-least-meaningful first.
+   1. the sparklines
+   2. the third-rank tiles, and the notes that are decoration
+   3. the second-rank tiles, and what is left of the notes
+
+   The sparkline goes before the note now, which is the other way round from how
+   this started. The two notes that survive are memory's and disk's, because on
+   those tiles the percentage alone is not the answer: 13% of 8 GB and 13% of
+   64 GB are different servers, and the question somebody has about a disk is
+   how much is left, in gigabytes. A core count or a fan speed is a detail and
+   goes with the rest. */
+.metrics-bar[data-shed] .metric .spark,
+.metrics-bar[data-shed] .metric svg {
   display: none;
 }
-.metrics-bar[data-shed='2'] .metric .spark,
-.metrics-bar[data-shed='2'] .metric svg,
-.metrics-bar[data-shed='3'] .metric .spark,
-.metrics-bar[data-shed='3'] .metric svg {
+.metrics-bar[data-shed='2'] .metric:not([data-keep-note]) .metric-note,
+.metrics-bar[data-shed='3'] .metric:not([data-keep-note]) .metric-note {
   display: none;
 }
 .metrics-bar[data-shed='2'] [data-p='3'],
 .metrics-bar[data-shed='3'] [data-p='3'] {
+  display: none;
+}
+.metrics-bar[data-shed='3'] .metric-note {
   display: none;
 }
 .metrics-bar[data-shed='3'] [data-p='2'] {
@@ -2064,16 +2077,6 @@ button.danger {
   color: var(--fg-muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-/* The absolute figures go first when the bar runs out of room.
-   The summary bar's job is the glance, and a percentage answers that on its
-   own — 62G is the number you read, 7% is the one you see. Anybody who wants
-   the bytes on a narrow window has the monitoring tab, which has had them all
-   along. */
-@media (max-width: 1180px) {
-  .metric-note {
-    display: none;
-  }
 }
 .metric[data-warn] .metric-value {
   color: var(--danger);

@@ -190,6 +190,7 @@ function Stat({
   warn,
   title,
   p,
+  keepNote,
 }: {
   label: string
   value: string
@@ -204,9 +205,22 @@ function Stat({
   title?: string
   /** What to drop first when the row runs out of window. 1 never goes. */
   p?: 1 | 2 | 3
+  /** Keep the note past the point where the others go.
+   *
+   *  For the two that read as an amount rather than a decoration: memory and
+   *  disk are the tiles where "13%" on its own is not the answer — 13% of 8 GB
+   *  and 13% of 64 GB are different servers. A core count or a fan speed is a
+   *  detail; "8.0G / 63G" is the number. */
+  keepNote?: boolean
 }) {
   return (
-    <div className="metric" data-p={p ?? 1} data-warn={warn || undefined} title={title}>
+    <div
+      className="metric"
+      data-p={p ?? 1}
+      data-keep-note={keepNote || undefined}
+      data-warn={warn || undefined}
+      title={title}
+    >
       <div className="metric-label">{label}</div>
       <div className="metric-row">
         <span className="metric-value">
@@ -326,6 +340,7 @@ export function MetricsBar({ hostID }: { hostID: string }) {
         // percentage alone never says it. It was in the tooltip, which is where
         // things go to be found by nobody.
         note={`${bytes(m.memUsed)} / ${bytes(m.memTotal)}`}
+        keepNote
         warn={m.memPercent >= 90}
         title={`${bytes(m.memUsed)} / ${bytes(m.memTotal)}`}
       />
@@ -415,6 +430,7 @@ export function MetricsBar({ hostID }: { hostID: string }) {
           value={disk.percent.toFixed(0)}
           unit="%"
           note={`${bytes(disk.used)} / ${bytes(disk.size)}`}
+        keepNote
           warn={disk.percent >= 90}
           title={t('{used} / {size} · 사용 가능 {free}', {
             used: bytes(disk.used),
