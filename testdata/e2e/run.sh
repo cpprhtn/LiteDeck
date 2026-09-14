@@ -127,11 +127,21 @@ LITEDECK_E2E_URL="http://127.0.0.1:$PORT" \
 LITEDECK_E2E_SSH_PORT="$SSH_PORT" \
 LITEDECK_E2E_CONTAINER="$CONTAINER" \
 LITEDECK_E2E_ARTIFACTS="$ARTIFACTS" \
-	node "$HERE/e2e.mjs"
-rc=$?
+	node "$HERE/e2e.mjs" 2>&1 | tee "$WORK/harness.log"
+rc=${PIPESTATUS[0]}
 
 if [ $rc -ne 0 ]; then
 	say "서버 로그 (마지막 40줄)"
 	tail -40 "$WORK/server.log"
+	# Repeated at the very end, and last on purpose. A CI log gets read from the
+	# bottom, and the first time this failed on a runner the tail everybody saw
+	# was the server log — one line saying it had started listening, which is
+	# true of every run including the ones that pass. What failed was forty lines
+	# further up.
+	say "실패한 검사"
+	# The FAIL line and the indented detail under it, and nothing else.
+	awk '/^FAIL/ { f = 1; print; next } f && /^[[:space:]]/ { print; next } { f = 0 }' \
+		"$WORK/harness.log" | grep . ||
+		echo "  (검사가 하나도 돌지 않았다 — 위의 node 출력을 볼 것)"
 fi
 exit $rc
