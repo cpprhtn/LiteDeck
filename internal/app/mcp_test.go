@@ -1348,3 +1348,45 @@ func TestCodexSnippetUsesTheHostShell(t *testing.T) {
 		}
 	}
 }
+
+// The most careful setting must not relax itself.
+//
+// "Ask about everything" was stored with the same eight-hour window as the
+// modes that skip prompts, and policyFor turns an expired window into the
+// default. So a production box marked strict at 6pm was back to the ordinary
+// mode by 2am, with no countdown drawn anywhere to say so, and svc_control
+// restarted services without a word.
+func TestStrictPolicyDoesNotExpire(t *testing.T) {
+	a := appWithSettings(t)
+	seedSharedHost(t, a)
+
+	// Zero minutes is what the UI sends: there is no window to pick for strict.
+	a.SetMCPWritePolicy("h1", WriteStrict, 0)
+
+	got := a.settings.Get().MCP.Write["h1"]
+	if got.Mode != WriteStrict {
+		t.Fatalf("mode = %q", got.Mode)
+	}
+	if got.Until != 0 {
+		t.Errorf("Until = %d, want 0 — a stored expiry is what made strict decay", got.Until)
+	}
+	if p := a.policyFor("h1"); p.Mode != WriteStrict {
+		t.Errorf("policyFor = %q right after setting it", p.Mode)
+	}
+
+	// And it is still strict long after any window would have closed.
+	s := a.settings.Get().MCP
+	s.Write["h1"] = config.MCPWritePolicy{Mode: WriteStrict, Until: 0}
+	if err := a.settings.SetMCP(s); err != nil {
+		t.Fatal(err)
+	}
+	if p := a.policyFor("h1"); p.Mode != WriteStrict {
+		t.Errorf("policyFor = %q, want strict", p.Mode)
+	}
+
+	// The relaxing modes keep their expiry — that is the whole point of them.
+	a.SetMCPWritePolicy("h1", WriteBypass, 0)
+	if relaxed := a.settings.Get().MCP.Write["h1"]; relaxed.Until == 0 {
+		t.Error("bypass was stored with no expiry — a relaxation must not outlive its session")
+	}
+}

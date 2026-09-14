@@ -42,11 +42,16 @@ type Confirm =
 
 export function EditorPane({
   hostID,
+  visible,
   onError,
   onSaved,
   onDownload,
 }: {
   hostID: string
+  /** Whether the file tab is the one on screen. The save shortcut is a window
+   *  listener, so without this ⌘S in the terminal tab opened a save dialog
+   *  inside a hidden tab and the scrim then swallowed Escape. */
+  visible: boolean
   onError: (msg: string) => void
   /** Called with the saved path so the tree can reread just that directory. */
   onSaved: (path: string) => void
@@ -69,6 +74,10 @@ export function EditorPane({
   latest.current = file
   const confirmRef = useRef(confirm)
   confirmRef.current = confirm
+  // A ref rather than a dependency: the listener is installed once, and
+  // re-installing it on every tab switch would drop a keystroke in between.
+  const visibleRef = useRef(visible)
+  visibleRef.current = visible
   // requestSave is defined below the early return, so the listener reaches it
   // through a ref rather than being re-registered on every render.
   const requestSaveRef = useRef<(f: OpenFile) => void>(() => {})
@@ -87,6 +96,7 @@ export function EditorPane({
   // first and marks it handled; this only picks up what it did not.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (!visibleRef.current) return
       if (e.defaultPrevented || !matches(e, 'save')) return
       const f = latest.current
       if (!f) return
@@ -380,9 +390,9 @@ function DiffDialog({
     <Scrim onClose={onCancel}>
       <div
         className="dialog diff-dialog"
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') onCancel()
-        }}
+        /* No Escape handler here: the Scrim above already has onCancel and
+           listens in the capture phase, so anything on this element is never
+           reached. Two places claiming the same key is how one of them rots. */
       >
         <h2>{title}</h2>
         <p className="mono muted ellipsis">{path}</p>

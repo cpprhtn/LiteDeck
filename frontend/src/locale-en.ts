@@ -183,7 +183,6 @@ export const en: Record<string, string> = {
   '로그를 기다리는 중…': 'Waiting for logs…',
   '시스템 부하': 'Load',
   '로컬 MCP 엔드포인트 열기': 'Open a local MCP endpoint',
-  '루트 바로 아래 디렉터리 — 하위까지 지우려면 경로를 직접 입력해야 합니다': 'A directory directly under root — deleting it and its contents needs the path typed out',
   '를 가져오거나 직접 추가하세요.': 'or add one by hand.',
   '설정 다시 불러오기': 'Reload',
   '마지막 실행': 'Last run',
@@ -226,7 +225,6 @@ export const en: Record<string, string> = {
   '비밀번호': 'Password',
   '비밀번호 인증이 켜져 있습니다 (PasswordAuthentication yes).': 'Password authentication is on (PasswordAuthentication yes).',
   '비밀번호는 여기에 저장되지 않습니다 — 접속할 때 묻고, 사용자가 선택하면 OS 키체인에 들어갑니다.': 'Passwords are not stored here — you are asked on connect, and it goes to the OS keychain only if you choose that.',
-  '비어 있는 디렉터리입니다.': 'This directory is empty.',
   '비정상 종료 {n}': 'Crashed {n}',
   '빈 비밀번호로 로그인할 수 있습니다 (PermitEmptyPasswords yes).': 'An empty password is accepted (PermitEmptyPasswords yes).',
   '사본을 남기기에 너무 커서 되돌릴 수 없습니다': 'Too large to keep a copy of, so it cannot be undone',
@@ -745,4 +743,6 @@ export const en: Record<string, string> = {
   '{cidr} 에서 {n}개 주소': '{n} addresses in {cidr}',
   '차단 규칙이 막고 있는 주소 {n}개': '{n} addresses blocked by a rule',
   '아직 아무것도 막고 있지 않은 주소': 'Addresses nothing is blocking yet',
+  '하위까지 지우려면 경로를 직접 입력해야 합니다': 'Deleting this and everything under it needs the path typed out',
+  '비어 있는 디렉터리입니다. 위의 도구 모음에서 폴더를 만들거나 파일을 올릴 수 있습니다.': 'This directory is empty. The toolbar above can make a folder or upload files.',
 }

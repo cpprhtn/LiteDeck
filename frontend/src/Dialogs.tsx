@@ -40,7 +40,11 @@ export function HostKeyDialog({
   }
 
   return (
-    <Scrim clickAway={false}>
+    // Escape rejects. Same reason as the MCP approval below: the Scrim eats the
+    // key in the capture phase, so a handler anywhere under it is dead code,
+    // and a fingerprint dialog that ignores Escape leaves the only way out as
+    // a click on one of three buttons.
+    <Scrim clickAway={false} onClose={() => answer('reject')}>
       <div className="dialog" role="dialog" aria-modal="true">
         <h2>{t('처음 접속하는 호스트입니다')}</h2>
         <p className="muted">
@@ -176,10 +180,13 @@ export function McpWriteDialog({
   prompt: MCPWritePrompt | null
   onDone: () => void
 }) {
-  const ok = useRef<HTMLButtonElement>(null)
+  const deny = useRef<HTMLButtonElement>(null)
   useEffect(() => {
-    // Focus lands on Approve, but see the button order below.
-    ok.current?.focus()
+    // Focus lands on Decline. It used to land on Approve, which made Enter —
+    // the key somebody is already pressing when a dialog appears over what they
+    // were typing — a one-keystroke yes. The comment below said neither button
+    // was the default action of the window; the focus said otherwise.
+    deny.current?.focus()
   }, [prompt])
 
   if (!prompt) return null
@@ -205,15 +212,14 @@ export function McpWriteDialog({
   const isExec = prompt.tool === 'run_command'
 
   return (
-    <Scrim clickAway={false}>
-      <div
-        className="dialog mcp-approve"
-        onKeyDown={(e) => {
-          // Escape declines. A dialog dismissed without a decision must not be
-          // read as consent.
-          if (e.key === 'Escape') answer(false)
-        }}
-      >
+    // Escape declines. It goes on the Scrim rather than on the dialog: the
+    // Scrim listens in the capture phase and stops the event there, so a
+    // handler on the dialog below never ran — the key did nothing at all, and a
+    // dialog that ignores Escape trains people to click something instead.
+    // A dismissal without a decision must not be read as consent, so it is a
+    // decline rather than a close.
+    <Scrim clickAway={false} onClose={() => answer(false)}>
+      <div className="dialog mcp-approve">
         <h2>{t('MCP 클라이언트가 서버를 바꾸려 합니다')}</h2>
         <p className="muted">
           {t('{host} · {tool}', { host: prompt.host, tool: prompt.tool })}
@@ -245,7 +251,9 @@ export function McpWriteDialog({
           {/* Decline is first and Approve is the one you reach for, but neither
               is the default action of the window: an approval nobody read is
               the failure this dialog exists to prevent. */}
-          <button onClick={() => answer(false)}>{t('거부')}</button>
+          <button ref={deny} onClick={() => answer(false)}>
+            {t('거부')}
+          </button>
           <span className="spacer" />
           <button className="ghost" onClick={() => allowFor(60)}>
             {t('허용 후 1시간 동안 묻지 않기')}
@@ -256,7 +264,7 @@ export function McpWriteDialog({
           <button className="ghost" onClick={() => allowFor(8 * 60)}>
             {t('허용 후 8시간 동안 묻지 않기')}
           </button>
-          <button ref={ok} className="danger" onClick={() => answer(true)}>
+          <button className="danger" onClick={() => answer(true)}>
             {t('이번만 허용')}
           </button>
         </div>

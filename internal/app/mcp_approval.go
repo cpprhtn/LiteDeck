@@ -171,6 +171,9 @@ func (a *App) policyFor(hostID string) config.MCPWritePolicy {
 	if p.Mode == "" {
 		return config.MCPWritePolicy{Mode: WriteAsk}
 	}
+	// Until == 0 means "does not expire", which is what strict is stored with.
+	// The condition already required a non-zero Until, so this is unchanged
+	// behaviour for it — the bug was on the writing side.
 	if p.Mode != WriteAsk && p.Until > 0 && time.Now().Unix() >= p.Until {
 		// Expiry is enforced on read rather than by a timer: a timer that does
 		// not fire because the app was asleep would leave the window open.
@@ -273,9 +276,21 @@ func (a *App) SetMCPWritePolicy(hostID, mode string, minutes int) MCPStatus {
 	if s.Write == nil {
 		s.Write = map[string]config.MCPWritePolicy{}
 	}
-	if mode == WriteAsk {
+	switch mode {
+	case WriteAsk:
 		delete(s.Write, hostID) // the default needs no entry
-	} else {
+
+	case WriteStrict:
+		// No expiry. The window exists so a relaxation cannot outlive the
+		// session that wanted it; strict is the opposite of a relaxation, and
+		// expiring it turned the most careful setting into a temporary one that
+		// quietly became the *less* careful default overnight. Somebody who
+		// marks a production box "ask about everything" and comes back in the
+		// morning would have found svc_control restarting services without a
+		// word. A policy must not relax itself.
+		s.Write[hostID] = config.MCPWritePolicy{Mode: mode}
+
+	default:
 		window := time.Duration(minutes) * time.Minute
 		if window <= 0 || window > maxWriteWindow {
 			window = maxWriteWindow

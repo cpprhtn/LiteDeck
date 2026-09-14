@@ -108,7 +108,12 @@ export default function App() {
   const t = useT() // shadows the module import; subscribing is the point
   const [benchMode, setBenchMode] = useState<boolean | null>(null)
   const [mcpOpen, setMcpOpen] = useState(false)
-  const [mcpWrite, setMcpWrite] = useState<MCPWritePrompt | null>(null)
+  // A queue, not one slot. Go waits on several approvals at once — a burst of
+  // eight is allowed — and a single slot meant the second prompt replaced the
+  // first on screen while Go went on waiting for it, so the first was refused
+  // two minutes later with "nobody answered". Answering one shows the next.
+  const [mcpWrites, setMcpWrites] = useState<MCPWritePrompt[]>([])
+  const mcpWrite = mcpWrites[0] ?? null
   const [boot, setBoot] = useState<BootstrapData | null>(null)
   const [hosts, setHosts] = useState<HostView[]>([])
   const [activeID, setActiveID] = useState<string | null>(null)
@@ -119,8 +124,14 @@ export default function App() {
     tabs: [],
   })
   const [info, setInfo] = useState<Record<string, ServerInfo>>({})
-  const [hostKeyPrompt, setHostKeyPrompt] = useState<HostKeyPrompt | null>(null)
-  const [secretPrompt, setSecretPrompt] = useState<SecretPrompt | null>(null)
+  // Queues for the same reason the MCP one is: Go can be waiting on two at
+  // once. A background reconnect asking for host B's password used to replace
+  // host A's dialog while somebody was typing into it, and A's connect then sat
+  // there until the prompt timed out.
+  const [hostKeyPrompts, setHostKeyPrompts] = useState<HostKeyPrompt[]>([])
+  const hostKeyPrompt = hostKeyPrompts[0] ?? null
+  const [secretPrompts, setSecretPrompts] = useState<SecretPrompt[]>([])
+  const secretPrompt = secretPrompts[0] ?? null
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   // Collapsed by default: the work happens in the view above it, and the log is
@@ -200,9 +211,16 @@ export default function App() {
   // Prompts arrive mid-handshake: sshcore is parked on a channel waiting for
   // the answer these dialogs send back.
   useEffect(() => {
-    const offKey = on<HostKeyPrompt>('prompt:hostkey', setHostKeyPrompt)
-    const offSecret = on<SecretPrompt>('prompt:secret', setSecretPrompt)
-    const offWrite = on<MCPWritePrompt>('prompt:mcpwrite', setMcpWrite)
+    const offKey = on<HostKeyPrompt>('prompt:hostkey', (p) =>
+      setHostKeyPrompts((q) => (q.some((x) => x.id === p.id) ? q : [...q, p])),
+    )
+    const offSecret = on<SecretPrompt>('prompt:secret', (p) =>
+      setSecretPrompts((q) => (q.some((x) => x.id === p.id) ? q : [...q, p])),
+    )
+    const offWrite = on<MCPWritePrompt>('prompt:mcpwrite', (p) =>
+      // Keyed on id so a re-delivered event cannot queue the same prompt twice.
+      setMcpWrites((q) => (q.some((x) => x.id === p.id) ? q : [...q, p])),
+    )
     // Go emits this from five places — a rollback copy it could not write, a
     // token it could not make, a credential it could not save — and until this
     // line existed nothing was listening, so all five were dropped by the
@@ -520,11 +538,17 @@ export default function App() {
       )}
 
       {hostKeyPrompt && (
-        <HostKeyDialog prompt={hostKeyPrompt} onDone={() => setHostKeyPrompt(null)} />
+        <HostKeyDialog
+          prompt={hostKeyPrompt}
+          onDone={() => setHostKeyPrompts((q) => q.slice(1))}
+        />
       )}
-      <McpWriteDialog prompt={mcpWrite} onDone={() => setMcpWrite(null)} />
+      <McpWriteDialog
+        prompt={mcpWrite}
+        onDone={() => setMcpWrites((q) => q.slice(1))}
+      />
       {secretPrompt && (
-        <SecretDialog prompt={secretPrompt} onDone={() => setSecretPrompt(null)} />
+        <SecretDialog prompt={secretPrompt} onDone={() => setSecretPrompts((q) => q.slice(1))} />
       )}
     </div>
   )
