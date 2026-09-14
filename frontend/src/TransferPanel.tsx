@@ -8,16 +8,11 @@ import {
   type Transfer,
 } from './ipc'
 import { k, t as t2 } from './i18n'
+import { bytes } from './format'
 
 // The transfer queue panel (§4.2). Hides itself when there is nothing to show,
 // so it costs no space in the common case.
 
-function fmtBytes(n: number): string {
-  if (n >= 1 << 30) return `${(n / (1 << 30)).toFixed(1)}GB`
-  if (n >= 1 << 20) return `${(n / (1 << 20)).toFixed(1)}MB`
-  if (n >= 1 << 10) return `${(n / (1 << 10)).toFixed(0)}KB`
-  return `${n}B`
-}
 
 const STATUS_LABEL: Record<Transfer['status'], string> = {
   queued: k('대기'),
@@ -96,7 +91,7 @@ export function TransferPanel({ onError }: { onError: (msg: string) => void }) {
                 <div className="progress-bar" style={{ width: `${pct}%` }} />
               </div>
               <span className="mono muted transfer-size">
-                {fmtBytes(t.done)} / {fmtBytes(t.size)}
+                {bytes(t.done)} / {bytes(t.size)}
               </span>
               <span className="muted small">{t2(STATUS_LABEL[t.status])}</span>
               {(t.status === 'queued' || t.status === 'running') && (
@@ -114,7 +109,7 @@ export function TransferPanel({ onError }: { onError: (msg: string) => void }) {
               {t.resumable && t.status !== 'queued' && t.status !== 'running' && (
                 <button
                   className="ghost small-btn"
-                  title={t2('{n} 부터 이어받습니다', { n: fmtBytes(t.done) })}
+                  title={t2('{n} 부터 이어받습니다', { n: bytes(t.done) })}
                   onClick={() => void ResumeTransfer(t.id).catch((e) => onError(String(e)))}
                 >
                   {t2('이어받기')}

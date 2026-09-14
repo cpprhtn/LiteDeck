@@ -520,3 +520,62 @@ table ip nat {
 		t.Errorf("버린 패킷 %d, 기대 11418 — 도커가 나른 것까지 셌다", dropped)
 	}
 }
+
+// Two shapes the set parser used to read wrong.
+//
+// A `map` in the same table ended nothing, so its elements were appended to the
+// set above it and every line after that kept accumulating into a body nothing
+// closed. And fail2ban writes its entries with a lifetime attached, so the key
+// was the whole string — an address it had already banned never matched the
+// attacker list, and the screen went on offering it as somebody to block.
+func TestParseNftSetsHandlesMapsAndTimeouts(t *testing.T) {
+	const ruleset = `table inet blackhole {
+	set banned {
+		type ipv4_addr
+		elements = { 192.0.2.9 timeout 1h expires 58m12s224ms,
+			     198.51.100.7 timeout 1h expires 12m1s }
+	}
+
+	map porthits {
+		type inet_service : verdict
+		elements = { 22 : jump ssh-in, 80 : jump web-in }
+	}
+
+	set allowlist {
+		type ipv4_addr
+		elements = { 203.0.113.4 }
+	}
+}
+`
+	got := ParseNftSets(ruleset)
+	byName := map[string]NftSet{}
+	for _, s := range got {
+		byName[s.Name] = s
+	}
+
+	banned, ok := byName["banned"]
+	if !ok {
+		t.Fatalf("no `banned` set: %+v", got)
+	}
+	want := []string{"192.0.2.9", "198.51.100.7"}
+	if len(banned.Elements) != len(want) {
+		t.Fatalf("banned = %q, want %q", banned.Elements, want)
+	}
+	for i, w := range want {
+		if banned.Elements[i] != w {
+			t.Errorf("element %d = %q, want %q — the lifetime is part of the key",
+				i, banned.Elements[i], w)
+		}
+	}
+
+	// The map's entries are not elements of the set above it.
+	for _, e := range banned.Elements {
+		if strings.Contains(e, "jump") {
+			t.Errorf("the map leaked into the set: %q", e)
+		}
+	}
+	// And the set after the map is still read.
+	if allow, ok := byName["allowlist"]; !ok || len(allow.Elements) != 1 {
+		t.Errorf("allowlist = %+v — the map swallowed the rest of the table", allow)
+	}
+}

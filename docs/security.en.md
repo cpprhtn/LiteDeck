@@ -123,10 +123,12 @@ safe ([`internal/mcp/http.go`](../internal/mcp/http.go)).
 
 ## What it does not do, stated up front
 
-- **It cannot bound how long a password stays in memory.** Go strings are immutable and the runtime
-  may copy them at any time, so a secret held as a string cannot be erased on demand;
-  `x/crypto/ssh` takes passwords as strings too. It becomes garbage immediately and is freed at the
-  next collection, but **there is no zero-on-use implemented.** A core or heap dump could show it
+- **It cannot fully bound how long a password stays in memory.** The one copy that lives long
+  enough to matter — the sudo password a turned lock holds until the connection ends — is kept as
+  bytes and zeroed when the lock is released. Every other copy is still a string and cannot be
+  erased: the one `x/crypto/ssh` takes at the moment of authentication, and the one made to hand it
+  over. Both live for a single call and become garbage at once, but **a core or heap dump taken in
+  that moment could show them**
 - **Release binaries are unsigned.** A SHA256 checksum is not a signature
 - **The integrity check on a resumed transfer looks at the seam**, not at everything already
   transferred — the 64KB before the resume point. A source edited to exactly the same length,

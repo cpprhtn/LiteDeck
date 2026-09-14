@@ -536,6 +536,7 @@ export default function App() {
       {editing && (
         <HostEditor
           host={editing}
+          others={hosts}
           onClose={() => setEditing(null)}
           onSaved={() => void reloadHosts()}
           onError={setError}

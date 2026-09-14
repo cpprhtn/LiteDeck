@@ -307,10 +307,17 @@ export function EditorPane({
           busy={busy}
           confirmLabel={t('덮어쓰기')}
           danger
+          note={t('취소해도 서버 내용이 기준으로 바뀝니다. 다음 저장은 이 diff 없이 서버 내용을 덮어씁니다.')}
           onCancel={() => {
             // Nothing was written, but the tab now knows what the server holds —
             // without this the next save conflicts against the same stale mtime
             // forever.
+            //
+            // Which means the *next* save is an ordinary one: it will replace
+            // what is on the server with no second warning. That is the right
+            // behaviour — the user has seen the difference and chosen to keep
+            // their version open — but it is not obvious, so the dialog says
+            // it rather than leaving it to be discovered.
             rebase(hostID, confirm.file.path, confirm.server)
             setConfirm(null)
           }}
@@ -367,6 +374,7 @@ function DiffDialog({
   confirmLabel,
   danger,
   extra,
+  note,
   onCancel,
   onConfirm,
 }: {
@@ -379,6 +387,8 @@ function DiffDialog({
   confirmLabel: string
   danger?: boolean
   extra?: ReactNode
+  /** A line under the diff, for something the buttons do not say. */
+  note?: string
   onCancel: () => void
   onConfirm: () => void
 }) {
@@ -402,6 +412,7 @@ function DiffDialog({
           <DiffView path={path} before={before} after={after} />
         </Suspense>
         <div className="dialog-actions">
+          {note && <span className="muted small diff-note">{note}</span>}
           <button onClick={onCancel}>{t('취소')}</button>
           {extra}
           <button

@@ -724,11 +724,28 @@ func ParseNftSets(out string) []NftSet {
 
 	finish := func() {
 		if setName == "" {
+			// Still clear the accumulator. A map's `elements = { ... }` arrives
+			// with no set open, and leaving the body behind meant those
+			// elements — and every line after them — became part of whichever
+			// set came next.
+			inElements = false
+			body.Reset()
 			return
 		}
 		s := NftSet{Table: table, Name: setName, Fail2ban: fail2banTable(table)}
 		for _, e := range strings.Split(body.String(), ",") {
 			e = strings.Trim(strings.TrimSpace(e), "{} ")
+			if e == "" {
+				continue
+			}
+			// fail2ban writes its entries with a lifetime:
+			// `192.0.2.9 timeout 1h expires 58m12s224ms`. Keeping the whole
+			// string as the key meant the address never matched an attacker in
+			// the list, so somebody fail2ban had already banned went on being
+			// offered as somebody to block.
+			if i := strings.Index(e, " timeout "); i >= 0 {
+				e = strings.TrimSpace(e[:i])
+			}
 			if e == "" {
 				continue
 			}
@@ -758,6 +775,13 @@ func ParseNftSets(out string) []NftSet {
 		case strings.HasPrefix(t, "set "):
 			finish()
 			setName = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(t, "set "), "{"))
+		case strings.HasPrefix(t, "map "), strings.HasPrefix(t, "chain "):
+			// A `map` or a `chain` ends the set before it. Without this its
+			// `elements = { ... }` was appended to whatever set came last, and
+			// after that every remaining line of the table kept accumulating
+			// into a body nothing would close — one map in a table turned the
+			// rest of it into elements of an unrelated set.
+			finish()
 		case strings.HasPrefix(t, "elements = "):
 			inElements = true
 			body.WriteString(strings.TrimPrefix(t, "elements = "))

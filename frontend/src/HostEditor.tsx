@@ -32,17 +32,31 @@ function editorDraft(host: Host): Host {
 
 export function HostEditor({
   host,
+  others,
   onClose,
   onSaved,
   onError,
 }: {
   host: Host
+  /** The hosts already registered, so a second entry for the same machine can
+   *  be pointed out. Registering one twice is allowed — two accounts on one box
+   *  is an ordinary thing to want — but doing it by accident and then wondering
+   *  why the second one never asks about the fingerprint is not. */
+  others: Host[]
   onClose: () => void
   onSaved: () => void
   onError: (msg: string) => void
 }) {
   const [draft, setDraft] = useState<Host>(() => editorDraft(host))
   const [busy, setBusy] = useState(false)
+
+  const duplicate = others.find(
+    (h) =>
+      h.id !== draft.id &&
+      h.hostname.trim() === draft.hostname.trim() &&
+      (h.port || 22) === (draft.port || 22) &&
+      h.user.trim() === draft.user.trim(),
+  )
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   useEffect(() => setDraft(editorDraft(host)), [host])
@@ -207,6 +221,14 @@ export function HostEditor({
         {(draft.proxyJump ?? '').includes(',') && (
           <p className="warn-text">
             {t('경유 서버는 한 단계만 지원합니다. 쉼표 뒤는 무시됩니다.')}
+          </p>
+        )}
+
+        {duplicate && (
+          <p className="muted small">
+            {t('{name} 이(가) 같은 서버를 같은 계정으로 이미 가리킵니다. 둘 다 두어도 됩니다.', {
+              name: duplicate.name || duplicate.hostname,
+            })}
           </p>
         )}
 

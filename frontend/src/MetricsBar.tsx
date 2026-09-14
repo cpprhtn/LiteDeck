@@ -4,6 +4,7 @@ import { usePoll } from './usePoll'
 import { GAP_MS, publishMetrics, useMetricsHistory, type Sample } from './metricsStore'
 import { shortGPUName } from './gpuName'
 import { t } from './i18n'
+import { bytes, uptime } from './format'
 
 // The summary bar (§4.7). Shown above every tab for the connected host, so
 // "is this box healthy" is answered without navigating anywhere.
@@ -13,21 +14,7 @@ import { t } from './i18n'
 
 const POLL_MS = 2000
 
-function fmtBytes(n: number): string {
-  if (n >= 1 << 30) return `${(n / (1 << 30)).toFixed(1)}G`
-  if (n >= 1 << 20) return `${(n / (1 << 20)).toFixed(0)}M`
-  if (n >= 1 << 10) return `${(n / (1 << 10)).toFixed(0)}K`
-  return `${n}B`
-}
 
-function fmtUptime(sec: number): string {
-  const d = Math.floor(sec / 86400)
-  const h = Math.floor((sec % 86400) / 3600)
-  const m = Math.floor((sec % 3600) / 60)
-  if (d > 0) return t('{d}일 {h}시간', { d, h })
-  if (h > 0) return t('{h}시간 {m}분', { h, m })
-  return t('{m}분', { m })
-}
 
 /**
  * A sparkline over the recent history.
@@ -109,7 +96,7 @@ function gpuTitle(g: GPU): string {
   const parts = [g.name]
   if (g.tempC >= 0) parts.push(fmtTemp(g.tempC))
   if (g.fan >= 0) parts.push(t('팬 {f}%', { f: g.fan.toFixed(0) }))
-  if (g.memTotal > 0) parts.push(`${fmtBytes(g.memUsed)} / ${fmtBytes(g.memTotal)}`)
+  if (g.memTotal > 0) parts.push(`${bytes(g.memUsed)} / ${bytes(g.memTotal)}`)
   return parts.join(' · ')
 }
 
@@ -263,9 +250,9 @@ export function MetricsBar({ hostID }: { hostID: string }) {
         // The figure people asked for: 62G is what the machine has, and a
         // percentage alone never says it. It was in the tooltip, which is where
         // things go to be found by nobody.
-        note={`${fmtBytes(m.memUsed)} / ${fmtBytes(m.memTotal)}`}
+        note={`${bytes(m.memUsed)} / ${bytes(m.memTotal)}`}
         warn={m.memPercent >= 90}
-        title={`${fmtBytes(m.memUsed)} / ${fmtBytes(m.memTotal)}`}
+        title={`${bytes(m.memUsed)} / ${bytes(m.memTotal)}`}
       />
       {/* Sits with CPU and memory rather than at the end: on a box that has a
           card at all, it is the figure being watched. */}
@@ -280,7 +267,7 @@ export function MetricsBar({ hostID }: { hostID: string }) {
           // tooltip.
           note={
             gpus[0].memTotal > 0
-              ? `${fmtBytes(gpus[0].memUsed)} / ${fmtBytes(gpus[0].memTotal)}`
+              ? `${bytes(gpus[0].memUsed)} / ${bytes(gpus[0].memTotal)}`
               : gpus[0].fan < 0
                 ? fmtTemp(gpus[0].tempC)
                 : t('팬 {f}%', { f: fmtPct(gpus[0].fan) })
@@ -339,7 +326,7 @@ export function MetricsBar({ hostID }: { hostID: string }) {
                   </span>
                   <span className="gpu-num muted">{fmtTemp(g.tempC)}</span>
                   <span className="gpu-num muted">
-                    {g.memTotal > 0 ? `${fmtBytes(g.memUsed)} / ${fmtBytes(g.memTotal)}` : '—'}
+                    {g.memTotal > 0 ? `${bytes(g.memUsed)} / ${bytes(g.memTotal)}` : '—'}
                   </span>
                 </div>
               ))}
@@ -352,12 +339,12 @@ export function MetricsBar({ hostID }: { hostID: string }) {
           label={t('디스크 {mount}', { mount: disk.mountPoint })}
           value={disk.percent.toFixed(0)}
           unit="%"
-          note={`${fmtBytes(disk.used)} / ${fmtBytes(disk.size)}`}
+          note={`${bytes(disk.used)} / ${bytes(disk.size)}`}
           warn={disk.percent >= 90}
           title={t('{used} / {size} · 사용 가능 {free}', {
-            used: fmtBytes(disk.used),
-            size: fmtBytes(disk.size),
-            free: fmtBytes(disk.available),
+            used: bytes(disk.used),
+            size: bytes(disk.size),
+            free: bytes(disk.available),
           })}
         />
       )}
@@ -376,15 +363,15 @@ export function MetricsBar({ hostID }: { hostID: string }) {
         <Stat
           label={t('스왑')}
           p={3}
-          value={fmtBytes(m.swapUsed)}
-          note={`/ ${fmtBytes(m.swapTotal)}`}
+          value={bytes(m.swapUsed)}
+          note={`/ ${bytes(m.swapTotal)}`}
           warn={m.swapUsed > m.swapTotal * 0.5}
-          title={`${fmtBytes(m.swapUsed)} / ${fmtBytes(m.swapTotal)}`}
+          title={`${bytes(m.swapUsed)} / ${bytes(m.swapTotal)}`}
         />
       )}
       <span className="spacer" />
       <span className="muted small metric-uptime" data-p={3} title={t('서버 가동 시간')}>
-        {t('가동 {up}', { up: fmtUptime(m.uptimeSeconds) })}
+        {t('가동 {up}', { up: uptime(m.uptimeSeconds) })}
       </span>
       {failed && (
         <span className="badge warn" title={failed}>

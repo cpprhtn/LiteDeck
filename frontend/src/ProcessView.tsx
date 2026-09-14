@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { runtime } from './format'
 import { Scrim } from './Scrim'
 import { usePoll } from './usePoll'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -28,14 +29,6 @@ function fmtKiB(kb: number): string {
   return `${kb}K`
 }
 
-function fmtElapsed(sec: number): string {
-  const d = Math.floor(sec / 86400)
-  const h = Math.floor((sec % 86400) / 3600)
-  const m = Math.floor((sec % 3600) / 60)
-  if (d > 0) return `${d}d ${h}h`
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}`
-  return `${m}:${String(Math.floor(sec % 60)).padStart(2, '0')}`
-}
 
 export function ProcessView({
   hostID,
@@ -252,7 +245,7 @@ export function ProcessView({
                   <div className="mono" data-zombie={zombie || undefined}>
                     {p.state}
                   </div>
-                  <div className="num mono">{fmtElapsed(p.elapsed)}</div>
+                  <div className="num mono">{runtime(p.elapsed)}</div>
                   <div className="ellipsis" style={{ paddingLeft: (p.depth ?? 0) * 14 }}>
                     <span className="mono">{p.command}</span>{' '}
                     <span className="muted">{p.args}</span>

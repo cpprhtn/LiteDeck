@@ -157,6 +157,9 @@ type approvalBridge struct {
 	mu      sync.Mutex
 	seq     int
 	waiting map[string]chan bool
+	// pending keeps the payload of every approval still waiting, so a web
+	// client that lost its socket can ask for them again. See PendingPrompts.
+	pending map[string]MCPWritePrompt
 }
 
 func newApprovalBridge(a *App) *approvalBridge {
@@ -201,6 +204,7 @@ func (a *App) approveWrite(req writeRequest) (approvalOutcome, error) {
 	defer func() {
 		a.approvals.mu.Lock()
 		delete(a.approvals.waiting, id)
+		delete(a.approvals.pending, id)
 		a.approvals.mu.Unlock()
 	}()
 
@@ -208,11 +212,18 @@ func (a *App) approveWrite(req writeRequest) (approvalOutcome, error) {
 	if h, ok := a.hosts.Get(req.hostID); ok {
 		host = h.Label()
 	}
-	a.emit("prompt:mcpwrite", MCPWritePrompt{
+	payload := MCPWritePrompt{
 		ID: id, HostID: req.hostID, Host: host, Tool: req.tool,
 		Summary: req.summary, Command: req.command,
 		Path: req.path, Before: req.before, After: req.after,
-	})
+	}
+	a.approvals.mu.Lock()
+	if a.approvals.pending == nil {
+		a.approvals.pending = map[string]MCPWritePrompt{}
+	}
+	a.approvals.pending[id] = payload
+	a.approvals.mu.Unlock()
+	a.emit("prompt:mcpwrite", payload)
 
 	select {
 	case approved := <-ch:

@@ -1,0 +1,83 @@
+#profile|Domain|True|NotConfigured|False|0
+#profile|Private|True|NotConfigured|False|1
+#profile|Public|True|NotConfigured|False|0
+#rule|TCP|7680|Any|Delivery Optimization (TCP-In)
+#rule|UDP|7680|Any|Delivery Optimization (UDP-In)
+#rule|UDP|68|Any|핵심 네트워킹 - DHCP(Dynamic Host Configuration Protocol)(DHCP-In)
+#rule|UDP|546|Any|핵심 네트워킹 - IPv6용 DHCP(Dynamic Host Configuration Protocol)(DHCPV6-In)
+#rule|UDP|1900|Private|네트워크 검색(SSDP-In)
+#rule|TCP|2869|Private|네트워크 검색(UPnP-In)
+#rule|UDP|137|Private|네트워크 검색(NB-Name-In)
+#rule|UDP|138|Private|네트워크 검색(NB-Datagram-In)
+#rule|UDP|3702|Private|네트워크 검색(WSD-In)
+#rule|UDP|3702|Private|네트워크 검색(WSD-In)
+#rule|UDP|5355|Private|네트워크 검색(LLMNR-UDP-In)
+#rule|UDP|3702|Private|네트워크 검색(Pub-WSD-In)
+#rule|TCP|5358|Private|네트워크 검색(WSD EventsSecure-In)
+#rule|TCP|5357|Private|네트워크 검색(WSD Events-In)
+#rule|UDP|5353|Private|mDNS(Udp-in)
+#rule|UDP|5353|Domain|mDNS(Udp-in)
+#rule|UDP|5353|Public|mDNS(Udp-in)
+#rule|TCP|9955|Domain, Private|AllJoyn 라우터(TCP-In)
+#rule|TCP|7250|Any|무선 디스플레이 인프라 백채널(TCP-In)
+#rule|TCP|10247|Domain|DIAL 프로토콜 서버(HTTP-In)
+#rule|TCP|10247|Private|DIAL 프로토콜 서버(HTTP-In)
+#rule|TCP|135|Domain|원격 지원(DCOM-In)
+#rule|UDP|1900|Domain, Private|원격 지원(SSDP UDP-In)
+#rule|TCP|2869|Domain, Private|원격 지원(SSDP TCP-In)
+#rule|UDP|3540|Domain, Private|원격 지원(PNRP-In)
+#rule|TCP|554,8554-8558|Any|@FirewallAPI.dll,-80201
+#rule|UDP|5000-5020|Any|@FirewallAPI.dll,-80206
+#rule|UDP|7235|Any|WFD ASP 조정 프로토콜(UDP-In)
+#rule|TCP|3389|Any|원격 데스크톱 - 사용자 모드(TCP-In)
+#rule|UDP|3389|Any|원격 데스크톱 - 사용자 모드(UDP-In)
+#rule|TCP|10246|Domain|장치로 캐스트 스트리밍 서버(HTTP-Streaming-In)
+#rule|TCP|10246|Private|장치로 캐스트 스트리밍 서버(HTTP-Streaming-In)
+#rule|TCP|10246|Public|장치로 캐스트 스트리밍 서버(HTTP-Streaming-In)
+#rule|TCP|23554,23555,23556|Domain|장치로 캐스트 스트리밍 서버(RTSP-Streaming-In)
+#rule|TCP|23554,23555,23556|Private|장치로 캐스트 스트리밍 서버(RTSP-Streaming-In)
+#rule|TCP|23554,23555,23556|Public|장치로 캐스트 스트리밍 서버(RTSP-Streaming-In)
+#rule|TCP|2869|Public|장치로 캐스트 UPnP 이벤트(TCP-In)
+#rule|UDP|2177|Private, Public|장치로 캐스트 기능(qWave-UDP-In)
+#rule|TCP|2177|Private, Public|장치로 캐스트 기능(qWave-TCP-In)
+#rule|UDP|5353|Any|Microsoft Edge(mDNS-In)
+#rule|TCP|22|Any|OpenSSH SSH Server (sshd)
+#rule|TCP|7000|Public|ms-resource:ProductPkgDisplayName
+#rule|TCP|7000|Private|ms-resource:ProductPkgDisplayName
+#rule|UDP|7000|Public|ms-resource:ProductPkgDisplayName
+#rule|UDP|7000|Private|ms-resource:ProductPkgDisplayName
+#rule|UDP|5353|Any|Microsoft Edge(mDNS-In)
+#rule|UDP|5353|Any|Microsoft Edge(mDNS-In)
+#rule|UDP|5353|Any|Microsoft Edge(mDNS-In)
+#rule|UDP|5353|Any|Microsoft Edge(mDNS-In)
+#rule|UDP|5353|Any|Microsoft Edge(mDNS-In)
+#rule|UDP|5353|Any|Microsoft Edge(mDNS-In)
+#rule|UDP|5353|Any|Microsoft Edge(mDNS-In)
+#rule|UDP|5353|Any|Microsoft Edge(mDNS-In)
+#rule|TCP|53|Any|HNS Container Networking - ICS DNS (TCP-In) - BF0FEEF1-26D9-430D-AC3F-94CA2CBE55E8 - 0
+#rule|UDP|53|Any|HNS Container Networking - DNS (UDP-In) - BF0FEEF1-26D9-430D-AC3F-94CA2CBE55E8 - 0
+#rule|UDP|5353|Any|Microsoft Edge(mDNS-In)
+#rulecount|56
+#lockout|10|10|10
+#defender|True|True|0
+#logspan|1789350205
+#fail|1789351200|409
+#fail|1789354800|55
+#fail|1789358400|129
+#fail|1789362000|1
+#fail|1789347600|140
+#atk|192.0.2.5|2
+#atk|192.0.2.6|3
+#atk|192.0.2.2|4
+#atk|192.0.2.7|1
+#atk|192.0.2.3|3
+#atk|192.0.2.8|10
+#atk|192.0.2.9|183
+#atk|192.0.2.10|12
+#atk|192.0.2.11|50
+#atk|192.0.2.12|4
+#atk|192.0.2.13|8
+#atk|192.0.2.14|50
+#atk|192.0.2.4|5
+#atk|192.0.2.15|3
+#atk|192.0.2.16|396

@@ -1,4 +1,5 @@
 import { useRef } from 'react'
+import { bytes, runtime } from './format'
 import { t } from './i18n'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { ProcessRow } from './ipc'
@@ -11,20 +12,7 @@ const ROW_HEIGHT = 26
 
 const COLUMNS = '76px 96px 64px 64px 88px 56px 84px 160px 1fr'
 
-function fmtBytes(kb: number): string {
-  if (kb >= 1024 * 1024) return `${(kb / 1024 / 1024).toFixed(1)}G`
-  if (kb >= 1024) return `${(kb / 1024).toFixed(1)}M`
-  return `${kb}K`
-}
 
-function fmtElapsed(sec: number): string {
-  const d = Math.floor(sec / 86400)
-  const h = Math.floor((sec % 86400) / 3600)
-  const m = Math.floor((sec % 3600) / 60)
-  if (d > 0) return `${d}d ${h}h`
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}`
-  return `${m}:${String(Math.floor(sec % 60)).padStart(2, '0')}`
-}
 
 export function ProcessTable({ rows }: { rows: ProcessRow[] }) {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -70,11 +58,11 @@ export function ProcessTable({ rows }: { rows: ProcessRow[] }) {
                   {r.cpu.toFixed(1)}
                 </div>
                 <div className="num mono">{r.mem.toFixed(1)}</div>
-                <div className="num mono">{fmtBytes(r.rss)}</div>
+                <div className="num mono">{bytes((r.rss) * 1024)}</div>
                 <div className="mono" data-zombie={r.state === 'Z' || undefined}>
                   {r.state}
                 </div>
-                <div className="num mono">{fmtElapsed(r.elapsed)}</div>
+                <div className="num mono">{runtime(r.elapsed)}</div>
                 <div className="ellipsis">{r.command}</div>
                 <div className="ellipsis muted mono">{r.args}</div>
               </div>

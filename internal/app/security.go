@@ -274,8 +274,16 @@ type sudoUnlock struct {
 }
 
 type sudoUnlockEntry struct {
-	gen      uint64
-	password string
+	gen uint64
+	// password is the one copy in this app that lives long enough to be worth
+	// wiping: held from the moment the user types it until the connection ends,
+	// which is minutes or hours. A heap dump or a core file taken any time in
+	// between would have carried it as a plain string.
+	//
+	// The copy x/crypto/ssh makes at the moment of authentication is still a
+	// string and still unreachable — see internal/secret. This is the half that
+	// can be done, and until now it was not being done either.
+	password *secret.Buffer
 	// turned is whether the user opened the lock on purpose, as opposed to
 	// answering a password dialog for one action.
 	//
@@ -297,14 +305,18 @@ func (u *sudoUnlock) get(id string, gen uint64) (string, bool) {
 	if !ok || e.gen != gen {
 		return "", false
 	}
-	return e.password, true
+	// Bytes, not String: String is deliberately "«secret»" so an accidental %v
+	// on an enclosing struct cannot print it. The copy this makes is the one at
+	// the moment of use, which is the half internal/secret says it cannot fix.
+	return string(e.password.Bytes()), true
 }
 
 // put stores a password the user turned the lock with.
 func (u *sudoUnlock) put(id string, gen uint64, password string) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	u.byID[id] = sudoUnlockEntry{gen: gen, password: password, turned: true}
+	u.wipeLocked(id)
+	u.byID[id] = sudoUnlockEntry{gen: gen, password: secret.NewBuffer(password), turned: true}
 }
 
 // remember stores a password that worked for one action, so the next action on
@@ -315,7 +327,8 @@ func (u *sudoUnlock) remember(id string, gen uint64, password string) {
 	if e, ok := u.byID[id]; ok && e.gen == gen && e.turned {
 		return // already open; do not downgrade it
 	}
-	u.byID[id] = sudoUnlockEntry{gen: gen, password: password}
+	u.wipeLocked(id)
+	u.byID[id] = sudoUnlockEntry{gen: gen, password: secret.NewBuffer(password)}
 }
 
 // getTurned is get, but only for a lock the user opened on purpose.
@@ -326,7 +339,10 @@ func (u *sudoUnlock) getTurned(id string, gen uint64) (string, bool) {
 	if !ok || e.gen != gen || !e.turned {
 		return "", false
 	}
-	return e.password, true
+	// Bytes, not String: String is deliberately "«secret»" so an accidental %v
+	// on an enclosing struct cannot print it. The copy this makes is the one at
+	// the moment of use, which is the half internal/secret says it cannot fix.
+	return string(e.password.Bytes()), true
 }
 
 // isTurned reports whether the lock was opened on purpose.
@@ -338,7 +354,15 @@ func (u *sudoUnlock) isTurned(id string, gen uint64) bool {
 func (u *sudoUnlock) forget(id string) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
+	u.wipeLocked(id)
 	delete(u.byID, id)
+}
+
+// wipeLocked zeroes the password held for a host, if any. Called with the lock.
+func (u *sudoUnlock) wipeLocked(id string) {
+	if e, ok := u.byID[id]; ok {
+		e.password.Wipe()
+	}
 }
 
 // HostSecurity reads what is guarding a host.

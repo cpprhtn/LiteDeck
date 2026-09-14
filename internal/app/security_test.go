@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"fmt"
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
 	"github.com/cpprhtn/LiteDeck/internal/config"
 )
@@ -365,5 +366,27 @@ func TestSudoUnlockIsPerConnection(t *testing.T) {
 	u.forget("h")
 	if _, ok := u.get("h", 1); ok {
 		t.Error("잠갔는데 그대로였다")
+	}
+}
+
+// The sudo password a turned lock holds is the one copy in this app that lives
+// long enough to be worth wiping: from the moment somebody types it until the
+// connection ends, which is minutes or hours. It used to be a plain string in a
+// struct, so a heap dump or a core file taken any time in between carried it.
+func TestUnlockedPasswordIsHeldWipeableAndWiped(t *testing.T) {
+	u := newSudoUnlock()
+	u.put("h", 1, "hunter2")
+
+	if got, ok := u.get("h", 1); !ok || got != "hunter2" {
+		t.Fatalf("get = %q, %v", got, ok)
+	}
+	// Not a string in the struct: printing the entry must not print the secret.
+	if s := fmt.Sprintf("%v", u.byID["h"]); strings.Contains(s, "hunter2") {
+		t.Errorf("the password prints with the struct: %s", s)
+	}
+
+	u.forget("h")
+	if _, ok := u.get("h", 1); ok {
+		t.Error("the lock survived forget")
 	}
 }

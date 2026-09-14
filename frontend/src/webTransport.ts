@@ -99,7 +99,29 @@ class EventBus {
     const ws = new WebSocket(withToken(`${scheme}://${window.location.host}${basePath()}ws`))
 
     ws.onopen = () => {
+      const reconnected = this.retry > 0
       this.retry = 0
+      if (!reconnected) return
+      // Events that arrived while the socket was down are gone, and Go is still
+      // waiting for an answer to any prompt among them. A laptop lid or a proxy
+      // idle timeout was enough: the page came back with no dialog on it and
+      // ConnectHost sat there until the prompt timed out two minutes later,
+      // with nothing on screen to say why.
+      void rpc('PendingPrompts', [])
+        .then((p: unknown) => {
+          const pending = p as {
+            hostKeys?: unknown[]
+            secrets?: unknown[]
+            writes?: unknown[]
+          }
+          for (const k of pending.hostKeys ?? []) this.handlers.get('prompt:hostkey')?.forEach((h) => h(k))
+          for (const k of pending.secrets ?? []) this.handlers.get('prompt:secret')?.forEach((h) => h(k))
+          for (const k of pending.writes ?? []) this.handlers.get('prompt:mcpwrite')?.forEach((h) => h(k))
+        })
+        .catch(() => {
+          // An older server has no such binding. Nothing is lost that was not
+          // already lost.
+        })
     }
     ws.onmessage = (e) => {
       try {
