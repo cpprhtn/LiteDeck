@@ -50,13 +50,6 @@
   padding: var(--sp-3) var(--sp-3) var(--sp-2);
 }
 
-.rail-title {
-  font-size: var(--text-xs);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--fg-muted);
-}
 
 .host-list {
   /* The variable-length thing, so it is the one that scrolls. The nav below has
@@ -1006,6 +999,22 @@ button.icon-btn:hover {
 .badge.warn {
   background: var(--warn-bg);
   color: var(--warn);
+}
+/* Used by the MCP panel for "running". It had no rule, so the one badge that
+   reports a good state looked the same as a neutral one. */
+.badge.ok {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+/* The security tab's own sections. They were marked `panel` with nothing
+   defining it, so three of them ran together with no edge between them. */
+.security-body .panel {
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--border);
+}
+.security-body .panel:last-of-type {
+  border-bottom: none;
 }
 
 .error {
@@ -2316,12 +2325,6 @@ button.danger {
 .mcp-toggle input {
   flex: none;
 }
-.mcp-heading {
-  margin: 18px 0 4px;
-  font-size: 13px;
-  border-top: 1px solid var(--border);
-  padding-top: 14px;
-}
 .mcp-endpoint {
   display: flex;
   flex-direction: column;
@@ -2351,10 +2354,6 @@ button.danger {
   display: flex;
   gap: 6px;
 }
-.mcp-hosts {
-  display: flex;
-  flex-direction: column;
-}
 /* An AI-caused line has to be attributable at a glance, so the prompt marker
    itself changes rather than a badge being added somewhere on the row. */
 .cmdlog-row[data-origin='ai'] .cmdlog-marker {
@@ -2378,10 +2377,6 @@ button.danger {
   margin: 4px 0 12px;
   white-space: pre-wrap;
   word-break: break-all;
-}
-.mcp-mode {
-  margin-left: auto;
-  font-size: 11px;
 }
 
 /* 큐 대기 시간. 평소엔 안 보이고, 설명이 필요할 때만 나타난다. */
@@ -3297,17 +3292,6 @@ button.events-unit {
   margin-right: 3px;
 }
 
-.res-block {
-  margin-bottom: var(--sp-4);
-}
-.res-block h3 {
-  margin: 0 0 var(--sp-2);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--fg-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
 
 /* 코어를 한 줄이 아니라 다이처럼 늘어놓는다. 한 줄은 열두 개만 넘어도
    읽을 수 없이 길어지고, 무엇보다 파형처럼 보인다 — 코어에는 의미 있는
@@ -3420,37 +3404,6 @@ button.events-unit {
   color: var(--fg);
 }
 
-/* 한 숫자로 끝나는 값들의 띠. 이걸 패널로 만들면 평평한 선 여섯 개가
-   생기고, 정작 움직이는 것들이 화면 밖으로 밀린다. */
-.res-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-2);
-  margin-bottom: var(--sp-2);
-}
-.res-chip {
-  display: flex;
-  align-items: baseline;
-  gap: var(--sp-2);
-  padding: 3px var(--sp-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-raised);
-}
-.res-chip[data-warn] {
-  border-color: var(--danger);
-}
-.res-chip-label {
-  font-size: var(--text-xs);
-  color: var(--fg-muted);
-}
-.res-chip-value {
-  font-size: var(--text-sm);
-  font-variant-numeric: tabular-nums;
-}
-.res-chip[data-warn] .res-chip-value {
-  color: var(--danger);
-}
 
 /* PSI. 사용률이 「얼마나 쓰는가」 라면 압력은 「얼마나 기다렸는가」 다 —
    100% 인데 멀쩡한 기계와 40% 인데 줄이 선 기계를 가르는 값이다. */
@@ -3690,19 +3643,6 @@ button.events-unit {
   margin-bottom: var(--sp-2);
 }
 .security-mismatch p {
-  margin: 2px 0;
-}
-.security-tiles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-4);
-  margin-bottom: var(--sp-2);
-}
-.security-tile .num {
-  font-size: var(--text-lg);
-  font-weight: 600;
-}
-.security-counters p {
   margin: 2px 0;
 }
 .security-set {

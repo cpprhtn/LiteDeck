@@ -747,4 +747,5 @@ export const en: Record<string, string> = {
   '~/.ssh/config 를 가져오거나 직접 추가하세요.': 'Import `~/.ssh/config`, or add a host by hand.',
   '접속해 있는 SSH 세션이 없습니다. 지금 이 연결은 목록에 나오지 않는 방식으로 붙어 있을 수 있습니다.': 'No SSH sessions are logged in. This connection may be attached in a way the list does not show.',
   '내려받은 이미지가 없습니다.': 'No images have been pulled.',
+  '복사 {c} · 붙여넣기 {v}': 'Copy {c} \u00b7 Paste {v}',
 }

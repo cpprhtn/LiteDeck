@@ -15,18 +15,24 @@ import (
 
 // The write tools (§5.3 of the MCP design note).
 //
-// Every one of these passes through approveWrite before it touches a server,
-// and none of them can reach a host the user has not shared. Two things are
-// deliberately absent:
+// Six of them. Every one passes through approveWrite before it touches a
+// server, and none can reach a host the user has not shared.
 //
-// **run_command.** An arbitrary-command tool makes the per-tool allowlist
-// decorative — switching svc_restart off means nothing when the same thing can
-// be done by typing it. The design note gives it its own toggle for that
-// reason, and that toggle is not built.
+// Whether approveWrite *stops to ask* depends on the host's mode, and that is
+// not the same statement: in the default mode only the three that touch files
+// or run a shell line raise a dialog. The guarantee that holds in every mode is
+// the Command Log, not the prompt.
 //
-// **Deletion.** No fs_delete, no container_remove, no image or volume pruning.
-// A restart is recoverable by restarting again; a deletion is not, and the
-// asymmetry is worth a deliberate gap while this is new.
+// Two of these arrived after this comment first said they never would, and the
+// reasoning for each is worth keeping:
+//
+// **run_command** makes the per-tool allowlist decorative — switching
+// svc_control off means nothing when the same thing can be typed. It has its
+// own per-host toggle for that reason, off by default.
+//
+// **fs_delete** is the only irreversible one, so it is the only one with a
+// rollback copy behind it, and it has its own toggle too. Container removal and
+// image pruning are still absent: those cannot be put back at all.
 
 // elevate is never true here. Silently escalating for an AI would put a sudo
 // password behind a decision no person made; when a server refuses, the answer

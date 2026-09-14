@@ -80,6 +80,8 @@ func asksAbout(mode, tool string) bool {
 		// fully described by the call the client already displayed, and a shell
 		// line is not — the schema bounds the first and says nothing about the
 		// second.
+		// fs_edit is not registered and has not been; it is here so a tool by
+		// that name could not arrive later and default to silent.
 		return tool == "fs_write" || tool == "fs_edit" || tool == "fs_delete" ||
 			tool == "run_command"
 	}

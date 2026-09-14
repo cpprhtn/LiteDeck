@@ -17,7 +17,7 @@ import {
 } from './ipc'
 import { Panel } from './ResourceView'
 import { LockButton, useSudoState } from './LockButton'
-import { k, t } from './i18n'
+import { t } from './i18n'
 import { WindowsSecurityView } from './WindowsSecurityView'
 
 // What is guarding this server (T-35).
@@ -444,46 +444,6 @@ function Logins({ logins, fresh }: { logins: Login[]; fresh: Set<string> }) {
   )
 }
 
-/** The firewall, as one statement rather than a row per tool.
- *
- *  Listing ufw and nftables side by side is what produced "ufw 켜짐 · nftables
- *  비활성", which is a contradiction: on a modern Ubuntu ufw *runs on*
- *  nftables through iptables-nft. They are a front end and its back end, not
- *  two firewalls, and the screen now says so. */
-function FirewallSummary({ view }: { view: View }) {
-  const front = view.ufwConfFound
-    ? { name: 'ufw', on: view.ufwEnabled, from: '/etc/ufw/ufw.conf' }
-    : view.units.find((u) => u.name === 'firewalld.service' && u.active)
-      ? { name: 'firewalld', on: true, from: 'systemd' }
-      : null
-
-  const backend = view.kernel.nftables
-    ? { name: 'nftables', refs: view.kernel.nftablesRefs }
-    : view.kernel.iptables
-      ? { name: 'iptables', refs: view.kernel.iptablesRefs }
-      : null
-
-  return (
-    <>
-      <div className="security-row" data-off={front !== null && !front.on ? true : undefined}>
-        <span className="mono security-tool">{front ? front.name : t('전면부 없음')}</span>
-        <span className="security-state">
-          {front ? (front.on ? t('켜짐') : t('꺼짐')) : t('알 수 없음')}
-        </span>
-        <span className="muted small security-src">{front ? front.from : ''}</span>
-      </div>
-      {backend && (
-        <p className="muted small">
-          {t('커널 백엔드')}: <span className="mono">{backend.name}</span>{' '}
-          {backend.refs > 0
-            ? t('사용 중 (참조 {n})', { n: backend.refs })
-            : t('올라와 있지만 참조 없음')}
-        </p>
-      )}
-    </>
-  )
-}
-
 /** What is being blocked, whether it is working, and who is still getting in.
  *
  *  The counter is the only number in this tab that says a thing is *working*
@@ -543,16 +503,6 @@ function Blocking({ view }: { view: View }) {
     </section>
   )
 }
-
-function Tile({ label, value, hint }: { label: string; value: number | string; hint?: string }) {
-  return (
-    <div className="security-tile" title={hint}>
-      <div className="num">{value}</div>
-      <div className="muted small">{label}</div>
-    </div>
-  )
-}
-
 /** One block list. fail2ban's and a hand-made one are marked apart: its entries
  *  come and go on their own as bans expire, and a hand-made table stays until
  *  somebody takes it out. Mixing them loses the only question worth asking —
@@ -663,40 +613,3 @@ function RuleTable({
   )
 }
 
-/** One tool, and the two things that can disagree about it. */
-function ToolRow({
-  unit,
-  override,
-}: {
-  unit: SecurityUnit
-  /** What the tool's own config says, where that can be read without root. */
-  override?: { on: boolean; from: string }
-}) {
-  const name = unit.name.replace(/\.service$/, '')
-  const disagrees = override !== undefined && override.on !== unit.active
-  const state = !unit.installed
-    ? t('설치 안 됨')
-    : override
-      ? override.on
-        ? t('켜짐')
-        : t('꺼짐')
-      : unit.active
-        ? t('활성')
-        : t('비활성')
-
-  return (
-    <div className="security-row" data-off={unit.installed && !(override?.on ?? unit.active) || undefined}>
-      <span className="mono security-tool">{name}</span>
-      <span className="security-state">{state}</span>
-      {unit.installed && (
-        <span className="muted small security-src" title={override ? override.from : 'systemd'}>
-          {override ? override.from : t('유닛 {state}', { state: unit.subState || '' })}
-          {disagrees && <span className="security-warn"> ⚠</span>}
-        </span>
-      )}
-    </div>
-  )
-}
-
-/** Three states, because "cannot" and "have not" are different answers. */
-export const SECURITY_TAB_LABEL = k('보안')

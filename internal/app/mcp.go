@@ -32,8 +32,12 @@ const (
 //
 // Letting the OS choose looks tidier and is wrong: the port lands in the line
 // the user pasted into their MCP client, and a new one on every launch means
-// that line is dead by tomorrow. Whatever is actually bound is written back to
-// settings, so it stays put even when this preference was unavailable.
+// that line is dead by tomorrow.
+//
+// What is bound is *not* written back. Remembering it on the user's behalf is
+// what broke everyone whose preferred port was briefly taken — the fallback
+// became permanent. Pinning is a button now, and the panel says which port
+// actually answered.
 const defaultMCPPort = 8779
 
 type mcpState struct {

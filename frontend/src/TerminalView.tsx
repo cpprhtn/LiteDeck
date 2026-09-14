@@ -530,10 +530,12 @@ export function TerminalView({
   // discoverable, and a line of prose in the toolbar was removed once already
   // for being noise. The tab's tooltip is where somebody hunting for it looks.
   const mod = getPlatform().isMac ? '⌘' : 'Ctrl+Shift+'
-  const copyHint = t('복사 {c} · 붙여넣기 {v} · 우클릭으로도 붙여넣기', {
-    c: `${mod}C`,
-    v: `${mod}V`,
-  })
+  // Right-click pastes everywhere except macOS, where it opens the system
+  // context menu instead and the app never sees the event. Saying so there was
+  // a hint that did not work on the platform reading it.
+  const copyHint = getPlatform().isMac
+    ? t('복사 {c} · 붙여넣기 {v}', { c: `${mod}C`, v: `${mod}V` })
+    : t('복사 {c} · 붙여넣기 {v} · 우클릭으로도 붙여넣기', { c: `${mod}C`, v: `${mod}V` })
 
   return (
     <div className="view term-view">
