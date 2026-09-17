@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/cpprhtn/LiteDeck/internal/i18n"
@@ -38,13 +39,58 @@ type ActionResult struct {
 
 func okResult() ActionResult { return ActionResult{OK: true} }
 
+// execFailure turns an exec error into a result.
+//
+// A shut lock is not a failure to report, it is the same question the UI
+// already knows how to ask, so it comes back as "needs root" rather than as a
+// Go error string that only makes sense to whoever wrote it.
+func execFailure(err error) ActionResult {
+	if errors.Is(err, ErrSudoLocked) {
+		return ActionResult{
+			NeedsElevation: true,
+			Error:          i18n.S("관리자 권한이 필요합니다 — LiteDeck 에서 잠금을 열어 주세요"),
+		}
+	}
+	return failResult(err)
+}
+
 func failResult(err error) ActionResult {
 	return ActionResult{Error: err.Error()}
 }
 
+// ErrSudoLocked reports that elevation was asked for where no dialog may be
+// raised and the lock is not open.
+//
+// Its own error because the MCP layer turns it into a sentence for the model:
+// the person has to open the lock in LiteDeck, and no tool call can do it for
+// them.
+var ErrSudoLocked = errors.New("app: sudo lock is not open")
+
 // execMaybeElevated runs a command, optionally through sudo.
 func (a *App) execMaybeElevated(
 	ctx context.Context, conn *sshcore.Conn, hostID string, elevate bool,
+	cmd string, args ...string,
+) (*sshcore.Result, error) {
+	return a.execElevated(ctx, conn, hostID, elevate, true, cmd, args...)
+}
+
+// execUnlockedOnly runs a command through sudo using a lock that is already
+// open, and fails rather than asking for a password.
+//
+// For callers that are not a person: an MCP tool call must never make a
+// password dialog appear. Nobody is looking at the screen when the model
+// decides to restart a unit, and a dialog that arrives unbidden is one that
+// gets answered for the wrong reason — or trains its reader to answer any
+// dialog at all.
+func (a *App) execUnlockedOnly(
+	ctx context.Context, conn *sshcore.Conn, hostID string, elevate bool,
+	cmd string, args ...string,
+) (*sshcore.Result, error) {
+	return a.execElevated(ctx, conn, hostID, elevate, false, cmd, args...)
+}
+
+func (a *App) execElevated(
+	ctx context.Context, conn *sshcore.Conn, hostID string, elevate, mayAsk bool,
 	cmd string, args ...string,
 ) (*sshcore.Result, error) {
 	if !elevate {
@@ -72,6 +118,11 @@ func (a *App) execMaybeElevated(
 		return conn.ExecOpts(ctx,
 			sshcore.ExecOptions{Stdin: strings.NewReader(password + "\n")},
 			"sudo", append([]string{"-S", "-p", "", "--", cmd}, args...)...)
+	}
+
+	// The only way out that is left is asking, and some callers may not.
+	if !mayAsk {
+		return nil, ErrSudoLocked
 	}
 
 	password, err := a.prompts.secretFunc(hostID, secret.KindSudo, i18n.S("sudo 비밀번호"))()
