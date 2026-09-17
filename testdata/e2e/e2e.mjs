@@ -101,6 +101,60 @@ async function open(name) {
   await page.keyboard.press('Enter')
 }
 
+// What the file tree is showing, for a failure that has to explain itself.
+//
+// This check failed on a runner and passed on every machine here, including
+// with every directory call delayed by eight seconds, so the next failure has
+// to arrive with its own evidence rather than another guess.
+async function treeState() {
+  return page.evaluate(() => {
+    const box = document.querySelector('.file-tree .view-toolbar input.search')
+    const ph = document.querySelector('.file-tree .placeholder')
+    const err = document.querySelector('.error, .warn-text, .error-banner')
+    return {
+      path: box ? box.value : '(no path box)',
+      rows: document.querySelectorAll('.file-tree .trow').length,
+      placeholder: ph ? ph.textContent.trim().slice(0, 80) : null,
+      error: err ? err.textContent.trim().slice(0, 120) : null,
+    }
+  })
+}
+
+/**
+ * Navigates the file tree, and keeps asking.
+ *
+ * Typing a path and pressing Enter is one shot at a server that might be busy,
+ * and one shot is what failed in CI: the listing for the second connection
+ * never arrived and the run ended there. Three tries cost nothing on a machine
+ * where the first works.
+ *
+ * The wait before the first attempt is not decoration either. The path box is
+ * empty until the home directory lands, and typing into a control the app is
+ * about to fill in is a race that only shows up on a slow box.
+ */
+async function goTo(dir, marker) {
+  const box = page.locator('.file-tree .view-toolbar input.search').first()
+  await box.waitFor({ state: 'visible', timeout: ms(15000) })
+  await page
+    .waitForFunction(
+      () => {
+        const el = document.querySelector('.file-tree .view-toolbar input.search')
+        return el && el.value.length > 0
+      },
+      null,
+      { timeout: ms(30000) },
+    )
+    .catch(() => {})
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await box.fill(dir)
+    await box.press('Enter')
+    if (await visible(row(marker).first(), ms(20000))) return true
+    console.log(`        (${dir} did not list on attempt ${attempt}: ${JSON.stringify(await treeState())})`)
+  }
+  return false
+}
+
 try {
   // -- connect -----------------------------------------------------------
   await page.goto(URL, { waitUntil: 'networkidle' })
@@ -121,20 +175,8 @@ try {
   await files.click()
 
   // -- navigate ----------------------------------------------------------
-  const pathBox = page.locator('.file-tree .view-toolbar input.search').first()
-  await pathBox.waitFor({ state: 'visible', timeout: ms(15000) })
-  // The path box is empty until the home listing lands. Typing into it before
-  // then is typing into a control the app is about to overwrite.
-  await page
-    .waitForFunction(() => {
-      const el = document.querySelector('.file-tree .view-toolbar input.search')
-      return el && el.value.length > 0
-    }, null, { timeout: ms(30000) })
-    .catch(() => {})
-  await pathBox.fill(DIR)
-  await pathBox.press('Enter')
-  const listed = await visible(row('README.md').first(), ms(20000))
-  check(`${DIR} lists its contents`, listed)
+  const listed = await goTo(DIR, 'README.md')
+  check(`${DIR} lists its contents`, listed, JSON.stringify(await treeState()))
   if (!listed) throw new Error('the listing never arrived; nothing after this could mean anything')
 
   // -- the editor writes to the server -----------------------------------
@@ -220,12 +262,12 @@ try {
 
   if (backAgain) {
     await page.getByRole('button', { name: 'Files', exact: true }).click()
-    const again = page.locator('.file-tree .view-toolbar input.search').first()
-    await again.waitFor({ state: 'visible', timeout: ms(15000) })
-    await again.fill(DIR)
-    await again.press('Enter')
-    const relisted = await visible(row('README.md').first(), ms(20000))
-    check('the file listing works on the second connection', relisted)
+    const relisted = await goTo(DIR, 'README.md')
+    check(
+      'the file listing works on the second connection',
+      relisted,
+      JSON.stringify(await treeState()),
+    )
   }
 
   // -- the theme picker --------------------------------------------------
