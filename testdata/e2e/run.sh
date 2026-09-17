@@ -142,8 +142,10 @@ if [ $rc -ne 0 ]; then
 	# true of every run including the ones that pass. What failed was forty lines
 	# further up.
 	say "실패한 검사"
-	# The FAIL line and the indented detail under it, and nothing else.
-	awk '/^FAIL/ { f = 1; print; next } f && /^[[:space:]]/ { print; next } { f = 0 }' \
+	# The FAIL line and the detail under it, and nothing else. The detail is
+	# indented further than a result line — an "  ok" would otherwise be swept
+	# up as part of the failure above it, which it was.
+	awk '/^FAIL/ { f = 1; print; next } f && /^ {6}/ { print; next } { f = 0 }' \
 		"$WORK/harness.log" | grep . ||
 		echo "  (검사가 하나도 돌지 않았다 — 위의 node 출력을 볼 것)"
 fi
