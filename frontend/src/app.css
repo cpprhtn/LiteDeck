@@ -168,6 +168,26 @@
   color: var(--fg);
   font-weight: 600;
 }
+/* The sudo lock in the rail.
+   A switch among destinations, so it borrows their geometry and not their
+   selected state: [data-on] is "you are here", and this row is never anywhere
+   to be. Open reads as the accent the rest of the app uses for a thing that is
+   currently on, because an open lock is a state worth noticing on your way
+   past — the point of putting it here at all. */
+/* After the hover and selected rules on purpose: those set a colour too,
+   and at equal specificity the last one wins. Open has to survive the
+   pointer being over it, which is exactly when somebody is about to click. */
+.rail-lock[data-open],
+.rail-lock[data-open]:hover {
+  color: var(--accent);
+}
+.rail-lock:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.rail-lock:disabled:hover {
+  background: transparent;
+}
 /* The server cannot serve this one. Marked, not disabled — the view itself
    explains why, and a dead button explains nothing. */
 .rail-item[data-unsupported]::after {

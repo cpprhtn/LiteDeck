@@ -647,6 +647,8 @@ export interface SudoState {
   unlocked: boolean
   /** False where the account has no sudo at all. */
   available: boolean
+  /** sudo that needs no proof: reads as unlocked and cannot be locked. */
+  noPassword?: boolean
 }
 
 export interface UpdateState {
