@@ -74,6 +74,12 @@ var killSignals = map[string]bool{
 // afterwards, because TERM lets a program flush its state and KILL does not.
 // Nothing here escalates on its own.
 func (a *App) KillProcess(hostID string, pid int, signal string, elevate bool) ActionResult {
+	return a.killProcess(hostID, pid, signal, elevate, true)
+}
+
+// killProcess is KillProcess with a say in whether a password dialog may
+// appear. See execUnlockedOnly.
+func (a *App) killProcess(hostID string, pid int, signal string, elevate, mayAsk bool) ActionResult {
 	if !killSignals[signal] {
 		return failResult(fmt.Errorf("app: unsupported signal %q", signal))
 	}
@@ -121,10 +127,10 @@ func (a *App) KillProcess(hostID string, pid int, signal string, elevate bool) A
 
 	// `--` keeps a negative PID from being read as an option — without it,
 	// `kill -TERM -1` signals every process the user can reach.
-	res, err := a.execMaybeElevated(ctx, conn, hostID, elevate,
+	res, err := a.execElevated(ctx, conn, hostID, elevate, mayAsk,
 		"kill", "-"+signal, "--", fmt.Sprint(pid))
 	if err != nil {
-		return failResult(err)
+		return execFailure(err)
 	}
 	return a.classify(hostID, res, elevate)
 }

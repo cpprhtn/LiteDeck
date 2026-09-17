@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Icon, type IconName } from './icons'
+import { RailLock } from './RailLock'
 import { type ConnState, type HostView } from './ipc'
 import { ShellControls } from './ShellControls'
 import { k, t } from './i18n'
@@ -206,6 +207,12 @@ export function Rail({
               ))}
             </div>
           ))}
+          {/* Its own group, not an item in one of theirs: everything above is
+              somewhere to go and this is a switch. The group only appears on a
+              host shared with AI clients — see RailLock. */}
+          <div className="rail-group">
+            <RailLock hostID={activeID} />
+          </div>
         </nav>
       )}
 
@@ -415,6 +422,9 @@ function CollapsedRail({
             ))}
           </div>
         ))}
+        <div className="rail-mini-group">
+          <RailLock hostID={activeID} mini />
+        </div>
       </nav>
     </aside>
   )

@@ -78,6 +78,13 @@ matching what you believe you asked for, and that log is the only reason to trus
   Command Log. **That is why the Command Log is safe to display in full**
 - NOPASSWD is detected with `sudo -n true`, and then nothing is asked. Prompting for a password the
   server does not want is not just pointless. **It trains you to type your password into any dialog**
+- **MCP uses this same lock and nothing else.** While you have the padlock open on the Security
+  tab, `svc_control`, `container_control` and `proc_signal` run as root. The password is still
+  typed into LiteDeck alone; no tool takes it or returns it, and **there is no tool that opens the
+  lock** — so no model can ask anybody for their password. With the lock shut, the answer says to
+  open it in the app and the command goes out as the login user
+- **An MCP call never raises a password dialog.** A dialog that appears with nobody in front of the
+  screen gets answered for the wrong reason, or teaches its reader to answer any dialog at all
 
 ## The MCP endpoint
 

@@ -844,6 +844,11 @@ type SudoState struct {
 	// Available is false where this account has no sudo at all — then the lock
 	// is not a thing to offer, it is a fact to state.
 	Available bool `json:"available"`
+	// NoPassword is sudo that needs no proof, which is a third state and not a
+	// turned lock. It reads as unlocked and cannot be locked: there is nothing
+	// held to let go of. Without this the UI drew a "lock it" button that did
+	// nothing when pressed, because the next read said unlocked again.
+	NoPassword bool `json:"noPassword"`
 }
 
 // HostSudoState answers for a view that has just mounted.
@@ -855,6 +860,7 @@ func (a *App) HostSudoState(hostID string) SudoState {
 	st := SudoState{HostID: hostID, Unlocked: a.SudoUnlocked(hostID)}
 	if info, ok := a.detected.get(hostID, a.connGeneration(hostID)); ok {
 		st.Available = info.HasSudo
+		st.NoPassword = info.SudoNoPasswd
 	}
 	return st
 }

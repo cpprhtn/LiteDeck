@@ -756,4 +756,9 @@ export const en: Record<string, string> = {
   '테마': 'Theme',
   '라이트': 'Light',
   '다크': 'Dark',
+  'sudo 열림': 'sudo open',
+  'sudo 잠김': 'sudo locked',
+  '눌러서 엽니다. 비밀번호를 한 번 묻고 연결이 끊길 때까지 유지합니다': 'Click to open. Asks for the password once and keeps it until the connection ends',
+  '눌러서 잠급니다. 연결이 끊겨도 잠깁니다': 'Click to lock. It also locks when the connection ends',
+  '이 계정은 비밀번호 없이 sudo를 씁니다 — 잠글 것이 없습니다': 'This account uses sudo without a password — there is nothing to lock',
 }

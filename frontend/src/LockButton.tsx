@@ -77,6 +77,17 @@ export function LockButton({
       .finally(() => setBusy(false))
   }
 
+  if (state.noPassword) {
+    // Nothing to turn. This account's sudo needs no proof, so the lock reads as
+    // open and pressing "lock it" changed nothing — the next read said unlocked
+    // again, because it is. Saying why is the whole of what can be done here.
+    return (
+      <span className="muted small lock-none" title={t('이 계정은 비밀번호 없이 sudo를 씁니다 — 잠글 것이 없습니다')}>
+        <Icon name="unlock" />
+        {t('sudo 열림')}
+      </span>
+    )
+  }
   if (state.unlocked) {
     return (
       <button

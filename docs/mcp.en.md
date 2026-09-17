@@ -69,8 +69,28 @@ anywhere. Being irreversible is not what separates it either: `proc_signal` (KIL
 `svc_control` are equally irreversible and the modes already cover them.
 
 **What does not change is undo.** A command leaves no copy, so it never appears in the Changed
-files tab, and the dialog says so. There is no sudo — it runs as the login user with no tty, so
-anything wanting a password fails instead of waiting.
+files tab, and the dialog says so. `run_command` has no sudo and no way to ask for it — it runs as
+the login user with no tty, so anything wanting a password fails instead of waiting. What an
+arbitrary shell line would do with root is not bounded by anything.
+
+## sudo
+
+**The narrow tools do run as root — while the user has the lock open.** That is `svc_control`,
+`container_control` and `proc_signal`.
+
+The password is typed **into LiteDeck and nowhere else**. Opening the padlock on the Security tab
+asks for it once; the app holds it until the connection ends and hands it to `sudo -S` on stdin.
+No tool takes it as an argument, none returns it, and **there is no tool that opens the lock** —
+so there is no path where a model asks somebody for their password. With the lock shut, the answer
+is a sentence saying to open it in LiteDeck.
+
+**sudo does not ask a second time.** It follows the approval policy already set for that host: if
+"don't ask for 8 hours" is on, sudo does not ask either. A gate people click through twice is not
+two gates.
+
+**`fs_delete` is excluded.** Every other write has something behind it — a rollback copy, a unit
+that can be started again — and a deleted file has none. The Command Log keeps the command line
+with `sudo` in it, as sent.
 
 **Still absent**: recursive directory deletion and removing containers or images. Nothing can copy
 those first, so nothing could put them back.

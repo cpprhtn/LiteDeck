@@ -34,10 +34,44 @@ import (
 // rollback copy behind it, and it has its own toggle too. Container removal and
 // image pruning are still absent: those cannot be put back at all.
 
-// elevate is never true here. Silently escalating for an AI would put a sudo
-// password behind a decision no person made; when a server refuses, the answer
-// the model gets says to do it in the app.
-const mcpNeverElevates = false
+// mcpElevate reports whether an MCP tool may run this host's command as root.
+//
+// # Why this is allowed at all
+//
+// It used to be a flat no, and the reason written here was that escalating for
+// an AI "would put a sudo password behind a decision no person made". That
+// reason is about escalating *silently*. It is not an argument against
+// escalating, and taken as one it left the model telling people to go and do
+// the work by hand — on the one host where they had already said, out loud and
+// with their password, that this session may use root.
+//
+// # What has to be true
+//
+// The same thing the screen means by the lock being open: either the user
+// turned it on purpose for this connection, or sudo on that account needs no
+// password at all. SudoUnlocked answers exactly that question, and answering it
+// the same way here is the point — what the person sees is what the model gets.
+//
+// The password never comes near the model. It was typed into LiteDeck, it lives
+// in a secret.Buffer until the connection ends, and Go hands it to `sudo -S` on
+// stdin. No tool takes it as an argument, none returns it, and there is no tool
+// that opens the lock — so there is no path where a model asks somebody for
+// their password. A closed lock is answered with a sentence saying to open it
+// in the app.
+//
+// The action itself is still governed by the write policy: "ask" and "strict"
+// put the real command in front of a person first, and "bypass" is a thing the
+// user switched on with an expiry. sudo does not add a second dialog of its
+// own — a gate people click through twice is not two gates.
+func (a *App) mcpElevate(hostID string) bool {
+	return a.SudoUnlocked(hostID)
+}
+
+// sudoLockedNote is what the model is told when root was needed and the lock is
+// shut. It names the one thing that fixes it, and that thing is not a tool.
+const sudoLockedNote = "This needs administrator rights. Open the sudo lock for this host in " +
+	"LiteDeck (the padlock on the Security tab) and try again — the password is entered there, " +
+	"never here."
 
 func (a *App) registerMCPWriteTools(s *mcp.Server) {
 	hostArg := map[string]any{
@@ -55,7 +89,10 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 		Description: "Start, stop or restart a systemd unit or Windows service. Whether the " +
 			"user is asked first is their setting for this host: in the default mode this " +
 			"runs without a prompt, and every call appears in the app's Command Log either " +
-			"way. Do not assume a human sees it before it happens.",
+			"way. Do not assume a human sees it before it happens. " +
+			"Runs as root when the user has the sudo lock open for this host in " +
+			"LiteDeck, and as the login user otherwise — the answer says which. You " +
+			"cannot open that lock.",
 		InputSchema: obj(map[string]any{
 			"hostId": hostArg,
 			"unit":   map[string]any{"type": "string", "description": "Exact unit name from svc_list."},
@@ -87,14 +124,17 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 			if err != nil {
 				return nil, err
 			}
-			return withOutcome(a.ServiceAction(id, unit, action, mcpNeverElevates), out), nil
+			return withOutcome(a.serviceAction(id, unit, action, a.mcpElevate(id), false), out), nil
 		},
 	})
 
 	s.Register(mcp.Tool{
 		Name: "container_control",
 		Description: "Start, stop or restart a container. Removal is not offered: it cannot be " +
-			"undone, and this tool set stays on the recoverable side of that line.",
+			"undone, and this tool set stays on the recoverable side of that line. " +
+			"Runs as root when the user has the sudo lock open for this host in " +
+			"LiteDeck, and as the login user otherwise — the answer says which. You " +
+			"cannot open that lock.",
 		InputSchema: obj(map[string]any{
 			"hostId": hostArg,
 			"id":     map[string]any{"type": "string", "description": "Container ID or name from container_list."},
@@ -120,14 +160,17 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 			if err != nil {
 				return nil, err
 			}
-			return withOutcome(a.ContainerAction(hostID, id, action, mcpNeverElevates), out), nil
+			return withOutcome(a.containerAction(hostID, id, action, a.mcpElevate(hostID), false), out), nil
 		},
 	})
 
 	s.Register(mcp.Tool{
 		Name: "proc_signal",
 		Description: "Send TERM or KILL to a process. TERM first: KILL gives the process no " +
-			"chance to flush what it was writing.",
+			"chance to flush what it was writing. " +
+			"Runs as root when the user has the sudo lock open for this host in " +
+			"LiteDeck, and as the login user otherwise — the answer says which. You " +
+			"cannot open that lock.",
 		InputSchema: obj(map[string]any{
 			"hostId": hostArg,
 			"pid":    map[string]any{"type": "integer", "description": "PID from proc_list."},
@@ -162,7 +205,7 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 			if err != nil {
 				return nil, err
 			}
-			return withOutcome(a.KillProcess(hostID, pid, signal, mcpNeverElevates), out), nil
+			return withOutcome(a.killProcess(hostID, pid, signal, a.mcpElevate(hostID), false), out), nil
 		},
 	})
 
@@ -334,8 +377,11 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 		Description: "Run a shell command on the server and return its output. Off unless the " +
 			"user turned it on for that server, and by default they are asked before each one. " +
 			"Nothing it does can be undone — no copy is kept, the way one is for a file write. " +
-			"There is no sudo: the command runs as the login user with no terminal attached, so " +
-			"anything that wants a password fails rather than waiting. Prefer the narrower tools " +
+			"There is no sudo here, and there is no way to ask for it: the command runs as the " +
+			"login user with no terminal attached, so anything that wants a password fails rather " +
+			"than waiting. The narrower tools do run as root while the user has the sudo lock " +
+			"open — an arbitrary shell line does not, because what it would do with root is not " +
+			"bounded by anything. Prefer the narrower tools " +
 			"when one of them answers the question: they are cheaper, they read as intent in the " +
 			"user's Command Log, and they cannot go wrong in a way nobody expected.",
 		InputSchema: obj(map[string]any{
@@ -486,12 +532,11 @@ func withOutcome(res ActionResult, out approvalOutcome) map[string]any {
 	if res.Stderr != "" {
 		m["stderr"] = res.Stderr
 	}
-	// The GUI offers to retry as administrator. An AI does not get that path —
-	// escalating on its behalf would put a sudo password behind a decision no
-	// person made — so the answer says where it can be done.
+	// Reached when root was needed and the lock was shut, or when sudo itself
+	// refused. Either way the fix is in the app and not in a tool call, so the
+	// answer says which app and which control — see sudoLockedNote.
 	if res.NeedsElevation {
-		m["note"] = "This needs administrator rights, which are not available over MCP. " +
-			"The user can retry it in LiteDeck or a terminal."
+		m["note"] = sudoLockedNote
 	}
 	return m
 }

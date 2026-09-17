@@ -352,6 +352,12 @@ var serviceActions = map[string]bool{
 // (§7.2). It returns a result rather than an error because "you need root" is a
 // question to ask, not a failure to report.
 func (a *App) ServiceAction(hostID, unit, action string, elevate bool) ActionResult {
+	return a.serviceAction(hostID, unit, action, elevate, true)
+}
+
+// serviceAction is ServiceAction with a say in whether a password dialog may
+// appear. Only a person's own click may raise one — see execUnlockedOnly.
+func (a *App) serviceAction(hostID, unit, action string, elevate, mayAsk bool) ActionResult {
 	if !serviceActions[action] {
 		return failResult(fmt.Errorf("app: unsupported service action %q", action))
 	}
@@ -383,9 +389,9 @@ func (a *App) ServiceAction(hostID, unit, action string, elevate bool) ActionRes
 	}
 
 	// `--` stops systemctl reading a unit name as an option (§3.4).
-	res, err := a.execMaybeElevated(ctx, conn, hostID, elevate, "systemctl", action, "--", unit)
+	res, err := a.execElevated(ctx, conn, hostID, elevate, mayAsk, "systemctl", action, "--", unit)
 	if err != nil {
-		return failResult(err)
+		return execFailure(err)
 	}
 	return a.classify(hostID, res, elevate)
 }

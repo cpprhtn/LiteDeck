@@ -101,10 +101,16 @@ var containerActions = map[string]bool{
 
 // ContainerAction runs one lifecycle verb against one container (§4.5).
 func (a *App) ContainerAction(hostID, id, action string, elevate bool) ActionResult {
+	return a.containerAction(hostID, id, action, elevate, true)
+}
+
+// containerAction is ContainerAction with a say in whether a password dialog
+// may appear. See execUnlockedOnly.
+func (a *App) containerAction(hostID, id, action string, elevate, mayAsk bool) ActionResult {
 	if !containerActions[action] {
 		return failResult(fmt.Errorf("app: unsupported container action %q", action))
 	}
-	return a.runContainerCommand(hostID, elevate, action, "--", id)
+	return a.runContainerCommand(hostID, elevate, mayAsk, action, "--", id)
 }
 
 // ComposeAction runs one lifecycle verb against a compose project, or against a
@@ -131,7 +137,7 @@ func (a *App) ComposeAction(hostID, project, service, action string, elevate boo
 	if !info.HasCompose {
 		return failResult(i18n.Errorf("이 서버에 Compose가 없습니다"))
 	}
-	return a.runContainerCommand(hostID, elevate, adapter.ComposeArgs(project, service, action)...)
+	return a.runContainerCommand(hostID, elevate, true, adapter.ComposeArgs(project, service, action)...)
 }
 
 // RemoveContainer deletes a container. Separate from ContainerAction because it
@@ -144,10 +150,15 @@ func (a *App) RemoveContainer(hostID, id string, force, elevate bool) ActionResu
 		args = append(args, "-f")
 	}
 	args = append(args, "--", id)
-	return a.runContainerCommand(hostID, elevate, args...)
+	return a.runContainerCommand(hostID, elevate, true, args...)
 }
 
-func (a *App) runContainerCommand(hostID string, elevate bool, args ...string) ActionResult {
+// runContainerCommand takes mayAsk because one of its callers is not a person:
+// an MCP tool may use a lock the user already opened, and may not raise a
+// password dialog of its own. See execUnlockedOnly.
+func (a *App) runContainerCommand(
+	hostID string, elevate, mayAsk bool, args ...string,
+) ActionResult {
 	runtime, err := a.containerRuntime(hostID)
 	if err != nil {
 		return failResult(err)
@@ -160,9 +171,9 @@ func (a *App) runContainerCommand(hostID string, elevate bool, args ...string) A
 	ctx, cancel := context.WithTimeout(context.Background(), PromptTimeout+pollTimeout)
 	defer cancel()
 
-	res, err := a.execMaybeElevated(ctx, conn, hostID, elevate, runtime, args...)
+	res, err := a.execElevated(ctx, conn, hostID, elevate, mayAsk, runtime, args...)
 	if err != nil {
-		return failResult(err)
+		return execFailure(err)
 	}
 	return a.classify(hostID, res, elevate)
 }
@@ -265,18 +276,18 @@ func (a *App) ListVolumes(hostID string) ([]adapter.Volume, error) {
 // error that names a layer hash rather than the image. Letting the daemon
 // refuse is the more useful answer.
 func (a *App) RemoveImage(hostID, id string, elevate bool) ActionResult {
-	return a.runContainerCommand(hostID, elevate, "rmi", "--", id)
+	return a.runContainerCommand(hostID, elevate, true, "rmi", "--", id)
 }
 
 // RemoveVolume deletes a volume. The daemon refuses if it is in use, which is
 // the guard — LiteDeck does not offer a way past it.
 func (a *App) RemoveVolume(hostID, name string, elevate bool) ActionResult {
-	return a.runContainerCommand(hostID, elevate, "volume", "rm", "--", name)
+	return a.runContainerCommand(hostID, elevate, true, "volume", "rm", "--", name)
 }
 
 // PruneImages removes dangling layers — the usual answer to a full disk.
 func (a *App) PruneImages(hostID string, elevate bool) ActionResult {
 	// -f suppresses docker's own y/n prompt, which would hang a non-interactive
 	// session forever. The confirmation happens in the UI instead.
-	return a.runContainerCommand(hostID, elevate, "image", "prune", "-f")
+	return a.runContainerCommand(hostID, elevate, true, "image", "prune", "-f")
 }

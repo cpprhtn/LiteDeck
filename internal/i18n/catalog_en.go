@@ -130,4 +130,5 @@ var english = map[string]string{
 	"%s: 심볼릭 링크가 너무 깊습니다":                                                     "%s: too many symbolic links",
 	"%s 에 쓸 수 없어 업데이트를 적용할 수 없습니다. 앱을 응용 프로그램 폴더로 옮기고 다시 시도해 주세요.":            "Cannot write to %s, so the update cannot be installed. Move the app to your Applications folder and try again.",
 	"%s 와 같은 이름이 이미 너무 많습니다":                                                  "Too many files are already named like %s",
+	"관리자 권한이 필요합니다 — LiteDeck 에서 잠금을 열어 주세요":                                  "Administrator rights are needed — open the lock in LiteDeck",
 }
