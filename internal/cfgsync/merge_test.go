@@ -73,6 +73,22 @@ func TestMergeTable(t *testing.T) {
 			want:   ActionAccept, wantRev: 5,
 		},
 		{
+			// The difference from the row above is base: this machine had the host
+			// and no longer does. Accepting the record back would undo the delete
+			// at the next sync, silently, using the mechanism meant to carry it.
+			name: "deleted here, still in the repository", base: base, local: nil,
+			remote: rec(nil),
+			want:   ActionPush, wantRev: 6,
+			check: func(t *testing.T, res MergeResult) {
+				if !res.Record.Deleted {
+					t.Error("a host deleted on this device was not tombstoned")
+				}
+				if res.Record.Host.Hostname != "" {
+					t.Errorf("the tombstone still describes the host: %+v", res.Record.Host)
+				}
+			},
+		},
+		{
 			name: "a host added here and never synced", base: nil,
 			local: rec(func(r *Record) { r.Rev = 1 }), remote: nil,
 			want: ActionPush, wantRev: 2,

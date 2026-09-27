@@ -214,6 +214,10 @@ func MigrateHostIDs(store *Store, settings *SettingsStore, secrets SecretMover, 
 	return rep, nil
 }
 
+// NewUUID returns a fresh version 4 UUID, for anything else that needs one —
+// settings sync names each device with one (§7.3).
+func NewUUID() (string, error) { return newUUID() }
+
 // newUUID returns a version 4 UUID in the lowercase hyphenated form.
 //
 // Hand-rolled rather than a dependency: it is eight lines, and the alternative

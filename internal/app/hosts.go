@@ -34,11 +34,25 @@ func (a *App) ListHosts() []HostView {
 }
 
 // SaveHost adds or updates a host.
+//
+// A new host gets a UUID. It used to be named after the moment it was created —
+// host-<UnixNano> — which is a name no second machine can arrive at, and settings
+// sync needs one that travels (internal/config/migrate.go). Hosts created before
+// that change were renamed by the migration; this is where new ones stop needing
+// it.
 func (a *App) SaveHost(h config.Host) error {
 	if h.ID == "" {
-		h.ID = fmt.Sprintf("host-%d", time.Now().UnixNano())
+		id, err := config.NewUUID()
+		if err != nil {
+			return err
+		}
+		h.ID = id
 	}
-	return a.hosts.Upsert(h)
+	if err := a.hosts.Upsert(h); err != nil {
+		return err
+	}
+	a.syncSoon()
+	return nil
 }
 
 // DeleteHost removes a host, disconnecting it first and forgetting its secrets.
@@ -53,7 +67,14 @@ func (a *App) DeleteHost(id string) error {
 	for _, k := range []secret.Kind{secret.KindPassword, secret.KindPassphrase, secret.KindSudo} {
 		_ = a.secrets.Delete(id, k)
 	}
-	return a.hosts.Delete(id)
+	if err := a.hosts.Delete(id); err != nil {
+		return err
+	}
+	// The next sync turns this into a tombstone, so the other machines lose it
+	// too. Without the trigger it would happen at the five-minute tick instead,
+	// and somebody deleting a host and closing the app would find it back.
+	a.syncSoon()
+	return nil
 }
 
 // ImportSSHConfigResult reports what an import found.

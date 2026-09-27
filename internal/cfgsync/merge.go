@@ -103,10 +103,18 @@ func Merge(base, local, remote *Record, deviceID string, now time.Time) MergeRes
 		return res
 
 	case local == nil:
-		// A host this machine has never had. New, or deleted here and tombstoned
-		// there — in which case there is nothing to do.
+		// A host this machine does not have. Three different situations, and
+		// telling them apart is what base is for.
 		if remote.Deleted {
+			// Deleted somewhere and already gone here. Nothing to do.
 			return MergeResult{Action: ActionNone}
+		}
+		if base != nil {
+			// This machine had it and no longer does: somebody deleted it here.
+			// Without this the record would be accepted straight back and the
+			// host would reappear at the next sync, which is the deletion being
+			// silently undone by the thing that was supposed to carry it.
+			return MergeResult{Action: ActionPush, Record: Tombstone(*remote, deviceID, now)}
 		}
 		return MergeResult{Action: ActionAccept, Record: *remote}
 	}

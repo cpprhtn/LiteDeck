@@ -25,6 +25,7 @@ package cfgsync
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -254,6 +255,33 @@ func (vf VaultFile) Open(passphrase string) (*Vault, error) {
 	}
 	if len(key) != chacha20poly1305.KeySize {
 		return nil, ErrWrongPassphrase
+	}
+	return &Vault{key: key}, nil
+}
+
+// KeyBase64 is the vault key, for the one caller that has somewhere safe to put
+// it: the OS credential store (§7.3).
+//
+// Deliberately awkward to reach and named after what it is. There is exactly one
+// place this may go — the credential store, when the user asked to be remembered
+// — and a machine with no credential store gets asked for the passphrase instead.
+// It must never reach a file, a log, or an error message.
+func (v *Vault) KeyBase64() string {
+	return base64.StdEncoding.EncodeToString(v.key)
+}
+
+// VaultFromKeyBase64 rebuilds a vault from a cached key.
+//
+// No passphrase: the key came out of the credential store, which the OS only opens
+// for this user. The passphrase protects the copy in the repository; the one on
+// this machine is protected by the machine.
+func VaultFromKeyBase64(s string) (*Vault, error) {
+	key, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return nil, fmt.Errorf("cfgsync: cached vault key is not base64: %w", err)
+	}
+	if len(key) != chacha20poly1305.KeySize {
+		return nil, fmt.Errorf("cfgsync: cached vault key is %d bytes", len(key))
 	}
 	return &Vault{key: key}, nil
 }

@@ -23,7 +23,10 @@ var processStart = time.Now()
 
 // App holds everything that outlives a single binding call.
 type App struct {
-	ctx context.Context
+	// sync is settings sync (internal/cfgsync), desktop only. Zero value is
+	// "not set up", which is what most installs will be.
+	sync syncState
+	ctx  context.Context
 
 	mgr       *sshcore.Manager
 	hosts     *config.Store
@@ -205,10 +208,14 @@ func (a *App) boot() {
 	// Last, and only if the user asked for it: the endpoint speaks for every
 	// host above, so it must not come up before they are loaded.
 	a.startMCP()
+	// And the settings sync, if it is set up and this machine can open the vault
+	// without asking anybody. It never prompts at launch (internal/app/sync.go).
+	a.startSync()
 }
 
 // Shutdown closes every connection before the window goes away.
 func (a *App) Shutdown(context.Context) {
+	a.stopSync()
 	if a.terminals != nil {
 		a.terminals.closeAll()
 	}

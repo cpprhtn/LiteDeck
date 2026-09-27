@@ -35,6 +35,8 @@ import {
   ImportSSHConfig,
   ListHosts,
   on,
+  SyncState,
+  type SyncResult,
   type BootstrapData,
   type ConnectionState,
   type Host,
@@ -48,6 +50,7 @@ import { getLanguage, initLanguage, k, t, useT } from './i18n'
 import { initTheme } from './theme'
 import { isWebMode } from './webTransport'
 import { McpPanel } from './McpPanel'
+import { SyncPanel } from './SyncPanel'
 import { McpHostBadge } from './McpHostBadge'
 import { closeHost } from './openFiles'
 import { initPlatform, matches } from './platform'
@@ -110,6 +113,15 @@ export default function App() {
   const t = useT() // shadows the module import; subscribing is the point
   const [benchMode, setBenchMode] = useState<boolean | null>(null)
   const [mcpOpen, setMcpOpen] = useState(false)
+  const [syncOpen, setSyncOpen] = useState(false)
+  // The pending count, for the badge on the rail button. Kept here rather than in
+  // the panel because the badge has to be visible while the panel is shut — that
+  // is the only thing that makes a withheld change discoverable.
+  const [syncPending, setSyncPending] = useState(0)
+  // The one-line result of the last sync. Shown for a few seconds and then gone:
+  // a sync that did nothing is the normal case and does not deserve a permanent
+  // line, and a sync that needs a decision has the badge for that.
+  const [syncNote, setSyncNote] = useState<string | null>(null)
   // A queue, not one slot. Go waits on several approvals at once — a burst of
   // eight is allowed — and a single slot meant the second prompt replaced the
   // first on screen while Go went on waiting for it, so the first was refused
@@ -217,6 +229,48 @@ export default function App() {
       cancelled = true
     }
   }, [activeID, activeConnected, activeDetected])
+
+  // The sync's pending count, for the badge on the rail button.
+  //
+  // Read once and then on Go's event rather than polled: a sync runs every five
+  // minutes and after any local edit, and the count only changes when one does.
+  // Server mode has no sync, so the first call failing is the normal answer there
+  // and is not an error worth showing.
+  useEffect(() => {
+    if (boot?.selfMode) return
+    let alive = true
+    const read = () => {
+      void SyncState()
+        .then((v) => alive && setSyncPending(v.pending))
+        .catch(() => {})
+    }
+    read()
+    const off = on('sync:state', read)
+    // The result of a pass, for the line under the header. Errors go to the same
+    // place as everything else; a successful pass says what it carried, because
+    // "nothing happened" and "three hosts arrived" should not look the same.
+    const offResult = on<SyncResult>('sync:result', (r) => {
+      if (!alive) return
+      if (r.error) {
+        setError(r.error)
+        return
+      }
+      if (r.received === 0 && r.sent === 0 && r.pending === 0) return
+      setSyncNote(
+        t('동기화: 받음 {received} · 보냄 {sent} · 확인 필요 {pending}', {
+          received: r.received,
+          sent: r.sent,
+          pending: r.pending,
+        }),
+      )
+      setTimeout(() => setSyncNote(null), 6000)
+    })
+    return () => {
+      alive = false
+      off()
+      offResult()
+    }
+  }, [boot?.selfMode])
 
   // Prompts arrive mid-handshake: sshcore is parked on a channel waiting for
   // the answer these dialogs send back.
@@ -413,6 +467,8 @@ export default function App() {
         busy={busy}
         version={boot?.version}
         onOpenMCP={() => setMcpOpen(true)}
+        onOpenSync={selfMode ? undefined : () => setSyncOpen(true)}
+        syncPending={syncPending}
         listOpen={sidebarOpen}
         onToggleList={() => setPref('sidebarOpen', !sidebarOpen)}
         groups={navGroups}
@@ -427,6 +483,8 @@ export default function App() {
       {mcpOpen && (
         <McpPanel hosts={hosts} onClose={() => setMcpOpen(false)} onError={setError} />
       )}
+
+      {syncOpen && <SyncPanel onClose={() => setSyncOpen(false)} onError={setError} />}
 
       <main className="main">
         <header className="main-head">
@@ -488,6 +546,15 @@ export default function App() {
             <div className="muted">{t('좌측에서 호스트를 선택하세요.')}</div>
           )}
         </header>
+
+        {syncNote && (
+          <div className="sync-note muted small">
+            <span>{syncNote}</span>
+            <button className="ghost small-btn" onClick={() => setSyncOpen(true)}>
+              {t('기록')}
+            </button>
+          </div>
+        )}
 
         {error && (
           <div className="error">

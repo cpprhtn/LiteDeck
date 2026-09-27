@@ -128,7 +128,19 @@ func TestSecretKindsAreAllOfThem(t *testing.T) {
 	if len(declared) == 0 {
 		t.Fatal("no Kind constants found — this test is reading the wrong file")
 	}
+	// The kinds that are deliberately not in config.SecretKinds, with the reason.
+	// Both sync secrets are filed under one fixed account name rather than a host
+	// ID (secret.SyncAccount), so the host-ID migration has nothing to move: a
+	// migration that "carried" them would be looking up secret named after a host
+	// that does not exist.
+	notPerHost := map[string]bool{"sync_vault": true, "sync_key": true}
+
+	var perHost []string
 	for _, kind := range declared {
+		if notPerHost[kind] {
+			continue
+		}
+		perHost = append(perHost, kind)
 		found := false
 		for _, k := range config.SecretKinds {
 			if k == kind {
@@ -140,8 +152,9 @@ func TestSecretKindsAreAllOfThem(t *testing.T) {
 				"migration leaves it behind and the user is asked for a secret they saved", kind)
 		}
 	}
-	if len(config.SecretKinds) != len(declared) {
-		t.Errorf("config.SecretKinds = %v, secret declares %v", config.SecretKinds, declared)
+	if len(config.SecretKinds) != len(perHost) {
+		t.Errorf("config.SecretKinds = %v, secret declares %v as per-host kinds",
+			config.SecretKinds, perHost)
 	}
 }
 

@@ -63,6 +63,8 @@ export function Rail({
   busy,
   version,
   onOpenMCP,
+  onOpenSync,
+  syncPending,
   listOpen,
   onToggleList,
   groups,
@@ -87,6 +89,8 @@ export function Rail({
   // information too.
   version?: string
   onOpenMCP: () => void
+  onOpenSync?: () => void
+  syncPending?: number
   /** Whether the host list is unfolded. The sections below it are always shown. */
   listOpen: boolean
   onToggleList: () => void
@@ -218,7 +222,12 @@ export function Rail({
 
       {!selfMode && (
         <div className="rail-foot">
-          <ShellControls version={version} onOpenMCP={onOpenMCP} />
+          <ShellControls
+            version={version}
+            onOpenMCP={onOpenMCP}
+            onOpenSync={onOpenSync}
+            syncPending={syncPending}
+          />
         </div>
       )}
     </aside>
