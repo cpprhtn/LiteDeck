@@ -256,6 +256,59 @@ func (s *SettingsStore) SetTheme(theme string) error {
 	return s.save()
 }
 
+// RenameHosts carries every per-host setting across to a new ID (§6).
+//
+// # Why one function and not seven call sites
+//
+// Seven maps here are keyed by host ID: which servers are shared with AI
+// clients, their write policy, their delete and exec toggles, when each was
+// last looked at, whose shell history may be read, and which addresses have
+// been seen logging in. Six of the seven fail silently when they are missed —
+// the setting simply reverts to its default, and the user finds out when an AI
+// client says it cannot reach a server they shared, or when the security tab
+// flags an address it used to recognise.
+//
+// So the list lives in one place, and TestRenameHostsCoversEveryPerHostMap
+// fails when a new map is added to Settings without being added here.
+//
+// Written once, at the end. A partial rename on disk would be worse than none.
+func (s *SettingsStore) RenameHosts(renamed map[string]string) error {
+	if len(renamed) == 0 {
+		return nil
+	}
+	s.mu.Lock()
+	rename(&s.settings.MCP.Hosts, renamed)
+	rename(&s.settings.MCP.Write, renamed)
+	rename(&s.settings.MCP.Delete, renamed)
+	rename(&s.settings.MCP.Exec, renamed)
+	rename(&s.settings.LastSeen, renamed)
+	rename(&s.settings.ShellHistory, renamed)
+	rename(&s.settings.KnownLogins, renamed)
+	s.mu.Unlock()
+	return s.save()
+}
+
+// rename moves the values of a host-keyed map onto their new keys.
+//
+// Generic over the value because the seven maps hold five different types, and
+// writing it five times is five chances to get one wrong. Entries whose key is
+// not being renamed stay exactly as they were: a settings file can name a host
+// that no longer exists, and this is not the place to tidy that up.
+func rename[V any](m *map[string]V, renamed map[string]string) {
+	if *m == nil {
+		return
+	}
+	out := make(map[string]V, len(*m))
+	for k, v := range *m {
+		if id, ok := renamed[k]; ok {
+			out[id] = v
+			continue
+		}
+		out[k] = v
+	}
+	*m = out
+}
+
 // save writes settings.json atomically, for the same reason hosts.json is
 // written that way: a crash mid-write must not leave a truncated file that
 // fails to parse on the next start.

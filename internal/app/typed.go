@@ -119,19 +119,66 @@ func (l *typedLog) load() {
 	l.byID = stored
 }
 
-func (l *typedLog) save() {
+// save writes the history, ignoring a failure.
+//
+// It is called on the path of a keystroke, where there is nothing useful to do
+// with an error and nothing lost but a convenience log. The migration needs the
+// opposite answer, so the work is in persist and only the swallowing is here.
+func (l *typedLog) save() { _ = l.persist() }
+
+func (l *typedLog) persist() error {
 	if l.path == "" {
-		return
+		return nil
 	}
 	b, err := json.Marshal(l.byID)
 	if err != nil {
-		return
+		return err
 	}
 	tmp := l.path + ".tmp"
-	if os.WriteFile(tmp, b, 0o600) != nil {
-		return
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return err
 	}
-	_ = os.Rename(tmp, l.path)
+	return os.Rename(tmp, l.path)
+}
+
+// RenameHosts moves one host's typed history to a new ID (config's UUID
+// migration).
+//
+// Both the map key and each row's own HostID, because the rows are handed to the
+// frontend as they are and the command-history panel merges three sources by
+// that field. Missing this would empty the panel's "typed in LiteDeck" column
+// with nothing said — the lines are still in the file, under a name no host
+// claims.
+func (l *typedLog) RenameHosts(renamed map[string]string) error {
+	if l == nil || len(renamed) == 0 {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	changed := false
+	for old, id := range renamed {
+		rows, ok := l.byID[old]
+		if ok {
+			for i := range rows {
+				rows[i].HostID = id
+			}
+			l.byID[id] = rows
+			delete(l.byID, old)
+			changed = true
+		}
+		// The home directory is remembered per host too. Empty at boot, when
+		// the migration runs, but a rename that leaves it behind would be a
+		// second bug waiting for the day this is called from anywhere else.
+		if home, ok := l.home[old]; ok {
+			l.home[id] = home
+			delete(l.home, old)
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return l.persist()
 }
 
 // enter records a line, or the fact that one could not be read.

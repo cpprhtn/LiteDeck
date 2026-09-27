@@ -193,6 +193,15 @@ func (a *App) boot() {
 	}
 	a.hosts = store
 
+	// Before anything reads an ID. A host added before this release is named
+	// after the moment it was created, which is a name no second machine can
+	// arrive at; see internal/app/migrate.go. A failure here is not fatal — the
+	// old IDs still work, and the next start tries again — but it is worth
+	// saying, because what it failed to move is a saved password.
+	if err := a.migrateHostIDs(); err != nil {
+		a.emit("log:warning", i18n.T("호스트 ID 를 옮기지 못했습니다: %v", err))
+	}
+
 	// Last, and only if the user asked for it: the endpoint speaks for every
 	// host above, so it must not come up before they are loaded.
 	a.startMCP()

@@ -32,6 +32,7 @@ var english = map[string]string{
 	"%w: 이 사용자는 systemd-journal·adm 그룹에 없어 시스템 저널을 볼 수 없습니다 — 관리자 권한으로 열거나, 서버에서 그룹에 추가하세요": "%w: this user is in neither systemd-journal nor adm, so the system journal is not visible — open it with administrator rights, or add the user to a group on the server",
 	"MCP 서버를 열지 못했습니다: %v":                "Could not open the MCP endpoint: %v",
 	"MCP 설정을 저장하지 못했습니다: %v":              "Could not save the MCP settings: %v",
+	"호스트 ID 를 옮기지 못했습니다: %v":              "Could not move the host IDs: %v",
 	"MCP 토큰을 만들지 못했습니다: %v":               "Could not create an MCP token: %v",
 	"LiteDeck은 아직 이 서버를 지원하지 않습니다 (%s). ": "LiteDeck does not support this server yet (%s). ",
 	"PID %d는 sshd 데몬 또는 연결의 관리 프로세스입니다 — 종료하면 이 서버의 모든 SSH 접속이 끊깁니다": "PID %d is the sshd daemon or a connection's controlling process — killing it drops every SSH session on this server",
