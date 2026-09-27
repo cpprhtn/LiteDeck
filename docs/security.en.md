@@ -128,6 +128,83 @@ safe ([`internal/mcp/http.go`](../internal/mcp/http.go)).
 - **The MCP layer never touches credentials.** The token is for this endpoint only, and SSH
   credentials stay in the OS keychain as described above
 
+## Settings sync
+
+Your host list and approval policies go to **a git repository you own**,
+encrypted, and your other machines read the same one
+([`internal/cfgsync`](../internal/cfgsync)). There is no account and no relay.
+It is off by default.
+
+### What it does not do, first
+
+- **No secret is uploaded.** Passwords, key passphrases, sudo passwords, private
+  keys and the MCP token are not synced. They live in the OS credential store, as
+  described above
+- **Not even the private key's path.** A key is named by its **public-key
+  fingerprint and label**. `/Users/me/.ssh/id_ed25519` does not exist on the
+  other machine, so each device keeps its own fingerprint-to-path map
+- **Hosts imported from `~/.ssh/config` are not synced.** That file is already
+  your own way of carrying hosts between machines, and the importer matches by
+  ID — syncing one would produce a second copy at the next import
+- **Lose the passphrase and the data is gone.** A recovery path would mean
+  LiteDeck holds the key, and then it is an account
+- **Not available in server mode.** The sync writes files on the machine the app
+  runs on
+
+### What the repository shows
+
+One file per host, named after that host's UUID. The contents are
+XChaCha20-Poly1305 ciphertext; the only plaintext is `vault.json` (the KDF
+parameters, the salt, and the vault key wrapped in your passphrase),
+`.gitattributes` and `README.md`.
+
+Whoever hosts the repository can see **how many files there are (so how many
+hosts), how big each one is, and when it last changed**. Commit messages are
+fixed at `sync: <first 8 characters of the device ID>` and the author is
+`LiteDeck <litedeck@localhost>` — neither what changed nor whose email it was.
+
+### Threat model
+
+| Who | What they can do | What stops it |
+|---|---|---|
+| The repository host, a leaked deploy key or token, a repository made public by mistake | Read | Encryption |
+| 〃 | Forge or swap files | AEAD authentication fails. The associated data includes the **path inside the repository**, so a record moved to another file name does not open |
+| 〃 | Rewind the history | Each device remembers the last rev it saw per record. A lower one is not applied, and is warned about. A file that vanished with no tombstone is the same warning |
+| Someone holding the vault key (including one of your own machines, taken over) | Write valid records | **Loosened policies and replaced host keys are applied only after a person confirms them, on each machine** |
+| An MCP client, or prompt injection | Call MCP tools | The sync is **not exposed to MCP** — there is no tool, and approving a pending change is a GUI-only path |
+
+### Tightening is automatic; loosening waits for you
+
+An incoming record's policy is compared with the local one **field by field**.
+
+- Equal or stricter is applied as it is
+- Looser is not applied. It goes to the "waiting for you" list, that field keeps
+  this machine's value in the meantime, and it takes a person pressing a button
+- **The expiry is not synced.** "Do not ask for eight hours" is a decision made by
+  whoever is at that desk, and clocks minutes apart would leave a window open on
+  one machine after it closed on another. Applying a relaxed mode starts a fresh
+  window on that machine's own clock
+- A host arriving for the first time starts at the app's defaults: not shared, ask
+  before writing, no command execution, no file deletion
+
+Host keys are applied **per address (`host:port`)**. A key is taken automatically
+only where that address has none; where a different one is already trusted,
+nothing is touched and you are asked — there is no way to tell a rebuilt server
+from somebody in the middle. Deleting a host key is never propagated.
+
+### Reaching the repository
+
+A deploy key (recommended), an existing SSH key through your agent, or an HTTPS
+token. The sync-only key and the token go into the **OS credential store, not a
+file**: on Windows, Go's `Chmod` only touches the read-only bit, so a "0600" key
+file there protects nothing. A machine with no credential store is not offered
+the deploy-key option at all, does not remember the vault key, and asks for the
+passphrase every time the app opens.
+
+GitHub OAuth is not used. An OAuth App's `repo` scope is access to **every**
+private repository you have, and one settings repository is not worth asking for
+that.
+
 ## What it does not do, stated up front
 
 - **It cannot fully bound how long a password stays in memory.** The one copy that lives long

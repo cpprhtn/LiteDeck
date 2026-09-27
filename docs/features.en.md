@@ -23,6 +23,7 @@
 | **Security** | **What is guarding this box, and whether it works.** Firewalls (ufw, nftables, iptables, firewalld) and fail2ban read from **three places — the unit, the config file and the kernel** — with any disagreement shown rather than resolved; a server whose unit was up and whose firewall was off is a real case. **Packets dropped** and the rise since you last looked, the block list (fail2ban's entries kept apart from hand-made ones), 24 hours of failures with ban moments marked, and who is still getting through. The config file is **compared against what is running**, which is what catches a fail2ban that needs restarting |
 | **Events** | What happened, and when. **OOM kills**, failed units, core dumps, scheduled restarts, reboot boundaries. Read from the systemd journal and classified by `MESSAGE_ID` rather than by wording, so the server's language does not matter |
 | **Command Log** | **Every command the GUI runs, live.** Click to copy |
+| **Sync between machines** | Your host list and approval policies go to **a git repository you own**, encrypted, and your other machines read the same one. No account, no relay. Passwords, private keys and sudo passwords are **not uploaded**. A change that loosens a policy is applied only after a person confirms it, on each machine |
 | **MCP** | Claude Code and Claude Desktop read and change your servers through this app. Per-server opt-in, changes are approved, **and can be undone** |
 | **Connecting** | Password, key, agent, 2FA. Import from `~/.ssh/config`. One **ProxyJump** hop |
 | **Language** | English and Korean. Uses whichever you last chose, or your OS language if you never have. Switch with `KO`/`EN` at the bottom of the sidebar |
@@ -384,3 +385,68 @@ that reads only the file never notices.**
 **Commands that block an address are text to copy, not buttons.** One firewall
 rule can end the session it was typed from, and unlike every other change this
 app makes there is no copy to restore from.
+
+
+## Syncing settings between machines
+
+Using a server you registered on the laptop from the desktop used to mean copying
+`hosts.json` by hand. Now you point both at **one empty git repository you own**.
+
+**Sync** at the bottom of the sidebar → "Create a new sync":
+
+1. Give it a repository URL. A **private** GitHub or GitLab repository works, and
+   so does your own server:
+
+   ```bash
+   # On the server you want to use, once
+   git init --bare ~/litedeck-sync.git
+   # What you type into LiteDeck
+   # ssh://user@my-server/~/litedeck-sync.git
+   ```
+
+2. Choose how to authenticate. A **sync-only deploy key** is the recommended one —
+   it reaches that repository and nothing else. Press the button and a public key
+   appears; add it under the repository's Settings → Deploy keys **with write
+   access**. A read-only key fails at the first push
+3. Choose a passphrase, at least 12 characters. **If you lose it, the data cannot
+   be recovered** — a recovery path would mean LiteDeck holds the key, and then it
+   is an account
+
+On the other machine, press "Join an existing sync" with the same URL and the same
+passphrase.
+
+A sync runs once when the app opens, when you press "Sync now", ten seconds after
+you change a host or a policy, and every five minutes while the app is open. Being
+offline is skipped quietly.
+
+### What travels and what does not
+
+What travels: the connection details (name, address, port, user, ProxyJump,
+group), the **fingerprint and label** of the key, the host keys you have trusted,
+and the approval policy.
+
+What does not: passwords, key passphrases, sudo passwords, private keys, **the
+path to a private key**, the MCP token, the Command Log, window sizes. Hosts
+imported from `~/.ssh/config` are also left out.
+
+The key path stays local because it is different on every machine. Where a host
+arrives with a key fingerprint this machine has never seen, it is shown as
+**"choose the key to use on this device"**.
+
+### Policies only move by themselves when they tighten
+
+A policy change that makes things **stricter is applied as it is**; one that makes
+them **looser goes to "waiting for you"** and takes a person on that machine
+pressing a button. Turning off the dialogs for eight hours on the laptop does not
+quietly open the same server on the desktop.
+
+> **The expiry is not synced.** Deciding not to be asked while you are away from
+> the desk belongs to whoever is at that desk, and clocks minutes apart would
+> leave a window open on one machine after it closed on another. Applying a
+> relaxed mode starts a fresh window on that machine's own clock.
+
+Host keys follow the same rule: taken automatically only where that address has
+none, and otherwise left alone with both fingerprints shown side by side.
+
+What the repository exposes, and the threat model, are in the
+[security document](security.en.md#settings-sync).
