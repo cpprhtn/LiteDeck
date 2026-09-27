@@ -33,6 +33,8 @@ var english = map[string]string{
 	"MCP 서버를 열지 못했습니다: %v":                "Could not open the MCP endpoint: %v",
 	"MCP 설정을 저장하지 못했습니다: %v":              "Could not save the MCP settings: %v",
 	"호스트 ID 를 옮기지 못했습니다: %v":              "Could not move the host IDs: %v",
+	"같은 문자만 반복됩니다":                        "It is the same character repeated",
+	"한 종류의 문자로만 되어 있습니다 — 길게 하거나 섞으세요":    "It uses only one kind of character — make it longer, or mix them",
 	"MCP 토큰을 만들지 못했습니다: %v":               "Could not create an MCP token: %v",
 	"LiteDeck은 아직 이 서버를 지원하지 않습니다 (%s). ": "LiteDeck does not support this server yet (%s). ",
 	"PID %d는 sshd 데몬 또는 연결의 관리 프로세스입니다 — 종료하면 이 서버의 모든 SSH 접속이 끊깁니다": "PID %d is the sshd daemon or a connection's controlling process — killing it drops every SSH session on this server",
