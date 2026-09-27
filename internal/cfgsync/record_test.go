@@ -136,7 +136,7 @@ func TestApprovalModesMatchTheApp(t *testing.T) {
 }
 
 // A host arriving for the first time starts at the strictest the app has (§6.2).
-func TestANewHostStartsStrict(t *testing.T) {
+func TestANewHostStartsAtTheDefaults(t *testing.T) {
 	p := StrictestPolicy()
 	if p.Shared {
 		t.Error("a host arriving from the repository was handed to AI clients")
@@ -144,8 +144,13 @@ func TestANewHostStartsStrict(t *testing.T) {
 	if p.ExecEnabled || p.DeleteEnabled {
 		t.Errorf("command execution or file deletion started on: %+v", p)
 	}
-	if Strictness(p.MCPApproval) < Strictness(ApprovalStrict) {
-		t.Errorf("approval mode %q is looser than strict", p.MCPApproval)
+	// The app's default, not the strictest mode there is: see StrictestPolicy.
+	if Strictness(p.MCPApproval) < Strictness(ApprovalAsk) {
+		t.Errorf("approval mode %q is looser than the app's default", p.MCPApproval)
+	}
+	if p.MCPApproval != ApprovalAsk {
+		t.Errorf("approval mode %q is not the app's default, so every arriving host "+
+			"raises a question and pushes this value back to the others", p.MCPApproval)
 	}
 }
 

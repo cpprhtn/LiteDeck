@@ -144,13 +144,19 @@ func Strictness(mode string) int {
 
 // StrictestPolicy is what a host arriving on a new machine starts as (§6.2).
 //
-// Not the app's defaults — the strictest values the app has. A host that appears
-// out of a repository has never been looked at on this machine, and the first
-// thing that happens to it should not be an AI client being handed it.
+// The strictest of the app's *defaults*, which is the defaults: a host nobody has
+// configured is not shared with AI clients, runs no commands, deletes no files,
+// and asks before it writes.
+//
+// Not "strict", although that mode exists and is stricter. Strict is something a
+// person opts into for one host, and starting here would make every host that ever
+// arrives raise a question — "the repository says ask, this device says strict" —
+// and then push `strict` back, until one person's choice for one server had
+// tightened the whole fleet. A default that produces a question is not a default.
 func StrictestPolicy() RecordPolicy {
 	return RecordPolicy{
 		Shared:        false,
-		MCPApproval:   ApprovalStrict,
+		MCPApproval:   ApprovalAsk,
 		ExecEnabled:   false,
 		DeleteEnabled: false,
 	}

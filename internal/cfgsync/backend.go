@@ -26,6 +26,10 @@ type Backend interface {
 	// fast-forward pushes. It returns ErrRemoteAhead when somebody else got
 	// there first, and the caller starts over from Pull (§8.2).
 	CommitAndPush(ctx context.Context, writes map[string][]byte, deletes []string, msg string) error
+	// Head is the commit the working copy is on, or "" before the first pull.
+	// Read after a push, so the state file records what was actually applied
+	// rather than what was there when the pass started.
+	Head() string
 	// Close releases whatever the backend holds open.
 	Close() error
 }
