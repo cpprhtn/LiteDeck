@@ -56,7 +56,7 @@
 2. **SSH only.** The SSH port you already have open. No web server, no relay
 3. **Nothing hidden.** Every command the GUI runs shows up verbatim in the Command Log. sudo is never added behind your back — it asks
 4. **No account, no telemetry, open source.** Nothing to sign up for, nothing collected, all source public
-5. **Lightweight.** Not Electron. A 5–10 MB download, 13–16 MB installed, cold start under a second
+5. **Lightweight.** Not Electron. A 6 MB download, 15 MB installed, cold start under a second (measured on v2.2.0; the macOS build is an Intel/ARM universal binary, so 12 MB and 29 MB there)
 
 > One exception to the first. Saving from the editor writes a temp file in the same directory and
 > swaps it in with `rename`, so an interrupted save cannot leave the original half-written. On
