@@ -123,6 +123,20 @@ func TestLocalFilesystemBindingsRefuseInServerMode(t *testing.T) {
 		t.Errorf("ReportSample wrote under the server account's cache: %q", got)
 	}
 
+	// Settings import and export, all of it. Checked by name against the bindings
+	// so a new one cannot be added without either guarding it or changing this
+	// list.
+	for name, err := range map[string]error{
+		"SyncExportFile":  errOf2(a.SyncExportFile("a passphrase long enough")),
+		"SyncPickFile":    errOf2(a.SyncPickFile()),
+		"SyncPreviewFile": errOf2(a.SyncPreviewFile("/tmp/x.ldbackup", "a passphrase long enough")),
+		"SyncImportFile":  errOf2(a.SyncImportFile("/tmp/x.ldbackup", "a passphrase long enough", false)),
+	} {
+		if err == nil || !strings.Contains(err.Error(), "서버 모드") {
+			t.Errorf("%s did not refuse in server mode: %v", name, err)
+		}
+	}
+
 	// The refusal has to come from the mode. Each message names server mode, so
 	// a guard that started refusing everywhere would still pass the checks
 	// above and fail here — which is the failure that removes a feature rather
@@ -171,7 +185,16 @@ var webRPCPinned = []string{
 	"ServiceAction", "ServiceLogTail", "SetLanguage", "SetMCPEnabled",
 	"SetMCPHost", "SetMCPHostDelete", "SetMCPHostExec", "SetMCPWritePolicy",
 	"SetShellHistoryAllowed", "SetTheme", "StartDownload", "StartUpload",
-	"StatPath", "StopLogStream", "SudoUnlocked", "TerminalCwd",
+	"StatPath", "StopLogStream", "SudoUnlocked",
+	// Settings import and export. Every one refuses in server mode: they read and
+	// write files on the machine the app runs on, and in server mode that is the
+	// server box — /rpc would hand "write my host list to a file there, or read
+	// one from it" to anybody who can log into the web UI.
+	"SyncExportFile", "SyncImportFile", "SyncPickFile", "SyncPreviewFile",
+	"TerminalCwd",
 	"Transfers", "TypedEntered", "TypedHistory", "UnlockSecurity",
 	"UpdateStatus", "UploadFile", "WriteTerminal", "WriteTextFile",
 }
+
+// errOf2 drops the value from a two-result binding, for the table above.
+func errOf2[T any](_ T, err error) error { return err }

@@ -3862,3 +3862,132 @@ button.events-unit {
   padding-top: 4px;
   padding-bottom: 4px;
 }
+
+
+/* The sync setup wizard.
+   One step at a time, with the numbers across the top so somebody halfway
+   through can see how much is left — the first version was one long form and the
+   length itself was the thing that put people off. */
+.sync-steps {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+.sync-steps > span {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+.sync-steps > span[data-done] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.sync-steps > span[data-on] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--fg-on-accent);
+}
+/* The label after the circles is not one of them. */
+.sync-steps > span.muted {
+  width: auto;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  margin-left: var(--sp-2);
+}
+
+.sync-wizard h3 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--text-md);
+}
+
+.sync-choices {
+  display: grid;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+.sync-choices button {
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+  text-align: left;
+  padding: var(--sp-3);
+  height: auto;
+}
+.sync-choices button[data-on] {
+  border-color: var(--accent);
+}
+
+/* Numbered instructions. The steps inside a step: what to do in the browser,
+   which box to tick, what to paste back. */
+.sync-howto {
+  margin: 0 0 var(--sp-3);
+  padding-left: var(--sp-5);
+  display: grid;
+  gap: var(--sp-2);
+  color: var(--fg);
+  font-size: var(--text-sm);
+}
+.sync-howto code {
+  display: block;
+  margin-top: 4px;
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--bg-sunken);
+  border-radius: var(--radius-sm);
+  overflow-wrap: anywhere;
+}
+.sync-copy {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  margin-top: var(--sp-2);
+}
+.sync-copy code {
+  margin-top: 0;
+  flex: 1 1 240px;
+}
+/* A public key is one long line nobody reads; it is there to be copied, and to
+   prove the button did something. */
+.sync-key {
+  max-height: 4.5em;
+  overflow: auto;
+  font-size: var(--text-xs);
+}
+
+/* What is inside a settings file, before importing it. One row per host, and
+   the badges are the whole point: which of these are new here, which get
+   overwritten, and which arrive with a policy that will wait for a decision. */
+.sync-filelist {
+  display: grid;
+  gap: var(--sp-1);
+  margin-bottom: var(--sp-3);
+  max-height: 220px;
+  overflow: auto;
+}
+.sync-filelist > div {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--bg-sunken);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+}
+.sync-filelist code {
+  color: var(--fg-muted);
+  flex: 1;
+}
+
+/* Export or import: two cards side by side rather than stacked, because they are
+   alternatives rather than steps. */
+.sync-choices-row {
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+}

@@ -44,9 +44,12 @@ let lastCheck: UpdateInfo | null = null
 export function ShellControls({
   version,
   onOpenMCP,
+  onOpenSync,
 }: {
   version?: string
   onOpenMCP: () => void
+  /** Absent in server mode, where settings files are not offered. */
+  onOpenSync?: () => void
 }) {
   const theme = useTheme()
   const [update, setUpdate] = useState<UpdateInfo | null>(null)
@@ -165,6 +168,11 @@ export function ShellControls({
       <button className="ghost small-btn" onClick={onOpenMCP} title={t('MCP 연동 설정')}>
         MCP
       </button>
+      {onOpenSync && (
+        <button className="ghost small-btn" onClick={onOpenSync} title={t('설정 동기화')}>
+          {t('동기화')}
+        </button>
+      )}
       {/* Two positions. Before the first pick there is a third state — nothing
           stored — but it has no position here: the control shows what the theme
           resolved to, which on a fresh install is whatever the desktop is set

@@ -83,6 +83,45 @@ export interface WritePolicyView {
   until?: number
 }
 
+export interface SyncWarning {
+  recordId: string
+  kind: string
+  detail: string
+}
+
+/** One host inside a settings file, for the preview before importing. */
+export interface SyncFileEntry {
+  id: string
+  name: string
+  addr: string
+  /** 'new' | 'same' | 'changed' against what this machine has. */
+  state: string
+  /** The permissions this file would open up on this machine, in words. Applied
+   *  only if the person ticks the box on the import screen. */
+  widens?: string[]
+  /** This machine already trusts a different host key for that address. The
+   *  file's key is never taken in that case. */
+  hostKeyClash?: boolean
+}
+
+export interface SyncFilePreview {
+  createdAt: number
+  device?: string
+  hosts: SyncFileEntry[]
+}
+
+export interface SyncExportResult {
+  /** Empty when the save dialog was closed without choosing anywhere. */
+  path: string
+  hosts: number
+}
+
+export interface SyncResult {
+  received: number
+  warnings?: SyncWarning[]
+  error?: string
+}
+
 export interface MCPStatus {
   enabled: boolean
   running: boolean
@@ -1096,6 +1135,11 @@ interface Bindings {
   RestoreMCPChange(id: string): Promise<ActionResult>
   SetMCPHostDelete(hostID: string, allowed: boolean): Promise<MCPStatus>
   SetMCPHostExec(hostID: string, allowed: boolean): Promise<MCPStatus>
+
+  SyncExportFile(passphrase: string): Promise<SyncExportResult>
+  SyncPickFile(): Promise<string>
+  SyncPreviewFile(path: string, passphrase: string): Promise<SyncFilePreview>
+  SyncImportFile(path: string, passphrase: string, withPermissions: boolean): Promise<SyncResult>
   SetLanguage(tag: string): Promise<ActionResult>
   SetTheme(theme: string): Promise<ActionResult>
   SaveHost(h: Host): Promise<void>
@@ -1336,6 +1380,14 @@ export const ColdStartMs = () => api().ColdStartMs()
 export const ListHosts = () => api().ListHosts()
 export const ApplyLanguage = (tag: string) => api().ApplyLanguage(tag)
 export const MCPState = () => api().MCPState()
+
+export const SyncExportFile = (passphrase: string) => api().SyncExportFile(passphrase)
+export const SyncPickFile = () => api().SyncPickFile()
+export const SyncPreviewFile = (path: string, passphrase: string) =>
+  api().SyncPreviewFile(path, passphrase)
+export const SyncImportFile = (path: string, passphrase: string, withPermissions: boolean) =>
+  api().SyncImportFile(path, passphrase, withPermissions)
+
 export const SetMCPEnabled = (enabled: boolean) => api().SetMCPEnabled(enabled)
 export const SetMCPHost = (hostID: string, allowed: boolean) => api().SetMCPHost(hostID, allowed)
 export const RotateMCPToken = () => api().RotateMCPToken()

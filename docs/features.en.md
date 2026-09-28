@@ -23,6 +23,7 @@
 | **Security** | **What is guarding this box, and whether it works.** Firewalls (ufw, nftables, iptables, firewalld) and fail2ban read from **three places — the unit, the config file and the kernel** — with any disagreement shown rather than resolved; a server whose unit was up and whose firewall was off is a real case. **Packets dropped** and the rise since you last looked, the block list (fail2ban's entries kept apart from hand-made ones), 24 hours of failures with ban moments marked, and who is still getting through. The config file is **compared against what is running**, which is what catches a fail2ban that needs restarting |
 | **Events** | What happened, and when. **OOM kills**, failed units, core dumps, scheduled restarts, reboot boundaries. Read from the systemd journal and classified by `MESSAGE_ID` rather than by wording, so the server's language does not matter |
 | **Command Log** | **Every command the GUI runs, live.** Click to copy |
+| **Settings sync** | Export your host list and approval policies as **one encrypted file** and read it on another machine. Put it in Google Drive, Dropbox or on a stick — no account, no server. Passwords, private keys and sudo passwords are **not in the file**. Anything that loosens a policy is applied only after a person on the receiving machine confirms it |
 | **MCP** | Claude Code and Claude Desktop read and change your servers through this app. Per-server opt-in, changes are approved, **and can be undone** |
 | **Connecting** | Password, key, agent, 2FA. Import from `~/.ssh/config`. One **ProxyJump** hop |
 | **Language** | English and Korean. Uses whichever you last chose, or your OS language if you never have. Switch with `KO`/`EN` at the bottom of the sidebar |
@@ -384,3 +385,53 @@ that reads only the file never notices.**
 **Commands that block an address are text to copy, not buttons.** One firewall
 rule can end the session it was typed from, and unlike every other change this
 app makes there is no copy to restore from.
+
+## Settings sync — with one file
+
+Using a server you registered on the laptop from the desktop used to mean copying
+`hosts.json` by hand. **Sync** at the bottom of the sidebar writes one encrypted
+file and reads it back. Nothing happens on its own: exporting, moving and reading
+the file are things a person does.
+
+**Export** — choose a passphrase and you get `litedeck-2026-09-28.ldbackup`. The
+OS save dialog decides where it goes: a Google Drive, Dropbox or iCloud folder, a
+stick, an email to yourself. LiteDeck does not know where it went.
+
+**Import** — choose the file, enter the passphrase, and **it shows you what is
+inside first**: each host's name and address with "new host", "overwritten" or
+"unchanged" beside it, and a mark where this device remembers a different host
+key. Applying it comes after that.
+
+### What goes in and what does not
+
+In: the connection details (name, address, port, user, ProxyJump, group), the
+**fingerprint and label** of the key, the host keys you have trusted, and the
+approval policy.
+
+Not in: passwords, key passphrases, sudo passwords, private keys, **the path to a
+private key**, the MCP token, the Command Log, window sizes. Hosts imported from
+`~/.ssh/config` are left out too.
+
+The key path stays local because it is different on every machine. Where a host
+arrives with a fingerprint the machine has never seen, you pick the key when you
+connect.
+
+### It only moves by itself when it tightens
+
+An approval policy in the file that is **stricter than this machine's is applied
+as it is**; one that is **wider is not applied by default**. The import screen
+names what would widen, and it takes ticking a box. Reading a file where the
+laptop had "do not ask for eight hours" does not quietly open that server on the
+desktop.
+
+> **The expiry is not in the file.** Deciding not to be asked while you are away
+> from the desk belongs to whoever is at that desk. Applying a relaxed mode starts
+> a fresh window on that machine's own clock.
+
+Host keys follow the same rule: taken automatically only where that address has
+none, and otherwise left alone with both fingerprints shown.
+
+**It is not a sync.** It is a snapshot of one moment, and opening last month's
+backup does not delete the hosts you have added since. What the file exposes, and
+the threat model, are in the
+[security document](security.en.md#settings-sync-with-a-file).

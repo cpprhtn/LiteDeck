@@ -34,9 +34,19 @@ func (a *App) ListHosts() []HostView {
 }
 
 // SaveHost adds or updates a host.
+//
+// A new host gets a UUID. It used to be named after the moment it was created —
+// host-<UnixNano> — which is a name no second machine can arrive at, and settings
+// sync needs one that travels (internal/config/migrate.go). Hosts created before
+// that change were renamed by the migration; this is where new ones stop needing
+// it.
 func (a *App) SaveHost(h config.Host) error {
 	if h.ID == "" {
-		h.ID = fmt.Sprintf("host-%d", time.Now().UnixNano())
+		id, err := config.NewUUID()
+		if err != nil {
+			return err
+		}
+		h.ID = id
 	}
 	return a.hosts.Upsert(h)
 }

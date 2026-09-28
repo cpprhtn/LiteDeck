@@ -48,6 +48,7 @@ import { getLanguage, initLanguage, k, t, useT } from './i18n'
 import { initTheme } from './theme'
 import { isWebMode } from './webTransport'
 import { McpPanel } from './McpPanel'
+import { SyncPanel } from './SyncPanel'
 import { McpHostBadge } from './McpHostBadge'
 import { closeHost } from './openFiles'
 import { initPlatform, matches } from './platform'
@@ -110,10 +111,10 @@ export default function App() {
   const t = useT() // shadows the module import; subscribing is the point
   const [benchMode, setBenchMode] = useState<boolean | null>(null)
   const [mcpOpen, setMcpOpen] = useState(false)
-  // A queue, not one slot. Go waits on several approvals at once — a burst of
-  // eight is allowed — and a single slot meant the second prompt replaced the
-  // first on screen while Go went on waiting for it, so the first was refused
-  // two minutes later with "nobody answered". Answering one shows the next.
+  const [syncOpen, setSyncOpen] = useState(false)
+  // The pending count, for the badge on the rail button. Kept here rather than in
+  // the panel because the badge has to be visible while the panel is shut — that
+  // is the only thing that makes a withheld change discoverable.
   const [mcpWrites, setMcpWrites] = useState<MCPWritePrompt[]>([])
   const mcpWrite = mcpWrites[0] ?? null
   const [boot, setBoot] = useState<BootstrapData | null>(null)
@@ -413,6 +414,7 @@ export default function App() {
         busy={busy}
         version={boot?.version}
         onOpenMCP={() => setMcpOpen(true)}
+        onOpenSync={selfMode ? undefined : () => setSyncOpen(true)}
         listOpen={sidebarOpen}
         onToggleList={() => setPref('sidebarOpen', !sidebarOpen)}
         groups={navGroups}
@@ -426,6 +428,10 @@ export default function App() {
 
       {mcpOpen && (
         <McpPanel hosts={hosts} onClose={() => setMcpOpen(false)} onError={setError} />
+      )}
+
+      {syncOpen && (
+        <SyncPanel onClose={() => setSyncOpen(false)} onError={setError} />
       )}
 
       <main className="main">
@@ -489,7 +495,7 @@ export default function App() {
           )}
         </header>
 
-        {error && (
+                {error && (
           <div className="error">
             <span>{error}</span>
             <button className="ghost small-btn" onClick={() => setError(null)}>

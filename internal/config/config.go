@@ -48,6 +48,13 @@ type Host struct {
 	// Source records where the entry came from, so an ssh_config re-import can
 	// tell its own entries from hand-made ones.
 	Source string `json:"source,omitempty"` // "", "ssh_config"
+
+	// LegacyID is the ID this host had before it was given a UUID (§6).
+	//
+	// Kept rather than dropped because it is what a bug report is written in —
+	// "my host-1786033219477533000 disappeared" — and what explains a settings
+	// file written before the migration ran. Nothing reads it to find a host.
+	LegacyID string `json:"legacyId,omitempty"`
 }
 
 // Addr returns the dial target.
@@ -251,6 +258,23 @@ func (s *Store) Upsert(h Host) error {
 	} else {
 		s.hosts = append(s.hosts, h)
 	}
+	s.mu.Unlock()
+	return s.save()
+}
+
+// ReplaceAll swaps the whole list and persists it.
+//
+// For the host ID migration, which rewrites every entry at once and must not
+// leave a half-renamed file behind if it stops in the middle. Upsert in a loop
+// would save once per host and do exactly that.
+func (s *Store) ReplaceAll(hosts []Host) error {
+	for _, h := range hosts {
+		if err := h.Validate(); err != nil {
+			return err
+		}
+	}
+	s.mu.Lock()
+	s.hosts = append([]Host(nil), hosts...)
 	s.mu.Unlock()
 	return s.save()
 }
