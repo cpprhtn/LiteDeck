@@ -136,6 +136,18 @@ export interface SyncConflict {
   at: string
 }
 
+/** What the setup screen found at an address, before writing anything. */
+export interface SyncProbeResult {
+  /** 'empty' | 'sync' | 'other' | 'denied' | 'unreachable' */
+  kind: string
+  /** The URL LiteDeck will use, which is not always the one that was pasted. */
+  normalized: string
+  deployKeysUrl?: string
+  /** How many hosts the repository holds, when it is a sync repository. */
+  hosts: number
+  detail?: string
+}
+
 export interface SyncResult {
   received: number
   sent: number
@@ -1176,6 +1188,7 @@ interface Bindings {
   SyncJoin(remoteURL: string, authKind: string, passphrase: string, remember: boolean): Promise<SyncView>
   SyncUnlock(passphrase: string, remember: boolean): Promise<SyncView>
   SyncNow(): Promise<SyncResult>
+  SyncProbe(remoteURL: string, authKind: string): Promise<SyncProbeResult>
   SyncApplyPending(recordID: string, field: string): Promise<void>
   SyncDismissPending(recordID: string, field: string, rev: number): Promise<void>
   SyncChangePassphrase(oldPass: string, newPass: string): Promise<void>
@@ -1443,6 +1456,8 @@ export const SyncJoin = (
 export const SyncUnlock = (passphrase: string, remember: boolean) =>
   api().SyncUnlock(passphrase, remember)
 export const SyncNow = () => api().SyncNow()
+export const SyncProbe = (remoteURL: string, authKind: string) =>
+  api().SyncProbe(remoteURL, authKind)
 export const SyncApplyPending = (recordID: string, field: string) =>
   api().SyncApplyPending(recordID, field)
 export const SyncDismissPending = (recordID: string, field: string, rev: number) =>

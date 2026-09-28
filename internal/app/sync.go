@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -831,3 +832,100 @@ func (a *App) syncSoon() {
 	}
 	a.sync.debounce = time.AfterFunc(syncDebounce, func() { _, _ = a.SyncNow() })
 }
+
+// SyncProbeResult is what the setup screen found at an address, before anything
+// is written to it (§9.1).
+//
+// The whole point is to fail here, where there is a sentence to put beside the
+// failure and the user is still on the step that caused it. A setup that only
+// finds out at the first push reports "could not sync" on a different screen, an
+// hour later, about a deploy key they forgot to tick a box on.
+type SyncProbeResult struct {
+	// Kind is one of cfgsync.Remote*: empty, sync, other, denied, unreachable.
+	Kind string `json:"kind"`
+	// Normalized is the URL LiteDeck will actually use, which is not always the
+	// one that was pasted.
+	Normalized string `json:"normalized"`
+	// DeployKeysURL is where to register the key, for a forge this knows.
+	DeployKeysURL string `json:"deployKeysUrl,omitempty"`
+	// Hosts is how many host records the repository holds, when it is a sync
+	// repository. "You will receive 6 hosts" is the confirmation somebody needs
+	// before joining, and it needs no passphrase to count.
+	Hosts int `json:"hosts"`
+	// Detail is the underlying error, redacted, for the cases where the kind is
+	// not enough.
+	Detail string `json:"detail,omitempty"`
+}
+
+// SyncProbe looks at a remote without writing to it.
+func (a *App) SyncProbe(remoteURL, authKind string) (SyncProbeResult, error) {
+	if a.headless {
+		return SyncProbeResult{}, a.syncNotHere()
+	}
+	normalized, err := cfgsync.NormalizeRemote(remoteURL, authKind)
+	if err != nil {
+		return SyncProbeResult{}, err
+	}
+	res := SyncProbeResult{
+		Normalized:    normalized,
+		DeployKeysURL: cfgsync.DeployKeysURL(remoteURL),
+	}
+
+	auth, err := a.syncAuth(cfgsync.Config{AuthKind: authKind, RemoteURL: normalized})
+	if err != nil {
+		return res, err
+	}
+
+	// A scratch working copy, thrown away afterwards. Cloning into the real one
+	// would leave a half-set-up sync behind every time somebody mistypes an
+	// address.
+	dir, err := os.MkdirTemp("", "litedeck-sync-probe-")
+	if err != nil {
+		return res, fmt.Errorf("app: probe: %w", err)
+	}
+	defer os.RemoveAll(dir)
+
+	ctx, cancel := context.WithTimeout(context.Background(), syncProbeTimeout)
+	defer cancel()
+
+	backend, err := cfgsync.OpenGit(ctx, cfgsync.GitOptions{Dir: dir, URL: normalized, Auth: auth})
+	switch {
+	case err == nil:
+	case errors.Is(err, cfgsync.ErrEmptyRemote):
+		res.Kind = cfgsync.RemoteEmpty
+		return res, nil
+	default:
+		res.Kind = cfgsync.ClassifyRemoteError(err)
+		res.Detail = cfgsync.Redact(err.Error())
+		return res, nil
+	}
+	defer backend.Close()
+
+	files, err := backend.ReadAll()
+	if err != nil {
+		res.Kind = cfgsync.RemoteUnreachable
+		res.Detail = cfgsync.Redact(err.Error())
+		return res, nil
+	}
+	switch {
+	case len(files) == 0:
+		res.Kind = cfgsync.RemoteEmpty
+	case len(files[cfgsync.VaultPath]) > 0:
+		res.Kind = cfgsync.RemoteSync
+		for p := range files {
+			if _, ok := cfgsync.RecordID(p); ok {
+				res.Hosts++
+			}
+		}
+	default:
+		res.Kind = cfgsync.RemoteOther
+	}
+	return res, nil
+}
+
+// syncProbeTimeout bounds the connection test.
+//
+// Somebody is watching this one, which is the difference from every other network
+// call in the sync: fifteen seconds of a spinner is already too long to believe
+// the button did anything.
+const syncProbeTimeout = 15 * time.Second

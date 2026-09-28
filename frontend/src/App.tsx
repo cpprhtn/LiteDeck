@@ -484,7 +484,13 @@ export default function App() {
         <McpPanel hosts={hosts} onClose={() => setMcpOpen(false)} onError={setError} />
       )}
 
-      {syncOpen && <SyncPanel onClose={() => setSyncOpen(false)} onError={setError} />}
+      {syncOpen && (
+        <SyncPanel
+          hostCount={hosts.filter((h) => h.source !== 'ssh_config').length}
+          onClose={() => setSyncOpen(false)}
+          onError={setError}
+        />
+      )}
 
       <main className="main">
         <header className="main-head">

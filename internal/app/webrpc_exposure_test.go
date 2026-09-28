@@ -133,6 +133,7 @@ func TestLocalFilesystemBindingsRefuseInServerMode(t *testing.T) {
 		"SyncJoin":             errOf2(a.SyncJoin("file:///tmp/x", "", "a passphrase long enough", false)),
 		"SyncUnlock":           errOf2(a.SyncUnlock("a passphrase long enough", false)),
 		"SyncNow":              errOf2(a.SyncNow()),
+		"SyncProbe":            errOf2(a.SyncProbe("file:///tmp/x", "")),
 		"SyncDisable":          errOf2(a.SyncDisable()),
 		"SyncSetRemember":      errOf2(a.SyncSetRemember(true)),
 		"SyncGenerateKey":      errOf2(a.SyncGenerateKey()),
@@ -203,7 +204,7 @@ var webRPCPinned = []string{
 	// into the web UI. A server joining a sync is its own feature (§12).
 	"SyncApplyPending", "SyncChangePassphrase", "SyncCreate", "SyncDisable",
 	"SyncDismissPending", "SyncGenerateKey", "SyncHistory", "SyncJoin",
-	"SyncNow", "SyncPending", "SyncPublicKey", "SyncSetRemember",
+	"SyncNow", "SyncPending", "SyncProbe", "SyncPublicKey", "SyncSetRemember",
 	"SyncSetToken", "SyncState", "SyncUnlock",
 	"TerminalCwd",
 	"Transfers", "TypedEntered", "TypedHistory", "UnlockSecurity",

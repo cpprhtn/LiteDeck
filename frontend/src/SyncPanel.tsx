@@ -1,18 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Scrim } from './Scrim'
+import { SyncWizard } from './SyncWizard'
 import {
   SyncApplyPending,
   SyncChangePassphrase,
-  SyncCreate,
   SyncDisable,
   SyncDismissPending,
-  SyncGenerateKey,
   SyncHistory,
-  SyncJoin,
   SyncNow,
   SyncPending,
   SyncSetRemember,
-  SyncSetToken,
   SyncState,
   SyncUnlock,
   on,
@@ -48,7 +45,6 @@ import { stamp } from './datetime'
 
 type Tab = 'status' | 'pending' | 'history'
 type Wizard = 'none' | 'create' | 'join'
-type AuthKind = 'deploy_key' | 'agent' | 'token'
 
 /** The field names the Go side sends, in words. */
 function fieldLabel(field: string): string {
@@ -88,9 +84,14 @@ function warningLabel(kind: string): string {
 }
 
 export function SyncPanel({
+  hostCount,
   onClose,
   onError,
 }: {
+  /** How many hosts this machine would upload — shown on the last step, because
+   *  "it will upload your hosts" and "it will upload these six" are different
+   *  sentences to press a button under. */
+  hostCount: number
   onClose: () => void
   onError: (msg: string) => void
 }) {
@@ -101,13 +102,9 @@ export function SyncPanel({
   const [history, setHistory] = useState<SyncHistoryEntry[]>([])
   const [busy, setBusy] = useState(false)
 
-  // Wizard fields.
-  const [url, setUrl] = useState('')
-  const [authKind, setAuthKind] = useState<AuthKind>('deploy_key')
+  // The passphrase box on the status tab, for a device that does not remember
+  // the vault key. The wizard has its own.
   const [pass, setPass] = useState('')
-  const [pass2, setPass2] = useState('')
-  const [token, setToken] = useState('')
-  const [pubKey, setPubKey] = useState('')
   const [remember, setRemember] = useState(true)
 
   // Passphrase change.
@@ -171,30 +168,6 @@ export function SyncPanel({
   const notSetUp = !state?.enabled && !state?.remoteUrl
   const showWizard = wizard !== 'none' || notSetUp
 
-  const passphraseTooShort = pass.length > 0 && pass.length < 12
-  const passphraseMismatch = pass2.length > 0 && pass !== pass2
-  const canSubmitWizard =
-    url.trim() !== '' && pass.length >= 12 && pass === pass2 && !busy
-
-  const submitWizard = async () => {
-    const kind = authKind
-    await run(async () => {
-      if (kind === 'token') {
-        if (!token) throw new Error(t('토큰을 입력하세요'))
-        await SyncSetToken(token)
-      }
-      if (wizard === 'join') {
-        await SyncJoin(url.trim(), kind, pass, remember)
-      } else {
-        await SyncCreate(url.trim(), kind, pass, remember)
-      }
-      setWizard('none')
-      setPass('')
-      setPass2('')
-      setToken('')
-    })
-  }
-
   return (
     <Scrim onClose={onClose}>
       <div className="dialog mcp-dialog">
@@ -206,129 +179,37 @@ export function SyncPanel({
         </p>
 
         {showWizard ? (
-          <div className="mcp-tabbody">
-            {/* The same tab strip the panel uses elsewhere, so the selected one
-                is visibly selected. Two plain buttons side by side showed which
-                wizard you were in nowhere at all. */}
+          <>
+            {/* Which wizard, before anything else. The two are different
+                journeys — one makes a repository, the other brings this machine
+                into one — and asking "which of these are you doing" first is the
+                question that makes the rest of the steps answerable. */}
             <nav className="mcp-tabs">
               <button
                 data-on={wizard !== 'join' || undefined}
                 onClick={() => setWizard('create')}
-                disabled={busy}
               >
                 {t('새 동기화 만들기')}
               </button>
-              <button
-                data-on={wizard === 'join' || undefined}
-                onClick={() => setWizard('join')}
-                disabled={busy}
-              >
+              <button data-on={wizard === 'join' || undefined} onClick={() => setWizard('join')}>
                 {t('기존 동기화에 합류')}
               </button>
             </nav>
-
-            <div className="form-grid">
-              <label>{t('저장소 주소')}</label>
-              <input
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="ssh://git@github.com/me/litedeck-sync.git"
-                spellCheck={false}
-              />
-            </div>
-            <p className="muted small">
-              {t('자기 서버를 쓰려면 그 서버에서 한 번: git init --bare ~/litedeck-sync.git')}
-            </p>
-
-            <div className="form-grid">
-              <label>{t('인증 방식')}</label>
-              <select value={authKind} onChange={(e) => setAuthKind(e.target.value as AuthKind)}>
-                <option value="deploy_key">{t('동기화 전용 배포 키 (권장)')}</option>
-                {/* Hidden where it cannot work: the Windows OpenSSH agent is a
-                    named pipe this app does not speak, and offering the choice
-                    would produce a connection failure we would then have to
-                    explain. */}
-                {state?.agentAvailable && <option value="agent">{t('기존 SSH 키 / ssh-agent')}</option>}
-                <option value="token">{t('HTTPS + 토큰')}</option>
-              </select>
-            </div>
-
-            {authKind === 'deploy_key' && (
-              <div className="mcp-endpoint">
-                <button
-                  className="ghost small-btn"
-                  disabled={busy}
-                  onClick={() =>
-                    void run(async () => {
-                      setPubKey(await SyncGenerateKey())
-                    })
-                  }
-                >
-                  {t('동기화 전용 키 만들기')}
-                </button>
-                {pubKey && (
-                  <>
-                    <code className="mono selectable">{pubKey.trim()}</code>
-                    <span className="muted small">
-                      {t(
-                        '저장소 설정 → Deploy keys 에 이 공개키를 넣고 쓰기 권한을 주세요. 읽기 전용이면 첫 push 에서 실패합니다.',
-                      )}
-                    </span>
-                  </>
-                )}
-              </div>
-            )}
-
-            {authKind === 'token' && (
-              <div className="form-grid">
-                <label>{t('토큰')}</label>
-                <input
-                  type="password"
-                  value={token}
-                  onChange={(e) => setToken(e.target.value)}
-                  spellCheck={false}
-                />
-              </div>
-            )}
-
-            <div className="form-grid">
-              <label>{t('패스프레이즈 (12자 이상)')}</label>
-              <input type="password" value={pass} onChange={(e) => setPass(e.target.value)} />
-              <label>{t('패스프레이즈 확인')}</label>
-              <input type="password" value={pass2} onChange={(e) => setPass2(e.target.value)} />
-            </div>
-            {passphraseTooShort && (
-              <span className="badge warn">{t('12자 이상이어야 합니다')}</span>
-            )}
-            {passphraseMismatch && <span className="badge warn">{t('두 값이 다릅니다')}</span>}
-            <p className="muted small">
-              {t('이 패스프레이즈를 잃으면 동기화된 설정을 복구할 수 없습니다.')}
-            </p>
-
-            <label className="mcp-toggle">
-              <input
-                type="checkbox"
-                checked={remember && !!state?.canRemember}
-                disabled={!state?.canRemember || busy}
-                onChange={(e) => setRemember(e.target.checked)}
-              />
-              <span>{t('이 기기에 기억 (OS 자격 증명 저장소)')}</span>
-            </label>
-            {!state?.canRemember && (
-              <span className="muted small">
-                {t(
-                  '이 기기에는 자격 증명 저장소가 없습니다 — 앱을 열 때마다 패스프레이즈를 묻습니다. 파일로 저장하지는 않습니다.',
-                )}
-              </span>
-            )}
-
-            <div className="dialog-actions">
-              <button onClick={onClose}>{t('닫기')}</button>
-              <button className="primary" disabled={!canSubmitWizard} onClick={() => void submitWizard()}>
-                {wizard === 'join' ? t('합류') : t('만들기')}
-              </button>
-            </div>
-          </div>
+            <SyncWizard
+              key={wizard === 'join' ? 'join' : 'create'}
+              mode={wizard === 'join' ? 'join' : 'create'}
+              agentAvailable={!!state?.agentAvailable}
+              canRemember={!!state?.canRemember}
+              hostCount={hostCount}
+              onDone={(v) => {
+                setState(v)
+                setWizard('none')
+                void load()
+              }}
+              onCancel={onClose}
+              onError={onError}
+            />
+          </>
         ) : (
           <>
             <nav className="mcp-tabs">

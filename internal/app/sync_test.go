@@ -1,6 +1,9 @@
 package app
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -179,5 +182,94 @@ func TestANewHostGetsAUUID(t *testing.T) {
 	}
 	if !cfgsync.Syncable(hosts[0]) {
 		t.Errorf("a host created now is not syncable: %q", id)
+	}
+}
+
+// The connection test says which of the four things happened (§9.1).
+//
+// This is the step that has to catch a wrong address or an unregistered key,
+// because the next one asks for a passphrase and the one after that writes to
+// the repository. A test that could only say "failed" would send somebody back to
+// re-read every field.
+func TestSyncProbeTellsTheFourCasesApart(t *testing.T) {
+	a := appWithSettings(t)
+	a.configDir = t.TempDir()
+
+	// An empty local repository is what "create a new sync" wants.
+	empty := t.TempDir()
+	if out, err := exec.Command("git", "init", "--bare", "-b", cfgsync.SyncBranch, empty).CombinedOutput(); err != nil {
+		t.Skipf("git not available: %s", out)
+	}
+	res, err := a.SyncProbe("file://"+empty, "")
+	if err != nil {
+		t.Fatalf("probe: %v", err)
+	}
+	if res.Kind != cfgsync.RemoteEmpty {
+		t.Errorf("an empty repository came back as %q (%s)", res.Kind, res.Detail)
+	}
+
+	// An address that does not exist is not the same answer as one that refused.
+	res, err = a.SyncProbe("ssh://git@127.0.0.1:1/nope.git", "")
+	if err != nil {
+		t.Fatalf("probe: %v", err)
+	}
+	if res.Kind != cfgsync.RemoteUnreachable && res.Kind != cfgsync.RemoteDenied {
+		t.Errorf("an unreachable address came back as %q", res.Kind)
+	}
+
+	// A repository holding somebody else's work is refused rather than written
+	// into.
+	other := t.TempDir()
+	work := t.TempDir()
+	if out, err := exec.Command("git", "init", "--bare", "-b", cfgsync.SyncBranch, other).CombinedOutput(); err != nil {
+		t.Skipf("git: %s", out)
+	}
+	for _, args := range [][]string{
+		{"init", "-b", cfgsync.SyncBranch},
+		{"config", "user.email", "t@example.com"},
+		{"config", "user.name", "t"},
+		{"add", "-A"},
+		{"commit", "-m", "mine"},
+		{"remote", "add", "origin", other},
+		{"push", "origin", cfgsync.SyncBranch},
+	} {
+		if len(args) > 0 && args[0] == "add" {
+			if err := os.WriteFile(filepath.Join(work, "chapter1.tex"), []byte("hello"), 0o600); err != nil {
+				t.Fatalf("seed: %v", err)
+			}
+		}
+		cmd := exec.Command("git", args...)
+		cmd.Dir = work
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Skipf("git %v: %s", args, out)
+		}
+	}
+	res, err = a.SyncProbe("file://"+other, "")
+	if err != nil {
+		t.Fatalf("probe: %v", err)
+	}
+	if res.Kind != cfgsync.RemoteOther {
+		t.Errorf("a repository with somebody's work came back as %q", res.Kind)
+	}
+
+	// The probe leaves nothing behind: a mistyped address must not set up half a
+	// sync.
+	if _, err := os.Stat(filepath.Join(a.syncDir(), "repo")); err == nil {
+		t.Error("the probe cloned into the real working copy")
+	}
+}
+
+// Whatever GitHub showed them is turned into what go-git needs, and the screen
+// shows what it became.
+func TestSyncProbeNormalizesTheAddressItWasGiven(t *testing.T) {
+	a := appWithSettings(t)
+	a.configDir = t.TempDir()
+
+	res, _ := a.SyncProbe("git@github.com:me/litedeck-sync.git", cfgsync.AuthToken)
+	if res.Normalized != "https://github.com/me/litedeck-sync.git" {
+		t.Errorf("normalized = %q", res.Normalized)
+	}
+	if res.DeployKeysURL != "https://github.com/me/litedeck-sync/settings/keys" {
+		t.Errorf("deploy keys page = %q", res.DeployKeysURL)
 	}
 }
