@@ -399,8 +399,8 @@ stick, an email to yourself. LiteDeck does not know where it went.
 
 **Import** — choose the file, enter the passphrase, and **it shows you what is
 inside first**: each host's name and address with "new host", "overwritten" or
-"unchanged" beside it, and a mark on anything whose policy will go to the waiting
-list. Applying it comes after that.
+"unchanged" beside it, and a mark where this device remembers a different host
+key. Applying it comes after that.
 
 ### What goes in and what does not
 
@@ -419,9 +419,10 @@ connect.
 ### It only moves by itself when it tightens
 
 An approval policy in the file that is **stricter than this machine's is applied
-as it is**; one that is **looser goes to the waiting list** and takes a person
-pressing a button. Reading a file where the laptop had "do not ask for eight
-hours" does not quietly open that server on the desktop.
+as it is**; one that is **wider is not applied by default**. The import screen
+names what would widen, and it takes ticking a box. Reading a file where the
+laptop had "do not ask for eight hours" does not quietly open that server on the
+desktop.
 
 > **The expiry is not in the file.** Deciding not to be asked while you are away
 > from the desk belongs to whoever is at that desk. Applying a relaxed mode starts

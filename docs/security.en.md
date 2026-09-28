@@ -170,10 +170,11 @@ folder, and a list of the user's computers is not free to give away.
 
 ### Importing is not restoring
 
-A policy in the file that is **looser than this machine's is not applied — it goes
-to the "waiting for you" list.** Whoever exported the file decided what an AI
-client may do to those servers, and they were not sitting at this desk. For the
-same reason:
+AI permissions in the file that are **wider than this machine's are not applied by
+default.** The import screen names what would widen ("Shared with AI clients ·
+Running commands") and it takes ticking a box, there and then. Whoever exported
+the file decided what an AI client may do to those servers, and they were not
+sitting at this desk. For the same reason:
 
 - **A host seen for the first time** starts at the app's defaults: not shared, ask
   before writing, no command execution, no file deletion
@@ -193,8 +194,9 @@ somebody else's account recovery. The file holds no passwords and no keys, but i
 holds **every server's address and account name**, which is a map of what to
 attack. That is why the passphrase floor is twelve characters.
 
-Exporting, importing and approving a withheld change are **not exposed to MCP**.
-Approving is a GUI-only path, and a test pins that.
+Exporting and importing are **not exposed to MCP**. The box that widens
+permissions exists only in the GUI, and a test pins that — a model must not be
+able to approve its own permissions.
 
 ## What it does not do, stated up front
 

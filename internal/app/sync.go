@@ -208,18 +208,6 @@ func (a *App) openSyncStore() (*cfgsync.Store, error) {
 	return store, nil
 }
 
-// SyncPending is the list of changes waiting for this person (§9.1).
-func (a *App) SyncPending() ([]cfgsync.PendingChange, error) {
-	if a.headless {
-		return nil, a.syncNotHere()
-	}
-	store, err := a.openSyncStore()
-	if err != nil {
-		return nil, err
-	}
-	return store.Pending(), nil
-}
-
 // SyncResultView is one sync's outcome, for the toast (§9.1).
 type SyncResultView struct {
 	Received int               `json:"received"`
@@ -227,113 +215,6 @@ type SyncResultView struct {
 	Pending  int               `json:"pending"`
 	Warnings []cfgsync.Warning `json:"warnings,omitempty"`
 	Error    string            `json:"error,omitempty"`
-}
-
-// SyncApplyPending applies one withheld change, because somebody pressed the
-// button (§6.2).
-//
-// This is the only path by which a policy gets looser through syncing, and it is
-// deliberately a person on this machine. There is no MCP tool for it.
-func (a *App) SyncApplyPending(recordID, field string) error {
-	if a.headless {
-		return a.syncNotHere()
-	}
-	store, err := a.openSyncStore()
-	if err != nil {
-		return err
-	}
-	st := store.State()
-	rs := st.Records[recordID]
-	if rs == nil || rs.Base == nil {
-		return i18n.Errorf("이 항목은 더 이상 대기 중이 아닙니다")
-	}
-	want := rs.Base.Policy
-	current := cfgsync.PolicyFromSettings((syncLocal{a}).Settings(), recordID)
-
-	// One field, not the record: the others may be waiting on their own decisions.
-	next := current
-	switch field {
-	case cfgsync.FieldShared:
-		next.Shared = want.Shared
-	case cfgsync.FieldApproval:
-		next.MCPApproval = want.MCPApproval
-	case cfgsync.FieldExec:
-		next.ExecEnabled = want.ExecEnabled
-	case cfgsync.FieldDelete:
-		next.DeleteEnabled = want.DeleteEnabled
-	case cfgsync.FieldHostKeys:
-		return a.applyPendingHostKeys(recordID, *rs.Base)
-	default:
-		return i18n.Errorf("알 수 없는 항목입니다: %s", field)
-	}
-	if err := (syncLocal{a}).SetPolicy(recordID, next); err != nil {
-		return err
-	}
-	// Recorded as applied, so a later import does not read the difference between
-	// settings.json and the file as somebody's local change (§6.2).
-	if err := a.markSyncApplied(recordID, next); err != nil {
-		return err
-	}
-	// And the question stops being asked, at this revision. A later one asks
-	// again, because that is a new decision by somebody.
-	if err := store.Dismiss(recordID, field, rs.Base.Rev); err != nil {
-		return err
-	}
-	a.emit("sync:state", nil)
-	return nil
-}
-
-// applyPendingHostKeys trusts the host keys a record carries, for the address it
-// names (§6.3).
-func (a *App) applyPendingHostKeys(recordID string, base cfgsync.Record) error {
-	for _, k := range base.HostKeys {
-		if err := (syncLocal{a}).AddHostKey(base.Addr(), k); err != nil {
-			return err
-		}
-	}
-	store, err := a.openSyncStore()
-	if err != nil {
-		return err
-	}
-	if err := store.Dismiss(recordID, cfgsync.FieldHostKeys, base.Rev); err != nil {
-		return err
-	}
-	a.emit("sync:state", nil)
-	return nil
-}
-
-// SyncDismissPending keeps this machine's value and stops asking about that
-// revision (§9.1).
-func (a *App) SyncDismissPending(recordID, field string, rev int64) error {
-	if a.headless {
-		return a.syncNotHere()
-	}
-	store, err := a.openSyncStore()
-	if err != nil {
-		return err
-	}
-	if err := store.Dismiss(recordID, field, rev); err != nil {
-		return err
-	}
-	a.emit("sync:state", nil)
-	return nil
-}
-
-// markSyncApplied records that this machine now holds p for that record.
-func (a *App) markSyncApplied(recordID string, p cfgsync.RecordPolicy) error {
-	store, err := a.openSyncStore()
-	if err != nil {
-		return err
-	}
-	st := store.State()
-	rs := st.Records[recordID]
-	if rs == nil {
-		rs = &cfgsync.RecordState{}
-		st.Records[recordID] = rs
-	}
-	applied := p
-	rs.Applied = &applied
-	return store.SetState(st)
 }
 
 // newDeviceID is this machine's name inside the sync, as a UUID.
@@ -449,9 +330,17 @@ type SyncFileEntry struct {
 	Addr string `json:"addr"`
 	// State is "new", "same" or "changed" against what this machine has.
 	State string `json:"state"`
-	// Loosens is true where the file's policy is looser than this machine's, so
-	// importing it puts that host in the pending list rather than applying it.
-	Loosens bool `json:"loosens"`
+	// Widens names the permissions the file would open up on this machine, in
+	// words, or is empty. They are shown on the import screen and applied only if
+	// the person ticks the box — which is the whole of the protection, and is
+	// deliberately one decision in front of them rather than a queue somewhere
+	// else.
+	Widens []string `json:"widens,omitempty"`
+	// HostKeyClash is true where this machine already trusts a different host key
+	// for that address. That one is never taken from a file, box or no box: there
+	// is no way to tell a rebuilt server from somebody in the middle, and a file
+	// is not evidence about what is on the wire.
+	HostKeyClash bool `json:"hostKeyClash,omitempty"`
 }
 
 // SyncFilePreview says what is in a file before anything is applied.
@@ -475,7 +364,12 @@ func (a *App) SyncPreviewFile(path, passphrase string) (SyncFilePreview, error) 
 
 	out := SyncFilePreview{CreatedAt: meta.CreatedAt.Unix(), Device: meta.Device}
 	for _, r := range records {
+		if r.Deleted {
+			// A tombstone is nothing to show: importing never deletes.
+			continue
+		}
 		entry := SyncFileEntry{ID: r.ID, Name: r.Host.Name, Addr: r.Addr(), State: "new"}
+		here := cfgsync.StrictestPolicy()
 		if h, ok := local[r.ID]; ok {
 			entry.State = "changed"
 			// Compared as the record would leave it, not field by field: what the
@@ -484,18 +378,75 @@ func (a *App) SyncPreviewFile(path, passphrase string) (SyncFilePreview, error) 
 			if sameHost(r.ToHost(h), h) {
 				entry.State = "same"
 			}
-			p := cfgsync.PolicyFromSettings(settings, r.ID)
-			entry.Loosens = looser(r.Policy, p)
-		} else {
-			entry.Loosens = looser(r.Policy, cfgsync.StrictestPolicy())
+			here = cfgsync.PolicyFromSettings(settings, r.ID)
+		}
+		entry.Widens = widened(r.Policy, here)
+		if keys, err := (syncLocal{a}).HostKeys(r.Addr()); err == nil {
+			entry.HostKeyClash = clashes(keys, r.HostKeys)
 		}
 		out.Hosts = append(out.Hosts, entry)
 	}
 	return out, nil
 }
 
-// SyncImportFile applies a file (§6.2 still applies).
-func (a *App) SyncImportFile(path, passphrase string) (SyncResultView, error) {
+// widened names the permissions in a that are wider than in b, in the words the
+// screen uses.
+//
+// Named rather than counted: "권한이 넓어집니다" is a sentence somebody reads and
+// cannot act on. "AI 클라이언트에 공유 · 명령 실행" is one they can.
+func widened(a, b cfgsync.RecordPolicy) []string {
+	var out []string
+	if a.Shared && !b.Shared {
+		out = append(out, i18n.S("AI 클라이언트에 공유"))
+	}
+	if cfgsync.Strictness(a.MCPApproval) < cfgsync.Strictness(b.MCPApproval) {
+		out = append(out, i18n.S("승인 모드 완화"))
+	}
+	if a.ExecEnabled && !b.ExecEnabled {
+		out = append(out, i18n.S("명령 실행"))
+	}
+	if a.DeleteEnabled && !b.DeleteEnabled {
+		out = append(out, i18n.S("파일 삭제"))
+	}
+	return out
+}
+
+// clashes reports whether the file names a different key for an algorithm this
+// machine already trusts.
+func clashes(local, incoming []cfgsync.RecordHostKey) bool {
+	byAlg := map[string]string{}
+	for _, k := range local {
+		byAlg[k.Alg] = k.Key
+	}
+	for _, k := range incoming {
+		if have, ok := byAlg[k.Alg]; ok && have != k.Key {
+			return true
+		}
+	}
+	return false
+}
+
+// SyncImportFile applies a file.
+//
+// withPermissions is the box on the import screen. Without it, the file's
+// connection details arrive and its permissions do not widen anything here: a
+// setting that is stricter than this machine's is taken, one that is looser is
+// left alone. With it, the file's permissions are taken as they are — which is
+// what somebody moving their own laptop's setup to their own desktop wants, and
+// is a decision they make while looking at the list of what it opens up.
+//
+// This used to be a queue on another screen. It was the right shape for a
+// repository syncing itself every five minutes with nobody watching, and the
+// wrong one here: the person chose the file, typed the passphrase, read the list
+// and pressed the button. A second confirmation somewhere else is the kind of
+// gate people learn to click through.
+//
+// Host keys are not part of the box. A key is taken only for an address this
+// machine trusts nothing for; where it already trusts a different one, the file
+// is ignored and the clash is shown. There is no way to tell a rebuilt server
+// from somebody in the middle, and a file is not evidence about what was on the
+// wire.
+func (a *App) SyncImportFile(path, passphrase string, withPermissions bool) (SyncResultView, error) {
 	records, _, err := a.readBundle(path, passphrase)
 	if err != nil {
 		return SyncResultView{}, err
@@ -513,8 +464,14 @@ func (a *App) SyncImportFile(path, passphrase string) (SyncResultView, error) {
 	settings := (syncLocal{a}).Settings()
 
 	var view SyncResultView
-	pending := store.Pending()
+	view.Warnings = append(view.Warnings, cfgsync.AddressConflicts(records)...)
+
 	for _, r := range records {
+		if r.Deleted {
+			// A file is a snapshot. Opening last month's backup must not remove
+			// the servers added since.
+			continue
+		}
 		var current *cfgsync.Record
 		if h, ok := local[r.ID]; ok {
 			host, auth := cfgsync.FromHost(h, "", cfgsync.FingerprintLabel(h.IdentityFile))
@@ -530,12 +487,18 @@ func (a *App) SyncImportFile(path, passphrase string) (SyncResultView, error) {
 		}
 		keys, _ := (syncLocal{a}).HostKeys(r.Addr())
 
+		// The gate still decides. What the box changes is one thing: whether a
+		// permission that widens is taken as well.
 		d := cfgsync.Gate(current, r, lastSeen, keys)
 		view.Warnings = append(view.Warnings, d.Warnings...)
 		if d.Skip {
 			continue
 		}
-		if err := a.applySyncRecord(d.Apply, d.ApplyHostKeys); err != nil {
+		apply := d.Apply
+		if withPermissions {
+			apply.Policy = r.Policy
+		}
+		if err := a.applySyncRecord(apply, d.ApplyHostKeys); err != nil {
 			return view, err
 		}
 		view.Received++
@@ -545,34 +508,16 @@ func (a *App) SyncImportFile(path, passphrase string) (SyncResultView, error) {
 			rs = &cfgsync.RecordState{}
 			state.Records[r.ID] = rs
 		}
-		applied := d.Apply.Policy
-		rs.Applied = &applied
 		if r.Rev > rs.Rev {
 			rs.Rev = r.Rev
 		}
-		// The file becomes this machine's base for that host. Without it, a later
-		// sync against a repository would read every imported host as a local
-		// change and push it.
 		base := r
 		rs.Base = &base
-
-		for _, p := range d.Pending {
-			if store.WasDismissed(p.RecordID, p.Field, p.Rev) {
-				continue
-			}
-			pending = append(pending, p)
-		}
 	}
 
 	if err := store.SetState(state); err != nil {
 		return view, err
 	}
-	if err := store.SetPending(pending); err != nil {
-		return view, err
-	}
-	view.Pending = len(pending)
-	a.emit("sync:state", nil)
-	a.emit("sync:result", view)
 	return view, nil
 }
 
@@ -666,12 +611,4 @@ func sameHost(a, b config.Host) bool {
 		}
 	}
 	return true
-}
-
-// looser reports whether any field of a is less strict than the same field of b.
-func looser(a, b cfgsync.RecordPolicy) bool {
-	return (a.Shared && !b.Shared) ||
-		(a.ExecEnabled && !b.ExecEnabled) ||
-		(a.DeleteEnabled && !b.DeleteEnabled) ||
-		cfgsync.Strictness(a.MCPApproval) < cfgsync.Strictness(b.MCPApproval)
 }

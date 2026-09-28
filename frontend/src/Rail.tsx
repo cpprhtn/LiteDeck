@@ -64,7 +64,6 @@ export function Rail({
   version,
   onOpenMCP,
   onOpenSync,
-  syncPending,
   listOpen,
   onToggleList,
   groups,
@@ -90,7 +89,6 @@ export function Rail({
   version?: string
   onOpenMCP: () => void
   onOpenSync?: () => void
-  syncPending?: number
   /** Whether the host list is unfolded. The sections below it are always shown. */
   listOpen: boolean
   onToggleList: () => void
@@ -226,7 +224,6 @@ export function Rail({
             version={version}
             onOpenMCP={onOpenMCP}
             onOpenSync={onOpenSync}
-            syncPending={syncPending}
           />
         </div>
       )}

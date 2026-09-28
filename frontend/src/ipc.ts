@@ -83,21 +83,6 @@ export interface WritePolicyView {
   until?: number
 }
 
-/** One field held back until somebody on this machine approves it (§6.2).
- *
- *  A file can carry a policy that is looser than what this machine has — the
- *  person who exported it decided what an AI client may do to those servers, and
- *  they were not at this desk. Those changes wait here. */
-export interface SyncPendingChange {
-  recordId: string
-  rev: number
-  field: string
-  local: string
-  incoming: string
-  by: string
-  at: string
-}
-
 export interface SyncWarning {
   recordId: string
   kind: string
@@ -111,9 +96,12 @@ export interface SyncFileEntry {
   addr: string
   /** 'new' | 'same' | 'changed' against what this machine has. */
   state: string
-  /** True where the file's policy is looser than this machine's, so importing
-   *  puts that host in the waiting list instead of applying it. */
-  loosens: boolean
+  /** The permissions this file would open up on this machine, in words. Applied
+   *  only if the person ticks the box on the import screen. */
+  widens?: string[]
+  /** This machine already trusts a different host key for that address. The
+   *  file's key is never taken in that case. */
+  hostKeyClash?: boolean
 }
 
 export interface SyncFilePreview {
@@ -130,7 +118,6 @@ export interface SyncExportResult {
 
 export interface SyncResult {
   received: number
-  pending: number
   warnings?: SyncWarning[]
   error?: string
 }
@@ -1149,15 +1136,10 @@ interface Bindings {
   SetMCPHostDelete(hostID: string, allowed: boolean): Promise<MCPStatus>
   SetMCPHostExec(hostID: string, allowed: boolean): Promise<MCPStatus>
 
-  SyncPending(): Promise<SyncPendingChange[]>
-  SyncApplyPending(recordID: string, field: string): Promise<void>
-  SyncDismissPending(recordID: string, field: string, rev: number): Promise<void>
   SyncExportFile(passphrase: string): Promise<SyncExportResult>
   SyncPickFile(): Promise<string>
   SyncPreviewFile(path: string, passphrase: string): Promise<SyncFilePreview>
-  SyncImportFile(path: string, passphrase: string): Promise<SyncResult>
-  SyncApplyPending(recordID: string, field: string): Promise<void>
-  SyncDismissPending(recordID: string, field: string, rev: number): Promise<void>
+  SyncImportFile(path: string, passphrase: string, withPermissions: boolean): Promise<SyncResult>
   SetLanguage(tag: string): Promise<ActionResult>
   SetTheme(theme: string): Promise<ActionResult>
   SaveHost(h: Host): Promise<void>
@@ -1399,17 +1381,12 @@ export const ListHosts = () => api().ListHosts()
 export const ApplyLanguage = (tag: string) => api().ApplyLanguage(tag)
 export const MCPState = () => api().MCPState()
 
-export const SyncPending = () => api().SyncPending()
-export const SyncApplyPending = (recordID: string, field: string) =>
-  api().SyncApplyPending(recordID, field)
-export const SyncDismissPending = (recordID: string, field: string, rev: number) =>
-  api().SyncDismissPending(recordID, field, rev)
 export const SyncExportFile = (passphrase: string) => api().SyncExportFile(passphrase)
 export const SyncPickFile = () => api().SyncPickFile()
 export const SyncPreviewFile = (path: string, passphrase: string) =>
   api().SyncPreviewFile(path, passphrase)
-export const SyncImportFile = (path: string, passphrase: string) =>
-  api().SyncImportFile(path, passphrase)
+export const SyncImportFile = (path: string, passphrase: string, withPermissions: boolean) =>
+  api().SyncImportFile(path, passphrase, withPermissions)
 
 export const SetMCPEnabled = (enabled: boolean) => api().SetMCPEnabled(enabled)
 export const SetMCPHost = (hostID: string, allowed: boolean) => api().SetMCPHost(hostID, allowed)

@@ -45,16 +45,11 @@ export function ShellControls({
   version,
   onOpenMCP,
   onOpenSync,
-  syncPending,
 }: {
   version?: string
   onOpenMCP: () => void
   /** Absent in server mode, where settings files are not offered. */
   onOpenSync?: () => void
-  /** How many imported changes are waiting for this person. Drawn on the button,
-   *  because the whole point of the waiting list is that nothing loosens until
-   *  somebody looks at it — a queue with no badge is a queue nobody opens. */
-  syncPending?: number
 }) {
   const theme = useTheme()
   const [update, setUpdate] = useState<UpdateInfo | null>(null)
@@ -176,7 +171,6 @@ export function ShellControls({
       {onOpenSync && (
         <button className="ghost small-btn" onClick={onOpenSync} title={t('설정 동기화')}>
           {t('동기화')}
-          {!!syncPending && syncPending > 0 && <span className="badge">{syncPending}</span>}
         </button>
       )}
       {/* Two positions. Before the first pick there is a third state — nothing

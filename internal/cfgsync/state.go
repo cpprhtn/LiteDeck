@@ -6,25 +6,22 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"sync"
 	"time"
 )
 
 // What this machine remembers about settings it has imported.
 //
-// Three files under <app data>/sync/, none of them secret: what this machine has
-// seen, what is waiting for a decision, and which key on this machine answers to
-// which fingerprint.
+// Two files under <app data>/sync/, neither of them secret: what this machine has
+// already seen, and which key on this machine answers to which fingerprint.
 //
 // # Why anything is remembered at all
 //
-// Importing a file is not a restore. A policy in the file that is looser than
-// this machine's is withheld and waits for a person (§6.2), and "waiting" has to
-// survive the app being closed — otherwise the answer to a question nobody
-// answered is silently "no" until the next import asks again. The same state
-// records which revision of a record this machine has already seen, so a file
-// that is older than what is here is noticed rather than applied.
+// So that a file older than what is already here is noticed rather than applied.
+// Each record carries a revision; this remembers the highest one seen per host,
+// and a lower one coming back means the file predates what this machine has —
+// somebody opening a backup from last month over settings they have since
+// changed (§6.4).
 
 // File names under the sync directory.
 const (
@@ -50,16 +47,6 @@ type RecordState struct {
 	Rev int64 `json:"rev"`
 	// Base is the record as it was last applied here.
 	Base *Record `json:"base,omitempty"`
-	// Applied is the policy this machine last put into settings.json from this
-	// record — which is not the record's own policy where a loosening was
-	// withheld (§6.2). It is what tells a later import whether the difference
-	// between settings.json and the file is this machine holding something back
-	// or somebody here having changed their mind.
-	Applied *RecordPolicy `json:"applied,omitempty"`
-	// Dismissed remembers which pending decisions were answered with "keep
-	// mine", by field and by the revision they arrived in. A later revision asks
-	// again, because that is a new decision by somebody (§9.1).
-	Dismissed map[string]int64 `json:"dismissed,omitempty"`
 }
 
 // State is sync/state.json.
@@ -84,11 +71,10 @@ type KeyLocation struct {
 type Store struct {
 	dir string
 
-	mu      sync.Mutex
-	cfg     Config
-	state   State
-	pending []PendingChange
-	keymap  map[string]KeyLocation
+	mu     sync.Mutex
+	cfg    Config
+	state  State
+	keymap map[string]KeyLocation
 }
 
 // OpenStore loads the sync directory, creating it if needed.
@@ -115,7 +101,6 @@ func OpenStore(dir string) (*Store, error) {
 	if s.state.Records == nil {
 		s.state.Records = map[string]*RecordState{}
 	}
-	_ = readJSON(filepath.Join(dir, pendingFile), &s.pending)
 	_ = readJSON(filepath.Join(dir, keymapFile), &s.keymap)
 	if s.keymap == nil {
 		s.keymap = map[string]KeyLocation{}
@@ -151,16 +136,6 @@ func (s *Store) State() State {
 			base := *rs.Base
 			copied.Base = &base
 		}
-		if rs.Applied != nil {
-			applied := *rs.Applied
-			copied.Applied = &applied
-		}
-		if rs.Dismissed != nil {
-			copied.Dismissed = map[string]int64{}
-			for k, v := range rs.Dismissed {
-				copied.Dismissed[k] = v
-			}
-		}
 		out.Records[id] = &copied
 	}
 	return out
@@ -175,75 +150,6 @@ func (s *Store) SetState(st State) error {
 	}
 	s.state = st
 	return writeJSON(filepath.Join(s.dir, stateFile), st)
-}
-
-// Pending returns the changes waiting for somebody to decide (§6.2).
-func (s *Store) Pending() []PendingChange {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := make([]PendingChange, len(s.pending))
-	copy(out, s.pending)
-	return out
-}
-
-// SetPending replaces the list.
-//
-// Replaced rather than merged, because it is derived: every sync recomputes what
-// is still waiting. An item that stayed would be one the repository no longer
-// asks for, and answering it would apply something nobody is proposing any more.
-func (s *Store) SetPending(list []PendingChange) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	sort.Slice(list, func(i, j int) bool {
-		if list[i].RecordID != list[j].RecordID {
-			return list[i].RecordID < list[j].RecordID
-		}
-		return list[i].Field < list[j].Field
-	})
-	s.pending = list
-	return writeJSON(filepath.Join(s.dir, pendingFile), list)
-}
-
-// Dismiss records that somebody chose to keep this machine's value (§9.1).
-func (s *Store) Dismiss(recordID, field string, rev int64) error {
-	s.mu.Lock()
-	rs := s.state.Records[recordID]
-	if rs == nil {
-		rs = &RecordState{}
-		s.state.Records[recordID] = rs
-	}
-	if rs.Dismissed == nil {
-		rs.Dismissed = map[string]int64{}
-	}
-	rs.Dismissed[field] = rev
-	kept := s.pending[:0:0]
-	for _, p := range s.pending {
-		if p.RecordID == recordID && p.Field == field {
-			continue
-		}
-		kept = append(kept, p)
-	}
-	s.pending = kept
-	state, pending := s.state, s.pending
-	s.mu.Unlock()
-
-	if err := writeJSON(filepath.Join(s.dir, stateFile), state); err != nil {
-		return err
-	}
-	return writeJSON(filepath.Join(s.dir, pendingFile), pending)
-}
-
-// WasDismissed reports whether this decision was already answered at this
-// revision or a later one.
-func (s *Store) WasDismissed(recordID, field string, rev int64) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	rs := s.state.Records[recordID]
-	if rs == nil {
-		return false
-	}
-	at, ok := rs.Dismissed[field]
-	return ok && at >= rev
 }
 
 // KeyMap returns the fingerprint-to-key map for this machine (§3.3).

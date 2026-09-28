@@ -127,13 +127,10 @@ func TestLocalFilesystemBindingsRefuseInServerMode(t *testing.T) {
 	// so a new one cannot be added without either guarding it or changing this
 	// list.
 	for name, err := range map[string]error{
-		"SyncPending":        errOf2(a.SyncPending()),
-		"SyncExportFile":     errOf2(a.SyncExportFile("a passphrase long enough")),
-		"SyncPickFile":       errOf2(a.SyncPickFile()),
-		"SyncPreviewFile":    errOf2(a.SyncPreviewFile("/tmp/x.ldbackup", "a passphrase long enough")),
-		"SyncImportFile":     errOf2(a.SyncImportFile("/tmp/x.ldbackup", "a passphrase long enough")),
-		"SyncApplyPending":   a.SyncApplyPending("id", "policy.shared"),
-		"SyncDismissPending": a.SyncDismissPending("id", "policy.shared", 1),
+		"SyncExportFile":  errOf2(a.SyncExportFile("a passphrase long enough")),
+		"SyncPickFile":    errOf2(a.SyncPickFile()),
+		"SyncPreviewFile": errOf2(a.SyncPreviewFile("/tmp/x.ldbackup", "a passphrase long enough")),
+		"SyncImportFile":  errOf2(a.SyncImportFile("/tmp/x.ldbackup", "a passphrase long enough", false)),
 	} {
 		if err == nil || !strings.Contains(err.Error(), "서버 모드") {
 			t.Errorf("%s did not refuse in server mode: %v", name, err)
@@ -193,8 +190,7 @@ var webRPCPinned = []string{
 	// write files on the machine the app runs on, and in server mode that is the
 	// server box — /rpc would hand "write my host list to a file there, or read
 	// one from it" to anybody who can log into the web UI.
-	"SyncApplyPending", "SyncDismissPending", "SyncExportFile", "SyncImportFile",
-	"SyncPending", "SyncPickFile", "SyncPreviewFile",
+	"SyncExportFile", "SyncImportFile", "SyncPickFile", "SyncPreviewFile",
 	"TerminalCwd",
 	"Transfers", "TypedEntered", "TypedHistory", "UnlockSecurity",
 	"UpdateStatus", "UploadFile", "WriteTerminal", "WriteTextFile",

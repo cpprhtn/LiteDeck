@@ -3863,17 +3863,6 @@ button.events-unit {
   padding-bottom: 4px;
 }
 
-/* The line under the header after a sync. Transient, and quiet: it reports on
-   something that ran by itself, so it must not look like a thing to act on.
-   The one button leads to the record of what happened. */
-.sync-note {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-1) var(--sp-3);
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-sunken);
-}
 
 /* The sync setup wizard.
    One step at a time, with the numbers across the top so somebody halfway

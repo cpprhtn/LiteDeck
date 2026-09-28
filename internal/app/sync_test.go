@@ -183,11 +183,20 @@ func TestAnImportedFileGoesThroughTheSameGate(t *testing.T) {
 	if preview.Hosts[0].State != "new" {
 		t.Errorf("state = %q", preview.Hosts[0].State)
 	}
-	if !preview.Hosts[0].Loosens {
-		t.Error("the preview does not say that this host's policy will be held back")
+	// The preview names what the file would open up, in words. "Wider
+	// permissions" is a sentence somebody reads and cannot act on.
+	if len(preview.Hosts[0].Widens) == 0 {
+		t.Error("the preview does not say which permissions the file would widen")
+	}
+	joined := strings.Join(preview.Hosts[0].Widens, " ")
+	for _, want := range []string{"공유", "명령 실행"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("the preview does not mention %q: %v", want, preview.Hosts[0].Widens)
+		}
 	}
 
-	res, err := to.SyncImportFile(path, pass)
+	// Imported without the box ticked.
+	res, err := to.SyncImportFile(path, pass, false)
 	if err != nil {
 		t.Fatalf("import: %v", err)
 	}
@@ -213,8 +222,15 @@ func TestAnImportedFileGoesThroughTheSameGate(t *testing.T) {
 	if m.Write[id].Mode == WriteBypass {
 		t.Error("importing a file turned off the approval dialogs")
 	}
-	if res.Pending == 0 {
-		t.Error("nothing was queued for a decision, so the loosening is simply gone")
+	// And with the box ticked, on the same file, they do arrive — that is what
+	// somebody moving their own laptop's setup to their own desktop is asking
+	// for, and they asked for it while looking at the list of what it opens up.
+	if _, err := to.SyncImportFile(path, pass, true); err != nil {
+		t.Fatalf("import with permissions: %v", err)
+	}
+	m = to.settings.Get().MCP
+	if !m.Hosts[id] || !m.Exec[id] || m.Write[id].Mode != WriteBypass {
+		t.Errorf("the permissions were not applied when they were asked for: %+v", m)
 	}
 }
 
@@ -239,7 +255,7 @@ func TestImportingWithTheWrongPassphraseChangesNothing(t *testing.T) {
 
 	to := appWithSettings(t)
 	to.configDir = t.TempDir()
-	if _, err := to.SyncImportFile(path, "the wrong passphrase"); err == nil {
+	if _, err := to.SyncImportFile(path, "the wrong passphrase", false); err == nil {
 		t.Error("a wrong passphrase imported the file")
 	}
 	if len(to.hosts.List()) != 0 {
@@ -318,7 +334,7 @@ func TestAnOldBackupDoesNotDeleteAnything(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	if _, err := a.SyncImportFile(path, pass); err != nil {
+	if _, err := a.SyncImportFile(path, pass, true); err != nil {
 		t.Fatalf("import: %v", err)
 	}
 	if _, ok := a.hosts.Get(keptID); !ok {

@@ -35,8 +35,6 @@ import {
   ImportSSHConfig,
   ListHosts,
   on,
-  SyncPending,
-  type SyncResult,
   type BootstrapData,
   type ConnectionState,
   type Host,
@@ -117,15 +115,6 @@ export default function App() {
   // The pending count, for the badge on the rail button. Kept here rather than in
   // the panel because the badge has to be visible while the panel is shut — that
   // is the only thing that makes a withheld change discoverable.
-  const [syncPending, setSyncPending] = useState(0)
-  // The one-line result of the last sync. Shown for a few seconds and then gone:
-  // a sync that did nothing is the normal case and does not deserve a permanent
-  // line, and a sync that needs a decision has the badge for that.
-  const [syncNote, setSyncNote] = useState<string | null>(null)
-  // A queue, not one slot. Go waits on several approvals at once — a burst of
-  // eight is allowed — and a single slot meant the second prompt replaced the
-  // first on screen while Go went on waiting for it, so the first was refused
-  // two minutes later with "nobody answered". Answering one shows the next.
   const [mcpWrites, setMcpWrites] = useState<MCPWritePrompt[]>([])
   const mcpWrite = mcpWrites[0] ?? null
   const [boot, setBoot] = useState<BootstrapData | null>(null)
@@ -229,47 +218,6 @@ export default function App() {
       cancelled = true
     }
   }, [activeID, activeConnected, activeDetected])
-
-  // How many imported changes are waiting for a decision, for the badge on the
-  // rail button.
-  //
-  // Read once and then on Go's event rather than polled: it only changes when a
-  // file is imported or somebody answers one. Server mode has no settings file,
-  // so the first call failing is the normal answer there and not worth showing.
-  useEffect(() => {
-    if (boot?.selfMode) return
-    let alive = true
-    const read = () => {
-      void SyncPending()
-        .then((list) => alive && setSyncPending(list?.length ?? 0))
-        .catch(() => {})
-    }
-    read()
-    const off = on('sync:state', read)
-    // The result of a pass, for the line under the header. Errors go to the same
-    // place as everything else; a successful pass says what it carried, because
-    // "nothing happened" and "three hosts arrived" should not look the same.
-    const offResult = on<SyncResult>('sync:result', (r) => {
-      if (!alive) return
-      if (r.error) {
-        setError(r.error)
-        return
-      }
-      if (r.received === 0 && r.pending === 0) return
-      setSyncNote(
-        t('동기화: 받음 {received} · 확인 필요 {pending}', {
-          received: r.received,
-          pending: r.pending,
-        }),
-      )
-      setTimeout(() => setSyncNote(null), 6000)
-    })
-    return () => {
-      alive = false
-      off()
-      offResult()
-    }
-  }, [boot?.selfMode])
 
   // Prompts arrive mid-handshake: sshcore is parked on a channel waiting for
   // the answer these dialogs send back.
@@ -467,7 +415,6 @@ export default function App() {
         version={boot?.version}
         onOpenMCP={() => setMcpOpen(true)}
         onOpenSync={selfMode ? undefined : () => setSyncOpen(true)}
-        syncPending={syncPending}
         listOpen={sidebarOpen}
         onToggleList={() => setPref('sidebarOpen', !sidebarOpen)}
         groups={navGroups}
@@ -548,16 +495,7 @@ export default function App() {
           )}
         </header>
 
-        {syncNote && (
-          <div className="sync-note muted small">
-            <span>{syncNote}</span>
-            <button className="ghost small-btn" onClick={() => setSyncOpen(true)}>
-              {t('기록')}
-            </button>
-          </div>
-        )}
-
-        {error && (
+                {error && (
           <div className="error">
             <span>{error}</span>
             <button className="ghost small-btn" onClick={() => setError(null)}>
