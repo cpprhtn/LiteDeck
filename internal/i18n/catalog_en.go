@@ -150,4 +150,9 @@ var english = map[string]string{
 	"이 항목은 더 이상 대기 중이 아닙니다":                                                   "This item is no longer waiting",
 	"토큰이 비어 있습니다":                                                             "The token is empty",
 	"토큰이 저장되어 있지 않습니다":                                                        "No token is stored",
+	"LiteDeck 설정 파일": "LiteDeck settings file",
+	"파일을 고르지 않았습니다":  "No file was chosen",
+	"내보낼 호스트가 없습니다":  "There are no hosts to export",
+	"설정 파일 저장":       "Save the settings file",
+	"설정 파일 열기":       "Open a settings file",
 }

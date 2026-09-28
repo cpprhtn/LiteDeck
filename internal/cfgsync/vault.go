@@ -514,3 +514,7 @@ func allOneRune(rs []rune) bool {
 	}
 	return len(rs) > 0
 }
+
+// randRead is crypto/rand.Read, named so the one place that needs it from
+// another file in this package does not import crypto/rand a second time.
+func randRead(b []byte) (int, error) { return rand.Read(b) }

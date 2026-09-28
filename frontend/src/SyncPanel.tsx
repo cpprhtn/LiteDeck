@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Scrim } from './Scrim'
 import { SyncWizard } from './SyncWizard'
+import { SyncFilePanel } from './SyncFilePanel'
 import {
   SyncApplyPending,
   SyncChangePassphrase,
@@ -44,7 +45,7 @@ import { stamp } from './datetime'
 //     that way.
 
 type Tab = 'status' | 'pending' | 'history'
-type Wizard = 'none' | 'create' | 'join'
+type Wizard = 'none' | 'create' | 'join' | 'file'
 
 /** The field names the Go side sends, in words. */
 function fieldLabel(field: string): string {
@@ -184,9 +185,12 @@ export function SyncPanel({
                 journeys — one makes a repository, the other brings this machine
                 into one — and asking "which of these are you doing" first is the
                 question that makes the rest of the steps answerable. */}
+            {/* Three ways in, not two. The first two are the git repository;
+                the third is a file, which is the one for somebody who has never
+                made a repository and should not have to for this. */}
             <nav className="mcp-tabs">
               <button
-                data-on={wizard !== 'join' || undefined}
+                data-on={wizard === 'create' || wizard === 'none' || undefined}
                 onClick={() => setWizard('create')}
               >
                 {t('새 동기화 만들기')}
@@ -194,7 +198,28 @@ export function SyncPanel({
               <button data-on={wizard === 'join' || undefined} onClick={() => setWizard('join')}>
                 {t('기존 동기화에 합류')}
               </button>
+              <button data-on={wizard === 'file' || undefined} onClick={() => setWizard('file')}>
+                {t('파일로 주고받기')}
+              </button>
+              {/* Only where there is something to go back to. Somebody who has
+                  never set this up has no status screen, and a button that
+                  leads nowhere is worse than none. */}
+              {!notSetUp && (
+                <button className="ghost" onClick={() => setWizard('none')}>
+                  {t('돌아가기')}
+                </button>
+              )}
             </nav>
+            {wizard === 'file' ? (
+              <>
+                <SyncFilePanel onError={onError} />
+                {/* The wizards carry their own cancel button on every step; this
+                    panel is not a sequence, so it needs one of its own. */}
+                <div className="dialog-actions">
+                  <button onClick={onClose}>{t('닫기')}</button>
+                </div>
+              </>
+            ) : (
             <SyncWizard
               key={wizard === 'join' ? 'join' : 'create'}
               mode={wizard === 'join' ? 'join' : 'create'}
@@ -209,6 +234,7 @@ export function SyncPanel({
               onCancel={onClose}
               onError={onError}
             />
+            )}
           </>
         ) : (
           <>
@@ -329,6 +355,15 @@ export function SyncPanel({
                   />
                   <span>{t('이 기기에 기억 (OS 자격 증명 저장소)')}</span>
                 </label>
+
+                <div className="mcp-row">
+                  <button className="ghost small-btn" onClick={() => setWizard('file')}>
+                    {t('파일로 주고받기')}
+                  </button>
+                  <span className="muted small">
+                    {t('저장소와 별개로, 암호화된 파일 하나로 내보내거나 가져옵니다.')}
+                  </span>
+                </div>
 
                 <div className="mcp-row">
                   <button

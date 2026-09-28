@@ -13,6 +13,8 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	wr "github.com/wailsapp/wails/v2/pkg/runtime"
+
 	"github.com/cpprhtn/LiteDeck/internal/cfgsync"
 	"github.com/cpprhtn/LiteDeck/internal/config"
 	"github.com/cpprhtn/LiteDeck/internal/i18n"
@@ -929,3 +931,336 @@ func (a *App) SyncProbe(remoteURL, authKind string) (SyncProbeResult, error) {
 // call in the sync: fifteen seconds of a spinner is already too long to believe
 // the button did anything.
 const syncProbeTimeout = 15 * time.Second
+
+// Settings as one encrypted file, for people with no git repository.
+//
+// The sync's whole setup — make a repository, register a deploy key with write
+// access — is written for somebody who has done it before. A file is not: it goes
+// in Google Drive, Dropbox, iCloud, on a stick, or in an email to yourself, and
+// every one of those is something people already have.
+//
+// What it is not is a sync. Nothing merges, nothing notices two machines editing
+// at once; it is a snapshot made here and opened there. Where the two paths
+// overlap they behave the same, deliberately: an incoming policy that is looser
+// than this machine's is withheld and goes to the pending list, whether it came
+// out of a repository or off a stick. Whoever wrote the file decided what an AI
+// client may do to these servers, and they were not sitting at this desk.
+
+// SyncExportResult says where the file went.
+type SyncExportResult struct {
+	Path  string `json:"path"`
+	Hosts int    `json:"hosts"`
+}
+
+// SyncExportFile writes every syncable host to one encrypted file (§9.1).
+func (a *App) SyncExportFile(passphrase string) (SyncExportResult, error) {
+	if a.headless {
+		return SyncExportResult{}, a.syncNotHere()
+	}
+	if a.ctx == nil {
+		return SyncExportResult{}, errors.New("app: no window")
+	}
+	if err := cfgsync.CheckPassphrase(passphrase); err != nil {
+		return SyncExportResult{}, err
+	}
+
+	records := a.exportableRecords()
+	if len(records) == 0 {
+		return SyncExportResult{}, i18n.Errorf("내보낼 호스트가 없습니다")
+	}
+
+	// The device ID is written into the file. One is minted here if this machine
+	// has never synced, so two backups from two machines can be told apart
+	// without either of them having to be set up for syncing.
+	store, err := a.openSyncStore()
+	if err != nil {
+		return SyncExportResult{}, err
+	}
+	cfg := store.Config()
+	if cfg.DeviceID == "" {
+		if id, err := newDeviceID(); err == nil {
+			cfg.DeviceID = id
+			_ = store.SetConfig(cfg)
+		}
+	}
+
+	data, err := cfgsync.ExportBundle(records, passphrase, cfg.DeviceID)
+	if err != nil {
+		return SyncExportResult{}, err
+	}
+
+	path, err := wr.SaveFileDialog(a.ctx, wr.SaveDialogOptions{
+		Title:           i18n.S("설정 파일 저장"),
+		DefaultFilename: cfgsync.BundleName(time.Now()),
+		Filters: []wr.FileFilter{{
+			DisplayName: i18n.S("LiteDeck 설정 파일"),
+			Pattern:     "*" + cfgsync.BundleExt,
+		}},
+	})
+	if err != nil {
+		return SyncExportResult{}, err
+	}
+	if path == "" {
+		// The user closed the dialog. Not an error, and not a file.
+		return SyncExportResult{}, nil
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return SyncExportResult{}, fmt.Errorf("app: write %s: %w", path, err)
+	}
+	return SyncExportResult{Path: path, Hosts: len(records)}, nil
+}
+
+// SyncPickFile opens the file chooser and returns the path, without reading it.
+//
+// Separate from the import so the passphrase is asked for after the file is
+// chosen: a dialog that wants a passphrase before it knows which file is a dialog
+// people answer with the wrong one.
+func (a *App) SyncPickFile() (string, error) {
+	if a.headless {
+		return "", a.syncNotHere()
+	}
+	if a.ctx == nil {
+		return "", errors.New("app: no window")
+	}
+	return wr.OpenFileDialog(a.ctx, wr.OpenDialogOptions{
+		Title: i18n.S("설정 파일 열기"),
+		Filters: []wr.FileFilter{{
+			DisplayName: i18n.S("LiteDeck 설정 파일"),
+			Pattern:     "*" + cfgsync.BundleExt,
+		}},
+	})
+}
+
+// SyncFileEntry is one host in a file, for the preview.
+type SyncFileEntry struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Addr string `json:"addr"`
+	// State is "new", "same" or "changed" against what this machine has.
+	State string `json:"state"`
+	// Loosens is true where the file's policy is looser than this machine's, so
+	// importing it puts that host in the pending list rather than applying it.
+	Loosens bool `json:"loosens"`
+}
+
+// SyncFilePreview says what is in a file before anything is applied.
+type SyncFilePreview struct {
+	CreatedAt int64           `json:"createdAt"`
+	Device    string          `json:"device,omitempty"`
+	Hosts     []SyncFileEntry `json:"hosts"`
+}
+
+// SyncPreviewFile decrypts a file and reports what importing it would do.
+func (a *App) SyncPreviewFile(path, passphrase string) (SyncFilePreview, error) {
+	records, meta, err := a.readBundle(path, passphrase)
+	if err != nil {
+		return SyncFilePreview{}, err
+	}
+	local := map[string]config.Host{}
+	for _, h := range a.hosts.List() {
+		local[h.ID] = h
+	}
+	settings := (syncLocal{a}).Settings()
+
+	out := SyncFilePreview{CreatedAt: meta.CreatedAt.Unix(), Device: meta.Device}
+	for _, r := range records {
+		entry := SyncFileEntry{ID: r.ID, Name: r.Host.Name, Addr: r.Addr(), State: "new"}
+		if h, ok := local[r.ID]; ok {
+			entry.State = "changed"
+			// Compared as the record would leave it, not field by field: what the
+			// user is being asked is "does importing this change anything about
+			// this host", and the answer is the host it would produce.
+			if sameHost(r.ToHost(h), h) {
+				entry.State = "same"
+			}
+			p := cfgsync.PolicyFromSettings(settings, r.ID)
+			entry.Loosens = looser(r.Policy, p)
+		} else {
+			entry.Loosens = looser(r.Policy, cfgsync.StrictestPolicy())
+		}
+		out.Hosts = append(out.Hosts, entry)
+	}
+	return out, nil
+}
+
+// SyncImportFile applies a file (§6.2 still applies).
+func (a *App) SyncImportFile(path, passphrase string) (SyncResultView, error) {
+	records, _, err := a.readBundle(path, passphrase)
+	if err != nil {
+		return SyncResultView{}, err
+	}
+	store, err := a.openSyncStore()
+	if err != nil {
+		return SyncResultView{}, err
+	}
+
+	state := store.State()
+	local := map[string]config.Host{}
+	for _, h := range a.hosts.List() {
+		local[h.ID] = h
+	}
+	settings := (syncLocal{a}).Settings()
+
+	var view SyncResultView
+	pending := store.Pending()
+	for _, r := range records {
+		var current *cfgsync.Record
+		if h, ok := local[r.ID]; ok {
+			host, auth := cfgsync.FromHost(h, "", cfgsync.FingerprintLabel(h.IdentityFile))
+			cur := cfgsync.Record{
+				ID: h.ID, Host: host, Auth: auth,
+				Policy: cfgsync.PolicyFromSettings(settings, h.ID),
+			}
+			current = &cur
+		}
+		lastSeen := int64(0)
+		if rs := state.Records[r.ID]; rs != nil {
+			lastSeen = rs.Rev
+		}
+		keys, _ := (syncLocal{a}).HostKeys(r.Addr())
+
+		d := cfgsync.Gate(current, r, lastSeen, keys)
+		view.Warnings = append(view.Warnings, d.Warnings...)
+		if d.Skip {
+			continue
+		}
+		if err := a.applySyncRecord(d.Apply, d.ApplyHostKeys); err != nil {
+			return view, err
+		}
+		view.Received++
+
+		rs := state.Records[r.ID]
+		if rs == nil {
+			rs = &cfgsync.RecordState{}
+			state.Records[r.ID] = rs
+		}
+		applied := d.Apply.Policy
+		rs.Applied = &applied
+		if r.Rev > rs.Rev {
+			rs.Rev = r.Rev
+		}
+		// The file becomes this machine's base for that host. Without it, a later
+		// sync against a repository would read every imported host as a local
+		// change and push it.
+		base := r
+		rs.Base = &base
+
+		for _, p := range d.Pending {
+			if store.WasDismissed(p.RecordID, p.Field, p.Rev) {
+				continue
+			}
+			pending = append(pending, p)
+		}
+	}
+
+	if err := store.SetState(state); err != nil {
+		return view, err
+	}
+	if err := store.SetPending(pending); err != nil {
+		return view, err
+	}
+	view.Pending = len(pending)
+	a.emit("sync:state", nil)
+	a.emit("sync:result", view)
+	return view, nil
+}
+
+// applySyncRecord writes one record's effects, shared by the file and repository
+// paths so an imported host cannot arrive by a route with different rules.
+func (a *App) applySyncRecord(r cfgsync.Record, keys []cfgsync.RecordHostKey) error {
+	l := syncLocal{a}
+	if r.Deleted {
+		// A tombstone in a file is not a delete. The file is a snapshot somebody
+		// exported; acting on an absence in it would mean opening last month's
+		// backup could remove hosts added since.
+		return nil
+	}
+	var keep config.Host
+	if h, ok := a.hosts.Get(r.ID); ok {
+		keep = h
+	}
+	if err := l.SaveHost(r.ToHost(keep)); err != nil {
+		return err
+	}
+	if err := l.SetPolicy(r.ID, r.Policy); err != nil {
+		return err
+	}
+	for _, k := range keys {
+		if err := l.AddHostKey(r.Addr(), k); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *App) readBundle(path, passphrase string) ([]cfgsync.Record, cfgsync.Bundle, error) {
+	if a.headless {
+		return nil, cfgsync.Bundle{}, a.syncNotHere()
+	}
+	if path == "" {
+		return nil, cfgsync.Bundle{}, i18n.Errorf("파일을 고르지 않았습니다")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, cfgsync.Bundle{}, fmt.Errorf("app: read %s: %w", path, err)
+	}
+	return cfgsync.OpenBundle(data, passphrase)
+}
+
+// exportableRecords builds a record per syncable host from this machine's files.
+func (a *App) exportableRecords() []cfgsync.Record {
+	if a.hosts == nil {
+		return nil
+	}
+	settings := (syncLocal{a}).Settings()
+	var out []cfgsync.Record
+	for _, h := range a.hosts.List() {
+		if !cfgsync.Syncable(h) {
+			continue
+		}
+		host, auth := cfgsync.FromHost(h, "", cfgsync.FingerprintLabel(h.IdentityFile))
+		r := cfgsync.Record{
+			ID:        h.ID,
+			Rev:       1,
+			UpdatedAt: time.Now().UTC(),
+			Host:      host,
+			Auth:      auth,
+			Policy:    cfgsync.PolicyFromSettings(settings, h.ID),
+		}
+		if keys, err := (syncLocal{a}).HostKeys(r.Addr()); err == nil {
+			r.HostKeys = keys
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// sameHost reports whether two host entries describe the same thing.
+//
+// config.Host holds a slice, so it is not comparable with ==; and the comparison
+// has to be on the whole value rather than the fields sync carries, because a
+// difference anywhere is a difference the user would see on the host card.
+func sameHost(a, b config.Host) bool {
+	if a.ID != b.ID || a.Name != b.Name || a.Group != b.Group || a.Hostname != b.Hostname ||
+		a.Port != b.Port || a.User != b.User || a.ProxyJump != b.ProxyJump ||
+		a.IdentityFile != b.IdentityFile || a.Source != b.Source {
+		return false
+	}
+	if len(a.Auth) != len(b.Auth) {
+		return false
+	}
+	for i := range a.Auth {
+		if a.Auth[i] != b.Auth[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// looser reports whether any field of a is less strict than the same field of b.
+func looser(a, b cfgsync.RecordPolicy) bool {
+	return (a.Shared && !b.Shared) ||
+		(a.ExecEnabled && !b.ExecEnabled) ||
+		(a.DeleteEnabled && !b.DeleteEnabled) ||
+		cfgsync.Strictness(a.MCPApproval) < cfgsync.Strictness(b.MCPApproval)
+}

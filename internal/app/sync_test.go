@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cpprhtn/LiteDeck/internal/cfgsync"
 	"github.com/cpprhtn/LiteDeck/internal/config"
@@ -271,5 +272,191 @@ func TestSyncProbeNormalizesTheAddressItWasGiven(t *testing.T) {
 	}
 	if res.DeployKeysURL != "https://github.com/me/litedeck-sync/settings/keys" {
 		t.Errorf("deploy keys page = %q", res.DeployKeysURL)
+	}
+}
+
+// A file exported here opens there, and the policy rules still hold.
+//
+// The file is the path for people with no git repository, and the temptation is
+// to make it the simple path — a straight restore. It is not: whoever wrote the
+// file chose what an AI client may do to those servers, and they were not at this
+// desk. A backup from a machine where everything was shared and unguarded must
+// not quietly make this machine the same.
+func TestAnImportedFileGoesThroughTheSameGate(t *testing.T) {
+	// The exporting machine: one host, shared with AI clients, dialogs off.
+	from := appWithSettings(t)
+	from.configDir = t.TempDir()
+	if err := from.SaveHost(config.Host{
+		Name: "prod-web", Hostname: "10.0.0.5", Port: 22, User: "deploy",
+		Auth: []config.AuthMethod{config.AuthAgent},
+	}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	id := from.hosts.List()[0].ID
+	if err := (syncLocal{from}).SetPolicy(id, cfgsync.RecordPolicy{
+		Shared: true, MCPApproval: WriteBypass, ExecEnabled: true,
+	}); err != nil {
+		t.Fatalf("policy: %v", err)
+	}
+
+	const pass = "a passphrase long enough"
+	data, err := cfgsync.ExportBundle(from.exportableRecords(), pass, "device-a")
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "backup"+cfgsync.BundleExt)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// The receiving machine has never seen this host.
+	to := appWithSettings(t)
+	to.configDir = t.TempDir()
+
+	preview, err := to.SyncPreviewFile(path, pass)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	if len(preview.Hosts) != 1 || preview.Hosts[0].Name != "prod-web" {
+		t.Fatalf("preview = %+v", preview.Hosts)
+	}
+	if preview.Hosts[0].State != "new" {
+		t.Errorf("state = %q", preview.Hosts[0].State)
+	}
+	if !preview.Hosts[0].Loosens {
+		t.Error("the preview does not say that this host's policy will be held back")
+	}
+
+	res, err := to.SyncImportFile(path, pass)
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	if res.Received != 1 {
+		t.Errorf("received %d", res.Received)
+	}
+	h, ok := to.hosts.Get(id)
+	if !ok {
+		t.Fatal("the host did not arrive")
+	}
+	if h.Name != "prod-web" || h.Hostname != "10.0.0.5" || h.User != "deploy" {
+		t.Errorf("host = %+v", h)
+	}
+
+	// The connection details came across; the permissions did not.
+	m := to.settings.Get().MCP
+	if m.Hosts[id] {
+		t.Error("importing a file shared a host with AI clients")
+	}
+	if m.Exec[id] {
+		t.Error("importing a file turned on command execution")
+	}
+	if m.Write[id].Mode == WriteBypass {
+		t.Error("importing a file turned off the approval dialogs")
+	}
+	if res.Pending == 0 {
+		t.Error("nothing was queued for a decision, so the loosening is simply gone")
+	}
+}
+
+// A wrong passphrase says so, and changes nothing.
+func TestImportingWithTheWrongPassphraseChangesNothing(t *testing.T) {
+	from := appWithSettings(t)
+	from.configDir = t.TempDir()
+	if err := from.SaveHost(config.Host{
+		Name: "prod", Hostname: "10.0.0.5", Port: 22, User: "deploy",
+		Auth: []config.AuthMethod{config.AuthAgent},
+	}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	data, err := cfgsync.ExportBundle(from.exportableRecords(), "a passphrase long enough", "d")
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "b"+cfgsync.BundleExt)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	to := appWithSettings(t)
+	to.configDir = t.TempDir()
+	if _, err := to.SyncImportFile(path, "the wrong passphrase"); err == nil {
+		t.Error("a wrong passphrase imported the file")
+	}
+	if len(to.hosts.List()) != 0 {
+		t.Errorf("hosts appeared anyway: %+v", to.hosts.List())
+	}
+}
+
+// Nothing secret is in the exported file.
+func TestTheExportedFileHoldsNoSecretAndNoLocalPath(t *testing.T) {
+	a := appWithSettings(t)
+	a.configDir = t.TempDir()
+	if err := a.SaveHost(config.Host{
+		Name: "prod-web", Hostname: "10.0.0.5", Port: 22, User: "deploy",
+		Auth:         []config.AuthMethod{config.AuthKey},
+		IdentityFile: "/Users/me/.ssh/id_ed25519",
+	}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	data, err := cfgsync.ExportBundle(a.exportableRecords(), "a passphrase long enough", "d")
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	for _, forbidden := range []string{"prod-web", "10.0.0.5", "deploy", "/Users/me", "id_ed25519"} {
+		if strings.Contains(string(data), forbidden) {
+			t.Errorf("%q is readable in the exported file", forbidden)
+		}
+	}
+
+	// And after decrypting, the key's path is still not there: it is a fact about
+	// the machine that wrote the file.
+	records, _, err := cfgsync.OpenBundle(data, "a passphrase long enough")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	blob, err := records[0].Marshal()
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(blob), "/Users/me") {
+		t.Errorf("the key path travelled: %s", blob)
+	}
+}
+
+// An old backup does not delete anything.
+//
+// A file is a snapshot, not a sync: it says what existed when it was written and
+// nothing about what has happened since. Treating a host's absence — or a
+// tombstone inside it — as an instruction would mean opening last month's backup
+// removes the servers added since, which is the opposite of what somebody opening
+// a backup expects.
+func TestAnOldBackupDoesNotDeleteAnything(t *testing.T) {
+	a := appWithSettings(t)
+	a.configDir = t.TempDir()
+	if err := a.SaveHost(config.Host{
+		Name: "kept", Hostname: "10.0.0.9", Port: 22, User: "me",
+		Auth: []config.AuthMethod{config.AuthAgent},
+	}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	keptID := a.hosts.List()[0].ID
+
+	// A file holding a tombstone for that host, and nothing else.
+	tomb := cfgsync.Tombstone(cfgsync.Record{ID: keptID, Rev: 1}, "device-b", time.Now())
+	const pass = "a passphrase long enough"
+	data, err := cfgsync.ExportBundle([]cfgsync.Record{tomb}, pass, "device-b")
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "old"+cfgsync.BundleExt)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	if _, err := a.SyncImportFile(path, pass); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	if _, ok := a.hosts.Get(keptID); !ok {
+		t.Error("importing a backup deleted a host")
 	}
 }

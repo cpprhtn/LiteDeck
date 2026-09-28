@@ -23,7 +23,7 @@
 | **Security** | **What is guarding this box, and whether it works.** Firewalls (ufw, nftables, iptables, firewalld) and fail2ban read from **three places — the unit, the config file and the kernel** — with any disagreement shown rather than resolved; a server whose unit was up and whose firewall was off is a real case. **Packets dropped** and the rise since you last looked, the block list (fail2ban's entries kept apart from hand-made ones), 24 hours of failures with ban moments marked, and who is still getting through. The config file is **compared against what is running**, which is what catches a fail2ban that needs restarting |
 | **Events** | What happened, and when. **OOM kills**, failed units, core dumps, scheduled restarts, reboot boundaries. Read from the systemd journal and classified by `MESSAGE_ID` rather than by wording, so the server's language does not matter |
 | **Command Log** | **Every command the GUI runs, live.** Click to copy |
-| **Sync between machines** | Your host list and approval policies go to **a git repository you own**, encrypted, and your other machines read the same one. No account, no relay. Passwords, private keys and sudo passwords are **not uploaded**. A change that loosens a policy is applied only after a person confirms it, on each machine |
+| **Sync between machines** | Your host list and approval policies go to **a git repository you own**, encrypted, and your other machines read the same one. No repository? **Export one encrypted file** and put it in Google Drive or on a stick. No account, no relay. Passwords, private keys and sudo passwords are **not uploaded**. A change that loosens a policy is applied only after a person confirms it, on each machine |
 | **MCP** | Claude Code and Claude Desktop read and change your servers through this app. Per-server opt-in, changes are approved, **and can be undone** |
 | **Connecting** | Password, key, agent, 2FA. Import from `~/.ssh/config`. One **ProxyJump** hop |
 | **Language** | English and Korean. Uses whichever you last chose, or your OS language if you never have. Switch with `KO`/`EN` at the bottom of the sidebar |
@@ -450,3 +450,27 @@ none, and otherwise left alone with both fingerprints shown side by side.
 
 What the repository exposes, and the threat model, are in the
 [security document](security.en.md#settings-sync).
+
+### No git repository? One file instead
+
+Making a repository and registering a deploy key is a sentence written for
+somebody who has done it before. **Sync → Use a file instead** produces the same
+contents as one encrypted file.
+
+- **Export**: choose a passphrase and you get `litedeck-2026-09-28.ldbackup`. Put
+  it in a Google Drive, Dropbox or iCloud folder, on a stick, or email it to
+  yourself
+- **Import**: choose the file, enter the passphrase, and **it shows you what is
+  inside first** — each host's name and address, whether it is new here or
+  overwrites something, and whether its policy will go to the waiting list.
+  Applying it comes after that
+
+The file holds no passwords, private keys, sudo passwords or MCP token either,
+and it is encrypted the same way the repository is (argon2id +
+XChaCha20-Poly1305). **The policy rule is the same too**: anything in the file
+that is looser than this machine's setting is not applied, it waits for you.
+Whoever wrote the file was not sitting at this desk.
+
+It is not a sync. Nothing merges, there are no revisions, and nothing notices two
+machines editing at once. It is a snapshot of one moment — and **opening last
+month's backup does not delete the hosts you have added since.**

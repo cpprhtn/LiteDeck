@@ -205,6 +205,21 @@ GitHub OAuth is not used. An OAuth App's `repo` scope is access to **every**
 private repository you have, and one settings repository is not worth asking for
 that.
 
+### When it is exported as a file
+
+The same contents can be written to one file (`*.ldbackup`). The encryption, the
+passphrase floor and the "a looser policy waits for you" rule are the same as for
+the repository.
+
+What differs is **where it ends up**. A cloud folder is indexed by somebody
+else's software and reachable through somebody else's account recovery. The file
+holds no passwords and no keys, but it holds **every server's address and account
+name**, which is a map of what to attack. That is why the passphrase floor is the
+same one.
+
+A tombstone inside a file is not treated as a delete. It is a snapshot, and
+opening an old backup must not remove the hosts added since.
+
 ## What it does not do, stated up front
 
 - **It cannot fully bound how long a password stays in memory.** The one copy that lives long

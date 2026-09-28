@@ -148,6 +148,30 @@ export interface SyncProbeResult {
   detail?: string
 }
 
+/** One host inside a settings file, for the preview before importing. */
+export interface SyncFileEntry {
+  id: string
+  name: string
+  addr: string
+  /** 'new' | 'same' | 'changed' against what this machine has. */
+  state: string
+  /** True where the file's policy is looser than this machine's, so importing
+   *  puts that host in the waiting list instead of applying it. */
+  loosens: boolean
+}
+
+export interface SyncFilePreview {
+  createdAt: number
+  device?: string
+  hosts: SyncFileEntry[]
+}
+
+export interface SyncExportResult {
+  /** Empty when the save dialog was closed without choosing anywhere. */
+  path: string
+  hosts: number
+}
+
 export interface SyncResult {
   received: number
   sent: number
@@ -1189,6 +1213,10 @@ interface Bindings {
   SyncUnlock(passphrase: string, remember: boolean): Promise<SyncView>
   SyncNow(): Promise<SyncResult>
   SyncProbe(remoteURL: string, authKind: string): Promise<SyncProbeResult>
+  SyncExportFile(passphrase: string): Promise<SyncExportResult>
+  SyncPickFile(): Promise<string>
+  SyncPreviewFile(path: string, passphrase: string): Promise<SyncFilePreview>
+  SyncImportFile(path: string, passphrase: string): Promise<SyncResult>
   SyncApplyPending(recordID: string, field: string): Promise<void>
   SyncDismissPending(recordID: string, field: string, rev: number): Promise<void>
   SyncChangePassphrase(oldPass: string, newPass: string): Promise<void>
@@ -1458,6 +1486,12 @@ export const SyncUnlock = (passphrase: string, remember: boolean) =>
 export const SyncNow = () => api().SyncNow()
 export const SyncProbe = (remoteURL: string, authKind: string) =>
   api().SyncProbe(remoteURL, authKind)
+export const SyncExportFile = (passphrase: string) => api().SyncExportFile(passphrase)
+export const SyncPickFile = () => api().SyncPickFile()
+export const SyncPreviewFile = (path: string, passphrase: string) =>
+  api().SyncPreviewFile(path, passphrase)
+export const SyncImportFile = (path: string, passphrase: string) =>
+  api().SyncImportFile(path, passphrase)
 export const SyncApplyPending = (recordID: string, field: string) =>
   api().SyncApplyPending(recordID, field)
 export const SyncDismissPending = (recordID: string, field: string, rev: number) =>

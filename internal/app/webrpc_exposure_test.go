@@ -134,6 +134,10 @@ func TestLocalFilesystemBindingsRefuseInServerMode(t *testing.T) {
 		"SyncUnlock":           errOf2(a.SyncUnlock("a passphrase long enough", false)),
 		"SyncNow":              errOf2(a.SyncNow()),
 		"SyncProbe":            errOf2(a.SyncProbe("file:///tmp/x", "")),
+		"SyncExportFile":       errOf2(a.SyncExportFile("a passphrase long enough")),
+		"SyncPickFile":         errOf2(a.SyncPickFile()),
+		"SyncPreviewFile":      errOf2(a.SyncPreviewFile("/tmp/x.ldbackup", "a passphrase long enough")),
+		"SyncImportFile":       errOf2(a.SyncImportFile("/tmp/x.ldbackup", "a passphrase long enough")),
 		"SyncDisable":          errOf2(a.SyncDisable()),
 		"SyncSetRemember":      errOf2(a.SyncSetRemember(true)),
 		"SyncGenerateKey":      errOf2(a.SyncGenerateKey()),
@@ -203,8 +207,9 @@ var webRPCPinned = []string{
 	// "set up a sync of my host list with my passphrase" to anybody who can log
 	// into the web UI. A server joining a sync is its own feature (§12).
 	"SyncApplyPending", "SyncChangePassphrase", "SyncCreate", "SyncDisable",
-	"SyncDismissPending", "SyncGenerateKey", "SyncHistory", "SyncJoin",
-	"SyncNow", "SyncPending", "SyncProbe", "SyncPublicKey", "SyncSetRemember",
+	"SyncDismissPending", "SyncExportFile", "SyncGenerateKey", "SyncHistory",
+	"SyncImportFile", "SyncJoin", "SyncNow", "SyncPending", "SyncPickFile",
+	"SyncPreviewFile", "SyncProbe", "SyncPublicKey", "SyncSetRemember",
 	"SyncSetToken", "SyncState", "SyncUnlock",
 	"TerminalCwd",
 	"Transfers", "TypedEntered", "TypedHistory", "UnlockSecurity",

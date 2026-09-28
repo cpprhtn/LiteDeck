@@ -3971,3 +3971,27 @@ button.events-unit {
   overflow: auto;
   font-size: var(--text-xs);
 }
+
+/* What is inside a settings file, before importing it. One row per host, and
+   the badges are the whole point: which of these are new here, which get
+   overwritten, and which arrive with a policy that will wait for a decision. */
+.sync-filelist {
+  display: grid;
+  gap: var(--sp-1);
+  margin-bottom: var(--sp-3);
+  max-height: 220px;
+  overflow: auto;
+}
+.sync-filelist > div {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--bg-sunken);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+}
+.sync-filelist code {
+  color: var(--fg-muted);
+  flex: 1;
+}
