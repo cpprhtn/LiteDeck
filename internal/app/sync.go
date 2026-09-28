@@ -220,21 +220,6 @@ func (a *App) SyncPending() ([]cfgsync.PendingChange, error) {
 	return store.Pending(), nil
 }
 
-// SyncHistory is the sync log, newest first (§9.1).
-func (a *App) SyncHistory(limit int) ([]cfgsync.HistoryEntry, error) {
-	if a.headless {
-		return nil, a.syncNotHere()
-	}
-	store, err := a.openSyncStore()
-	if err != nil {
-		return nil, err
-	}
-	if limit <= 0 {
-		limit = 50
-	}
-	return store.History(limit), nil
-}
-
 // SyncResultView is one sync's outcome, for the toast (§9.1).
 type SyncResultView struct {
 	Received int               `json:"received"`
@@ -586,12 +571,6 @@ func (a *App) SyncImportFile(path, passphrase string) (SyncResultView, error) {
 		return view, err
 	}
 	view.Pending = len(pending)
-	// One line in the history, named after the file rather than its folder: which
-	// directory somebody keeps backups in is not something this needs to record.
-	_ = store.AppendHistory(cfgsync.HistoryEntry{
-		At: time.Now().UTC(), Received: view.Received, Pending: view.Pending,
-		Warnings: view.Warnings, File: filepath.Base(path),
-	})
 	a.emit("sync:state", nil)
 	a.emit("sync:result", view)
 	return view, nil

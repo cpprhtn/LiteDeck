@@ -128,7 +128,6 @@ func TestLocalFilesystemBindingsRefuseInServerMode(t *testing.T) {
 	// list.
 	for name, err := range map[string]error{
 		"SyncPending":        errOf2(a.SyncPending()),
-		"SyncHistory":        errOf2(a.SyncHistory(10)),
 		"SyncExportFile":     errOf2(a.SyncExportFile("a passphrase long enough")),
 		"SyncPickFile":       errOf2(a.SyncPickFile()),
 		"SyncPreviewFile":    errOf2(a.SyncPreviewFile("/tmp/x.ldbackup", "a passphrase long enough")),
@@ -194,8 +193,8 @@ var webRPCPinned = []string{
 	// write files on the machine the app runs on, and in server mode that is the
 	// server box — /rpc would hand "write my host list to a file there, or read
 	// one from it" to anybody who can log into the web UI.
-	"SyncApplyPending", "SyncDismissPending", "SyncExportFile", "SyncHistory",
-	"SyncImportFile", "SyncPending", "SyncPickFile", "SyncPreviewFile",
+	"SyncApplyPending", "SyncDismissPending", "SyncExportFile", "SyncImportFile",
+	"SyncPending", "SyncPickFile", "SyncPreviewFile",
 	"TerminalCwd",
 	"Transfers", "TypedEntered", "TypedHistory", "UnlockSecurity",
 	"UpdateStatus", "UploadFile", "WriteTerminal", "WriteTextFile",

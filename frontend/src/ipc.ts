@@ -135,16 +135,6 @@ export interface SyncResult {
   error?: string
 }
 
-export interface SyncHistoryEntry {
-  at: string
-  received?: number
-  pending?: number
-  warnings?: SyncWarning[]
-  error?: string
-  /** The file that was imported, without its directory. */
-  file?: string
-}
-
 export interface MCPStatus {
   enabled: boolean
   running: boolean
@@ -1160,7 +1150,6 @@ interface Bindings {
   SetMCPHostExec(hostID: string, allowed: boolean): Promise<MCPStatus>
 
   SyncPending(): Promise<SyncPendingChange[]>
-  SyncHistory(limit: number): Promise<SyncHistoryEntry[]>
   SyncApplyPending(recordID: string, field: string): Promise<void>
   SyncDismissPending(recordID: string, field: string, rev: number): Promise<void>
   SyncExportFile(passphrase: string): Promise<SyncExportResult>
@@ -1411,7 +1400,6 @@ export const ApplyLanguage = (tag: string) => api().ApplyLanguage(tag)
 export const MCPState = () => api().MCPState()
 
 export const SyncPending = () => api().SyncPending()
-export const SyncHistory = (limit = 50) => api().SyncHistory(limit)
 export const SyncApplyPending = (recordID: string, field: string) =>
   api().SyncApplyPending(recordID, field)
 export const SyncDismissPending = (recordID: string, field: string, rev: number) =>

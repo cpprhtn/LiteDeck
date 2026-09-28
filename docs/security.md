@@ -119,7 +119,7 @@ Linux Secret Service ([`internal/secret/secret.go`](../internal/secret/secret.go
 - **자격증명은 MCP 계층이 만지지 않습니다.** 토큰은 이 엔드포인트에만 쓰이고, SSH 자격증명은
   위에 적은 대로 OS 키체인에 있습니다
 
-## 설정 파일 (기기 간 이동)
+## 설정 동기화 (파일)
 
 호스트 목록과 승인 정책을 **암호화된 파일 하나**로 내보내고, 다른 기기에서 그 파일을 읽습니다
 ([`internal/cfgsync`](../internal/cfgsync)). 계정도, 중계 서버도, 저장소도 없습니다. 파일을

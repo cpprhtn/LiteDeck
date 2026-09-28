@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 )
@@ -29,12 +28,10 @@ import (
 
 // File names under the sync directory.
 const (
-	configFile   = "config.json"
-	stateFile    = "state.json"
-	pendingFile  = "pending.json"
-	keymapFile   = "local-keymap.json"
-	historyFile  = "history.jsonl"
-	historyLimit = 2000
+	configFile  = "config.json"
+	stateFile   = "state.json"
+	pendingFile = "pending.json"
+	keymapFile  = "local-keymap.json"
 )
 
 // Config is sync/config.json. Nothing secret, and very little of anything.
@@ -77,21 +74,6 @@ type KeyLocation struct {
 	// Type is "file" or "agent".
 	Type string `json:"type"`
 	Path string `json:"path,omitempty"`
-}
-
-// HistoryEntry is one line of sync/history.jsonl: what an import did.
-//
-// Local only, and it may name hosts — it is what the user reads to find out what
-// happened, and "a record changed" is not that. It never leaves this machine.
-type HistoryEntry struct {
-	At       time.Time `json:"at"`
-	Received int       `json:"received,omitempty"`
-	Pending  int       `json:"pending,omitempty"`
-	Warnings []Warning `json:"warnings,omitempty"`
-	Error    string    `json:"error,omitempty"`
-	// File is the name of the file that was imported, without its directory.
-	// Which folder somebody keeps their backups in is not something this needs.
-	File string `json:"file,omitempty"`
 }
 
 // Store holds the local sync files.
@@ -285,68 +267,6 @@ func (s *Store) SetKeyLocation(fingerprint string, loc KeyLocation) error {
 	}
 	s.mu.Unlock()
 	return writeJSON(filepath.Join(s.dir, keymapFile), snapshot)
-}
-
-// AppendHistory adds one line to the sync history, oldest lines dropped once it
-// grows past historyLimit.
-func (s *Store) AppendHistory(e HistoryEntry) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	path := filepath.Join(s.dir, historyFile)
-	line, err := json.Marshal(e)
-	if err != nil {
-		return fmt.Errorf("cfgsync: encode history: %w", err)
-	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fmt.Errorf("cfgsync: open history: %w", err)
-	}
-	if _, err := f.Write(append(line, '\n')); err != nil {
-		_ = f.Close()
-		return fmt.Errorf("cfgsync: write history: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("cfgsync: close history: %w", err)
-	}
-	return s.trimHistory(path)
-}
-
-func (s *Store) trimHistory(path string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
-	if len(lines) <= historyLimit {
-		return nil
-	}
-	kept := strings.Join(lines[len(lines)-historyLimit:], "\n") + "\n"
-	return atomicWrite(path, []byte(kept))
-}
-
-// History reads the sync history, newest first, at most limit entries.
-func (s *Store) History(limit int) []HistoryEntry {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	data, err := os.ReadFile(filepath.Join(s.dir, historyFile))
-	if err != nil {
-		return nil
-	}
-	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
-	var out []HistoryEntry
-	for i := len(lines) - 1; i >= 0 && (limit <= 0 || len(out) < limit); i-- {
-		if lines[i] == "" {
-			continue
-		}
-		var e HistoryEntry
-		if json.Unmarshal([]byte(lines[i]), &e) != nil {
-			// One bad line is skipped. The history is for reading, and refusing
-			// to show any of it because one line is broken shows nothing.
-			continue
-		}
-		out = append(out, e)
-	}
-	return out
 }
 
 func readJSON(path string, into any) error {

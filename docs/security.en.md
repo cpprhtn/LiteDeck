@@ -128,7 +128,7 @@ safe ([`internal/mcp/http.go`](../internal/mcp/http.go)).
 - **The MCP layer never touches credentials.** The token is for this endpoint only, and SSH
   credentials stay in the OS keychain as described above
 
-## Settings files (moving between machines)
+## Settings sync (with a file)
 
 Your host list and approval policies can be written to **one encrypted file**, and
 read back on another machine ([`internal/cfgsync`](../internal/cfgsync)). There is

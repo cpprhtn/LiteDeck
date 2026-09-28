@@ -257,7 +257,7 @@ export default function App() {
       }
       if (r.received === 0 && r.pending === 0) return
       setSyncNote(
-        t('설정 파일: 받음 {received} · 확인 필요 {pending}', {
+        t('동기화: 받음 {received} · 확인 필요 {pending}', {
           received: r.received,
           pending: r.pending,
         }),

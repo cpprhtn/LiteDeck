@@ -174,8 +174,8 @@ export function ShellControls({
         MCP
       </button>
       {onOpenSync && (
-        <button className="ghost small-btn" onClick={onOpenSync} title={t('설정 파일로 주고받기')}>
-          {t('설정 파일')}
+        <button className="ghost small-btn" onClick={onOpenSync} title={t('설정 동기화')}>
+          {t('동기화')}
           {!!syncPending && syncPending > 0 && <span className="badge">{syncPending}</span>}
         </button>
       )}
