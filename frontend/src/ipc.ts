@@ -83,34 +83,11 @@ export interface WritePolicyView {
   until?: number
 }
 
-/** Settings sync, as the settings screen sees it (§9.1 of the sync design). */
-export interface SyncView {
-  /** False in server mode, where the sync is not offered at all. */
-  available: boolean
-  enabled: boolean
-  remoteUrl?: string
-  authKind?: string
-  deviceId?: string
-  /** Whether the vault is open in this session. When it is not, nothing can sync
-   *  until the passphrase is entered — which is the normal state on a machine
-   *  where the user chose not to have the key remembered. */
-  unlocked: boolean
-  /** False where this machine has no OS credential store: the "remember on this
-   *  device" toggle is then disabled rather than promising something it cannot
-   *  do. */
-  canRemember: boolean
-  remember: boolean
-  lastSync?: number
-  head?: string
-  pending: number
-  syncing: boolean
-  error?: string
-  /** False on Windows, where the OpenSSH agent speaks over a named pipe this app
-   *  does not use — so that choice is hidden rather than offered and failing. */
-  agentAvailable: boolean
-}
-
-/** One field held back until somebody on this machine approves it. */
+/** One field held back until somebody on this machine approves it (§6.2).
+ *
+ *  A file can carry a policy that is looser than what this machine has — the
+ *  person who exported it decided what an AI client may do to those servers, and
+ *  they were not at this desk. Those changes wait here. */
 export interface SyncPendingChange {
   recordId: string
   rev: number
@@ -125,27 +102,6 @@ export interface SyncWarning {
   recordId: string
   kind: string
   detail: string
-}
-
-export interface SyncConflict {
-  recordId: string
-  field: string
-  kept: string
-  dropped: string
-  by: string
-  at: string
-}
-
-/** What the setup screen found at an address, before writing anything. */
-export interface SyncProbeResult {
-  /** 'empty' | 'sync' | 'other' | 'denied' | 'unreachable' */
-  kind: string
-  /** The URL LiteDeck will use, which is not always the one that was pasted. */
-  normalized: string
-  deployKeysUrl?: string
-  /** How many hosts the repository holds, when it is a sync repository. */
-  hosts: number
-  detail?: string
 }
 
 /** One host inside a settings file, for the preview before importing. */
@@ -174,21 +130,19 @@ export interface SyncExportResult {
 
 export interface SyncResult {
   received: number
-  sent: number
   pending: number
   warnings?: SyncWarning[]
-  conflicts?: SyncConflict[]
   error?: string
 }
 
 export interface SyncHistoryEntry {
   at: string
   received?: number
-  sent?: number
   pending?: number
   warnings?: SyncWarning[]
-  conflicts?: SyncConflict[]
   error?: string
+  /** The file that was imported, without its directory. */
+  file?: string
 }
 
 export interface MCPStatus {
@@ -1205,26 +1159,16 @@ interface Bindings {
   SetMCPHostDelete(hostID: string, allowed: boolean): Promise<MCPStatus>
   SetMCPHostExec(hostID: string, allowed: boolean): Promise<MCPStatus>
 
-  SyncState(): Promise<SyncView>
   SyncPending(): Promise<SyncPendingChange[]>
   SyncHistory(limit: number): Promise<SyncHistoryEntry[]>
-  SyncCreate(remoteURL: string, authKind: string, passphrase: string, remember: boolean): Promise<SyncView>
-  SyncJoin(remoteURL: string, authKind: string, passphrase: string, remember: boolean): Promise<SyncView>
-  SyncUnlock(passphrase: string, remember: boolean): Promise<SyncView>
-  SyncNow(): Promise<SyncResult>
-  SyncProbe(remoteURL: string, authKind: string): Promise<SyncProbeResult>
+  SyncApplyPending(recordID: string, field: string): Promise<void>
+  SyncDismissPending(recordID: string, field: string, rev: number): Promise<void>
   SyncExportFile(passphrase: string): Promise<SyncExportResult>
   SyncPickFile(): Promise<string>
   SyncPreviewFile(path: string, passphrase: string): Promise<SyncFilePreview>
   SyncImportFile(path: string, passphrase: string): Promise<SyncResult>
   SyncApplyPending(recordID: string, field: string): Promise<void>
   SyncDismissPending(recordID: string, field: string, rev: number): Promise<void>
-  SyncChangePassphrase(oldPass: string, newPass: string): Promise<void>
-  SyncDisable(): Promise<SyncView>
-  SyncSetRemember(remember: boolean): Promise<SyncView>
-  SyncGenerateKey(): Promise<string>
-  SyncPublicKey(): Promise<string>
-  SyncSetToken(token: string): Promise<void>
   SetLanguage(tag: string): Promise<ActionResult>
   SetTheme(theme: string): Promise<ActionResult>
   SaveHost(h: Host): Promise<void>
@@ -1466,43 +1410,19 @@ export const ListHosts = () => api().ListHosts()
 export const ApplyLanguage = (tag: string) => api().ApplyLanguage(tag)
 export const MCPState = () => api().MCPState()
 
-export const SyncState = () => api().SyncState()
 export const SyncPending = () => api().SyncPending()
 export const SyncHistory = (limit = 50) => api().SyncHistory(limit)
-export const SyncCreate = (
-  remoteURL: string,
-  authKind: string,
-  passphrase: string,
-  remember: boolean,
-) => api().SyncCreate(remoteURL, authKind, passphrase, remember)
-export const SyncJoin = (
-  remoteURL: string,
-  authKind: string,
-  passphrase: string,
-  remember: boolean,
-) => api().SyncJoin(remoteURL, authKind, passphrase, remember)
-export const SyncUnlock = (passphrase: string, remember: boolean) =>
-  api().SyncUnlock(passphrase, remember)
-export const SyncNow = () => api().SyncNow()
-export const SyncProbe = (remoteURL: string, authKind: string) =>
-  api().SyncProbe(remoteURL, authKind)
+export const SyncApplyPending = (recordID: string, field: string) =>
+  api().SyncApplyPending(recordID, field)
+export const SyncDismissPending = (recordID: string, field: string, rev: number) =>
+  api().SyncDismissPending(recordID, field, rev)
 export const SyncExportFile = (passphrase: string) => api().SyncExportFile(passphrase)
 export const SyncPickFile = () => api().SyncPickFile()
 export const SyncPreviewFile = (path: string, passphrase: string) =>
   api().SyncPreviewFile(path, passphrase)
 export const SyncImportFile = (path: string, passphrase: string) =>
   api().SyncImportFile(path, passphrase)
-export const SyncApplyPending = (recordID: string, field: string) =>
-  api().SyncApplyPending(recordID, field)
-export const SyncDismissPending = (recordID: string, field: string, rev: number) =>
-  api().SyncDismissPending(recordID, field, rev)
-export const SyncChangePassphrase = (oldPass: string, newPass: string) =>
-  api().SyncChangePassphrase(oldPass, newPass)
-export const SyncDisable = () => api().SyncDisable()
-export const SyncSetRemember = (remember: boolean) => api().SyncSetRemember(remember)
-export const SyncGenerateKey = () => api().SyncGenerateKey()
-export const SyncPublicKey = () => api().SyncPublicKey()
-export const SyncSetToken = (token: string) => api().SyncSetToken(token)
+
 export const SetMCPEnabled = (enabled: boolean) => api().SetMCPEnabled(enabled)
 export const SetMCPHost = (hostID: string, allowed: boolean) => api().SetMCPHost(hostID, allowed)
 export const RotateMCPToken = () => api().RotateMCPToken()

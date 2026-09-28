@@ -35,7 +35,7 @@ import {
   ImportSSHConfig,
   ListHosts,
   on,
-  SyncState,
+  SyncPending,
   type SyncResult,
   type BootstrapData,
   type ConnectionState,
@@ -230,18 +230,18 @@ export default function App() {
     }
   }, [activeID, activeConnected, activeDetected])
 
-  // The sync's pending count, for the badge on the rail button.
+  // How many imported changes are waiting for a decision, for the badge on the
+  // rail button.
   //
-  // Read once and then on Go's event rather than polled: a sync runs every five
-  // minutes and after any local edit, and the count only changes when one does.
-  // Server mode has no sync, so the first call failing is the normal answer there
-  // and is not an error worth showing.
+  // Read once and then on Go's event rather than polled: it only changes when a
+  // file is imported or somebody answers one. Server mode has no settings file,
+  // so the first call failing is the normal answer there and not worth showing.
   useEffect(() => {
     if (boot?.selfMode) return
     let alive = true
     const read = () => {
-      void SyncState()
-        .then((v) => alive && setSyncPending(v.pending))
+      void SyncPending()
+        .then((list) => alive && setSyncPending(list?.length ?? 0))
         .catch(() => {})
     }
     read()
@@ -255,11 +255,10 @@ export default function App() {
         setError(r.error)
         return
       }
-      if (r.received === 0 && r.sent === 0 && r.pending === 0) return
+      if (r.received === 0 && r.pending === 0) return
       setSyncNote(
-        t('동기화: 받음 {received} · 보냄 {sent} · 확인 필요 {pending}', {
+        t('설정 파일: 받음 {received} · 확인 필요 {pending}', {
           received: r.received,
-          sent: r.sent,
           pending: r.pending,
         }),
       )
@@ -485,11 +484,7 @@ export default function App() {
       )}
 
       {syncOpen && (
-        <SyncPanel
-          hostCount={hosts.filter((h) => h.source !== 'ssh_config').length}
-          onClose={() => setSyncOpen(false)}
-          onError={setError}
-        />
+        <SyncPanel onClose={() => setSyncOpen(false)} onError={setError} />
       )}
 
       <main className="main">

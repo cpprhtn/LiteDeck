@@ -3995,3 +3995,10 @@ button.events-unit {
   color: var(--fg-muted);
   flex: 1;
 }
+
+/* Export or import: two cards side by side rather than stacked, because they are
+   alternatives rather than steps. */
+.sync-choices-row {
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+}

@@ -48,11 +48,7 @@ func (a *App) SaveHost(h config.Host) error {
 		}
 		h.ID = id
 	}
-	if err := a.hosts.Upsert(h); err != nil {
-		return err
-	}
-	a.syncSoon()
-	return nil
+	return a.hosts.Upsert(h)
 }
 
 // DeleteHost removes a host, disconnecting it first and forgetting its secrets.
@@ -67,14 +63,7 @@ func (a *App) DeleteHost(id string) error {
 	for _, k := range []secret.Kind{secret.KindPassword, secret.KindPassphrase, secret.KindSudo} {
 		_ = a.secrets.Delete(id, k)
 	}
-	if err := a.hosts.Delete(id); err != nil {
-		return err
-	}
-	// The next sync turns this into a tombstone, so the other machines lose it
-	// too. Without the trigger it would happen at the five-minute tick instead,
-	// and somebody deleting a host and closing the app would find it back.
-	a.syncSoon()
-	return nil
+	return a.hosts.Delete(id)
 }
 
 // ImportSSHConfigResult reports what an import found.

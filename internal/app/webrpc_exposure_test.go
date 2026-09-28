@@ -123,29 +123,18 @@ func TestLocalFilesystemBindingsRefuseInServerMode(t *testing.T) {
 		t.Errorf("ReportSample wrote under the server account's cache: %q", got)
 	}
 
-	// Settings sync, all of it. The set is checked by name against the bindings so
-	// a new one cannot be added without either guarding it or changing this list.
+	// Settings import and export, all of it. Checked by name against the bindings
+	// so a new one cannot be added without either guarding it or changing this
+	// list.
 	for name, err := range map[string]error{
-		"SyncState":            errOf2(a.SyncState()),
-		"SyncPending":          errOf2(a.SyncPending()),
-		"SyncHistory":          errOf2(a.SyncHistory(10)),
-		"SyncCreate":           errOf2(a.SyncCreate("file:///tmp/x", "", "a passphrase long enough", false)),
-		"SyncJoin":             errOf2(a.SyncJoin("file:///tmp/x", "", "a passphrase long enough", false)),
-		"SyncUnlock":           errOf2(a.SyncUnlock("a passphrase long enough", false)),
-		"SyncNow":              errOf2(a.SyncNow()),
-		"SyncProbe":            errOf2(a.SyncProbe("file:///tmp/x", "")),
-		"SyncExportFile":       errOf2(a.SyncExportFile("a passphrase long enough")),
-		"SyncPickFile":         errOf2(a.SyncPickFile()),
-		"SyncPreviewFile":      errOf2(a.SyncPreviewFile("/tmp/x.ldbackup", "a passphrase long enough")),
-		"SyncImportFile":       errOf2(a.SyncImportFile("/tmp/x.ldbackup", "a passphrase long enough")),
-		"SyncDisable":          errOf2(a.SyncDisable()),
-		"SyncSetRemember":      errOf2(a.SyncSetRemember(true)),
-		"SyncGenerateKey":      errOf2(a.SyncGenerateKey()),
-		"SyncPublicKey":        errOf2(a.SyncPublicKey()),
-		"SyncApplyPending":     a.SyncApplyPending("id", "policy.shared"),
-		"SyncDismissPending":   a.SyncDismissPending("id", "policy.shared", 1),
-		"SyncChangePassphrase": a.SyncChangePassphrase("old passphrase", "new passphrase here"),
-		"SyncSetToken":         a.SyncSetToken("token"),
+		"SyncPending":        errOf2(a.SyncPending()),
+		"SyncHistory":        errOf2(a.SyncHistory(10)),
+		"SyncExportFile":     errOf2(a.SyncExportFile("a passphrase long enough")),
+		"SyncPickFile":       errOf2(a.SyncPickFile()),
+		"SyncPreviewFile":    errOf2(a.SyncPreviewFile("/tmp/x.ldbackup", "a passphrase long enough")),
+		"SyncImportFile":     errOf2(a.SyncImportFile("/tmp/x.ldbackup", "a passphrase long enough")),
+		"SyncApplyPending":   a.SyncApplyPending("id", "policy.shared"),
+		"SyncDismissPending": a.SyncDismissPending("id", "policy.shared", 1),
 	} {
 		if err == nil || !strings.Contains(err.Error(), "서버 모드") {
 			t.Errorf("%s did not refuse in server mode: %v", name, err)
@@ -201,16 +190,12 @@ var webRPCPinned = []string{
 	"SetMCPHost", "SetMCPHostDelete", "SetMCPHostExec", "SetMCPWritePolicy",
 	"SetShellHistoryAllowed", "SetTheme", "StartDownload", "StartUpload",
 	"StatPath", "StopLogStream", "SudoUnlocked",
-	// Settings sync. Every one of these refuses in server mode: they write to the
-	// machine the app runs on — a git working copy, state files, a private key —
-	// and in server mode that is the server box, where /rpc would hand
-	// "set up a sync of my host list with my passphrase" to anybody who can log
-	// into the web UI. A server joining a sync is its own feature (§12).
-	"SyncApplyPending", "SyncChangePassphrase", "SyncCreate", "SyncDisable",
-	"SyncDismissPending", "SyncExportFile", "SyncGenerateKey", "SyncHistory",
-	"SyncImportFile", "SyncJoin", "SyncNow", "SyncPending", "SyncPickFile",
-	"SyncPreviewFile", "SyncProbe", "SyncPublicKey", "SyncSetRemember",
-	"SyncSetToken", "SyncState", "SyncUnlock",
+	// Settings import and export. Every one refuses in server mode: they read and
+	// write files on the machine the app runs on, and in server mode that is the
+	// server box — /rpc would hand "write my host list to a file there, or read
+	// one from it" to anybody who can log into the web UI.
+	"SyncApplyPending", "SyncDismissPending", "SyncExportFile", "SyncHistory",
+	"SyncImportFile", "SyncPending", "SyncPickFile", "SyncPreviewFile",
 	"TerminalCwd",
 	"Transfers", "TypedEntered", "TypedHistory", "UnlockSecurity",
 	"UpdateStatus", "UploadFile", "WriteTerminal", "WriteTextFile",

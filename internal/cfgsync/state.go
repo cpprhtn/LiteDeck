@@ -12,20 +12,20 @@ import (
 	"time"
 )
 
-// What this machine remembers about the sync (§7.3).
+// What this machine remembers about settings it has imported.
 //
-// Five files under <app data>/sync/, none of them secret. The vault key is not
-// here — it is in the OS credential store if the user said to remember it, and
-// nowhere at all if they did not (§6.7 ①). The remote URL is here; a token for it
-// is not.
+// Three files under <app data>/sync/, none of them secret: what this machine has
+// seen, what is waiting for a decision, and which key on this machine answers to
+// which fingerprint.
 //
-// # Why the base record is kept whole
+// # Why anything is remembered at all
 //
-// The design said "base snapshot hash". A hash answers "did this change", which
-// is enough to decide whether to push, and not enough for the merge: settling two
-// changed records field by field needs the values that were there before (§8.3).
-// So the whole base record is kept. It holds nothing that hosts.json and
-// settings.json do not already hold in plain text on the same disk.
+// Importing a file is not a restore. A policy in the file that is looser than
+// this machine's is withheld and waits for a person (§6.2), and "waiting" has to
+// survive the app being closed — otherwise the answer to a question nobody
+// answered is silently "no" until the next import asks again. The same state
+// records which revision of a record this machine has already seen, so a file
+// that is older than what is here is noticed rather than applied.
 
 // File names under the sync directory.
 const (
@@ -34,39 +34,16 @@ const (
 	pendingFile  = "pending.json"
 	keymapFile   = "local-keymap.json"
 	historyFile  = "history.jsonl"
-	repoSubdir   = "repo"
 	historyLimit = 2000
 )
 
-// Auth kinds (§5.2).
-const (
-	// AuthDeployKey is a sync-only ed25519 key pair, registered as a deploy key
-	// on the one repository. The recommended option: it reaches nothing else.
-	AuthDeployKey = "deploy_key"
-	// AuthAgent is the user's existing SSH key through their agent, for a bare
-	// repository on their own server. Hidden on Windows, where the agent is a
-	// named pipe and this code path does not reach it (§6.7 ⑥).
-	AuthAgent = "agent"
-	// AuthToken is HTTPS with a fine-grained token, kept in the credential store.
-	AuthToken = "token"
-)
-
-// Config is sync/config.json: how to reach the repository, and nothing secret.
+// Config is sync/config.json. Nothing secret, and very little of anything.
 type Config struct {
-	Enabled   bool   `json:"enabled"`
-	RemoteURL string `json:"remoteUrl,omitempty"`
-	AuthKind  string `json:"authKind,omitempty"`
-	// DeviceID is this machine, as a UUID. It appears in commit messages (first
-	// eight characters) and in records as updated_by, so it is deliberately not
-	// the hostname: a commit log on somebody else's server should not say
-	// "junwons-macbook".
+	// DeviceID is this machine, as a UUID. It is written into every exported
+	// file so two backups can be told apart — and it is a UUID rather than the
+	// hostname because that file ends up in somebody's cloud folder, and a list
+	// of the user's computers is not free to give away.
 	DeviceID string `json:"deviceId,omitempty"`
-	// DeviceName is what the user sees in the pending list — "the MacBook
-	// changed this". Local only; it never reaches the repository.
-	DeviceName string `json:"deviceName,omitempty"`
-	// Remember caches the vault key in the OS credential store. Forced off, and
-	// shown as unavailable, where there is no credential store (§6.7 ①).
-	Remember bool `json:"remember,omitempty"`
 }
 
 // RecordState is what this machine knows about one record.
@@ -74,20 +51,13 @@ type RecordState struct {
 	// Rev is the highest revision this machine has seen. A lower one coming back
 	// is a rewound repository (§6.4).
 	Rev int64 `json:"rev"`
-	// Base is the record as it was at the last successful sync, for the
-	// three-way merge (§8.3).
+	// Base is the record as it was last applied here.
 	Base *Record `json:"base,omitempty"`
 	// Applied is the policy this machine last put into settings.json from this
 	// record — which is not the record's own policy where a loosening was
-	// withheld (§6.2).
-	//
-	// It exists to answer one question at the next sync: is the difference
-	// between settings.json and the repository this machine holding something
-	// back, or somebody on this machine having changed their mind? Without it the
-	// two are indistinguishable, and the stricter withheld value gets pushed as
-	// though it were a decision — the other machine sees a tightening, applies it
-	// automatically, and one person's choice for one server has quietly tightened
-	// every machine they own. That happened; see TestLooseningWaitsForAPerson.
+	// withheld (§6.2). It is what tells a later import whether the difference
+	// between settings.json and the file is this machine holding something back
+	// or somebody here having changed their mind.
 	Applied *RecordPolicy `json:"applied,omitempty"`
 	// Dismissed remembers which pending decisions were answered with "keep
 	// mine", by field and by the revision they arrived in. A later revision asks
@@ -109,18 +79,19 @@ type KeyLocation struct {
 	Path string `json:"path,omitempty"`
 }
 
-// HistoryEntry is one line of sync/history.jsonl (§9.1).
+// HistoryEntry is one line of sync/history.jsonl: what an import did.
 //
-// Local only, and it may name hosts: it is what the user reads to find out what a
-// sync did, and "a record changed" is not that. It is never uploaded.
+// Local only, and it may name hosts — it is what the user reads to find out what
+// happened, and "a record changed" is not that. It never leaves this machine.
 type HistoryEntry struct {
-	At        time.Time  `json:"at"`
-	Received  int        `json:"received,omitempty"`
-	Sent      int        `json:"sent,omitempty"`
-	Pending   int        `json:"pending,omitempty"`
-	Warnings  []Warning  `json:"warnings,omitempty"`
-	Conflicts []Conflict `json:"conflicts,omitempty"`
-	Error     string     `json:"error,omitempty"`
+	At       time.Time `json:"at"`
+	Received int       `json:"received,omitempty"`
+	Pending  int       `json:"pending,omitempty"`
+	Warnings []Warning `json:"warnings,omitempty"`
+	Error    string    `json:"error,omitempty"`
+	// File is the name of the file that was imported, without its directory.
+	// Which folder somebody keeps their backups in is not something this needs.
+	File string `json:"file,omitempty"`
 }
 
 // Store holds the local sync files.
@@ -169,9 +140,6 @@ func OpenStore(dir string) (*Store, error) {
 	}
 	return s, nil
 }
-
-// RepoDir is where the git working copy lives.
-func (s *Store) RepoDir() string { return filepath.Join(s.dir, repoSubdir) }
 
 // Config returns a copy of the configuration.
 func (s *Store) Config() Config {

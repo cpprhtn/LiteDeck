@@ -128,97 +128,73 @@ safe ([`internal/mcp/http.go`](../internal/mcp/http.go)).
 - **The MCP layer never touches credentials.** The token is for this endpoint only, and SSH
   credentials stay in the OS keychain as described above
 
-## Settings sync
+## Settings files (moving between machines)
 
-Your host list and approval policies go to **a git repository you own**,
-encrypted, and your other machines read the same one
-([`internal/cfgsync`](../internal/cfgsync)). There is no account and no relay.
-It is off by default.
+Your host list and approval policies can be written to **one encrypted file**, and
+read back on another machine ([`internal/cfgsync`](../internal/cfgsync)). There is
+no account, no relay and no repository. Where the file goes is up to you — Google
+Drive, Dropbox, iCloud, a stick, an email to yourself.
 
 ### What it does not do, first
 
-- **No secret is uploaded.** Passwords, key passphrases, sudo passwords, private
-  keys and the MCP token are not synced. They live in the OS credential store, as
-  described above
+- **No secret is in the file.** Passwords, key passphrases, sudo passwords,
+  private keys and the MCP token are not exported. They live in the OS credential
+  store, as described above
 - **Not even the private key's path.** A key is named by its **public-key
-  fingerprint and label**. `/Users/me/.ssh/id_ed25519` does not exist on the
-  other machine, so each device keeps its own fingerprint-to-path map
-- **Hosts imported from `~/.ssh/config` are not synced.** That file is already
-  your own way of carrying hosts between machines, and the importer matches by
-  ID — syncing one would produce a second copy at the next import
-- **Lose the passphrase and the data is gone.** A recovery path would mean
-  LiteDeck holds the key, and then it is an account
-- **Not available in server mode.** The sync writes files on the machine the app
-  runs on
+  fingerprint and label**. `/Users/me/.ssh/id_ed25519` does not exist on the other
+  machine
+- **Hosts imported from `~/.ssh/config` are not exported.** That file is already
+  your own way of carrying hosts between machines
+- **Lose the passphrase and the file cannot be opened.** A recovery path would
+  mean LiteDeck holds the key
+- **It is not a sync.** Nothing merges, no revisions are tracked, and nothing
+  notices two machines editing at once. It is a snapshot of one moment
+- **Not available in server mode.** It reads and writes the disk of the machine
+  the app runs on
 
-### What the repository shows
+### What is in the file
 
-One file per host, named after that host's UUID. The contents are
-XChaCha20-Poly1305 ciphertext; the only plaintext is `vault.json` (the KDF
-parameters, the salt, and the vault key wrapped in your passphrase),
-`.gitattributes` and `README.md`.
+The whole thing is one JSON document whose contents are XChaCha20-Poly1305
+ciphertext. The only plaintext is the format name and version, the KDF
+parameters, the salt, the wrapped key, when it was made, and the UUID of the
+machine that made it — **a UUID, not a machine name.** The file ends up in a cloud
+folder, and a list of the user's computers is not free to give away.
 
-Whoever hosts the repository can see **how many files there are (so how many
-hosts), how big each one is, and when it last changed**. Commit messages are
-fixed at `sync: <first 8 characters of the device ID>` and the author is
-`LiteDeck <litedeck@localhost>` — neither what changed nor whose email it was.
+- **Vault key**: 32 random bytes. **KEK**:
+  `argon2id(passphrase, salt, time, memory, threads)`
+- The parameters are **read from the file**, not from constants in the binary, so
+  a file written on a Raspberry Pi opens elsewhere. They are bounded, though: the
+  file is something an attacker could have written, and Argon2 does what it is told
+- The extension is `.ldbackup`. A `.json` invites somebody to open it in an editor
+  and fix it, and a fixed file no longer opens
 
-### Threat model
+### Importing is not restoring
 
-| Who | What they can do | What stops it |
-|---|---|---|
-| The repository host, a leaked deploy key or token, a repository made public by mistake | Read | Encryption |
-| 〃 | Forge or swap files | AEAD authentication fails. The associated data includes the **path inside the repository**, so a record moved to another file name does not open |
-| 〃 | Rewind the history | Each device remembers the last rev it saw per record. A lower one is not applied, and is warned about. A file that vanished with no tombstone is the same warning |
-| Someone holding the vault key (including one of your own machines, taken over) | Write valid records | **Loosened policies and replaced host keys are applied only after a person confirms them, on each machine** |
-| An MCP client, or prompt injection | Call MCP tools | The sync is **not exposed to MCP** — there is no tool, and approving a pending change is a GUI-only path |
+A policy in the file that is **looser than this machine's is not applied — it goes
+to the "waiting for you" list.** Whoever exported the file decided what an AI
+client may do to those servers, and they were not sitting at this desk. For the
+same reason:
 
-### Tightening is automatic; loosening waits for you
-
-An incoming record's policy is compared with the local one **field by field**.
-
-- Equal or stricter is applied as it is
-- Looser is not applied. It goes to the "waiting for you" list, that field keeps
-  this machine's value in the meantime, and it takes a person pressing a button
-- **The expiry is not synced.** "Do not ask for eight hours" is a decision made by
-  whoever is at that desk, and clocks minutes apart would leave a window open on
-  one machine after it closed on another. Applying a relaxed mode starts a fresh
-  window on that machine's own clock
-- A host arriving for the first time starts at the app's defaults: not shared, ask
+- **A host seen for the first time** starts at the app's defaults: not shared, ask
   before writing, no command execution, no file deletion
+- **Anything stricter is applied as it is.** Tightening needs no confirmation
+- **Host keys** are taken automatically only where that address has none. Where a
+  different one is already trusted, nothing is touched and both fingerprints are
+  shown — there is no way to tell a rebuilt server from somebody in the middle
+- **A tombstone in a file is not a delete.** It is a snapshot, and opening an old
+  backup must not remove the hosts added since
+- **A record whose rev is lower than one this machine has already seen** is not
+  applied, and is warned about
 
-Host keys are applied **per address (`host:port`)**. A key is taken automatically
-only where that address has none; where a different one is already trusted,
-nothing is touched and you are asked — there is no way to tell a rebuilt server
-from somebody in the middle. Deleting a host key is never propagated.
+### Where the file ends up
 
-### Reaching the repository
+A cloud folder is indexed by somebody else's software and reachable through
+somebody else's account recovery. The file holds no passwords and no keys, but it
+holds **every server's address and account name**, which is a map of what to
+attack. That is why the passphrase floor is twelve characters.
 
-A deploy key (recommended), an existing SSH key through your agent, or an HTTPS
-token. The sync-only key and the token go into the **OS credential store, not a
-file**: on Windows, Go's `Chmod` only touches the read-only bit, so a "0600" key
-file there protects nothing. A machine with no credential store is not offered
-the deploy-key option at all, does not remember the vault key, and asks for the
-passphrase every time the app opens.
-
-GitHub OAuth is not used. An OAuth App's `repo` scope is access to **every**
-private repository you have, and one settings repository is not worth asking for
-that.
-
-### When it is exported as a file
-
-The same contents can be written to one file (`*.ldbackup`). The encryption, the
-passphrase floor and the "a looser policy waits for you" rule are the same as for
-the repository.
-
-What differs is **where it ends up**. A cloud folder is indexed by somebody
-else's software and reachable through somebody else's account recovery. The file
-holds no passwords and no keys, but it holds **every server's address and account
-name**, which is a map of what to attack. That is why the passphrase floor is the
-same one.
-
-A tombstone inside a file is not treated as a delete. It is a snapshot, and
-opening an old backup must not remove the hosts added since.
+Exporting, importing and approving a withheld change are **not exposed to MCP**.
+Approving is a GUI-only path, and a test pins that.
 
 ## What it does not do, stated up front
 

@@ -418,10 +418,6 @@ func (a *App) SetMCPHost(hostID string, allowed bool) MCPStatus {
 	}
 	out := a.MCPState()
 	a.emitMCPState(out)
-	// The policy is part of a host's record, so a change here is something the
-	// other machines should learn about (§8.1). Debounced: somebody working
-	// through the permissions panel flips several switches.
-	a.syncSoon()
 	return out
 }
 
@@ -446,10 +442,6 @@ func (a *App) SetMCPHostDelete(hostID string, allowed bool) MCPStatus {
 	}
 	out := a.MCPState()
 	a.emitMCPState(out)
-	// The policy is part of a host's record, so a change here is something the
-	// other machines should learn about (§8.1). Debounced: somebody working
-	// through the permissions panel flips several switches.
-	a.syncSoon()
 	return out
 }
 
@@ -479,10 +471,6 @@ func (a *App) SetMCPHostExec(hostID string, allowed bool) MCPStatus {
 	}
 	out := a.MCPState()
 	a.emitMCPState(out)
-	// The policy is part of a host's record, so a change here is something the
-	// other machines should learn about (§8.1). Debounced: somebody working
-	// through the permissions panel flips several switches.
-	a.syncSoon()
 	return out
 }
 

@@ -280,8 +280,15 @@ func TestAddressConflictsAcrossRecords(t *testing.T) {
 }
 
 // A tombstone is not gated on policy — there is nothing in it to gate.
+//
+// Nothing this app writes produces one any more: a settings file is a snapshot,
+// and an import never deletes. The case is kept because a record carries the flag
+// and a file may come from elsewhere — a future version, or another tool — and
+// "what happens to a tombstone" should be a decided question rather than an
+// accident.
 func TestGatePassesATombstoneThrough(t *testing.T) {
-	r := Tombstone(sampleRecord(), "device-b", time.Now())
+	r := Record{ID: testID, Rev: 9, UpdatedAt: time.Now().UTC(), UpdatedBy: "device-b",
+		Deleted: true, Policy: StrictestPolicy()}
 	local := sampleRecord()
 	d := Gate(&local, r, 0, nil)
 	if d.Skip || len(d.Pending) != 0 {

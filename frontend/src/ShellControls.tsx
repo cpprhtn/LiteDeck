@@ -49,11 +49,11 @@ export function ShellControls({
 }: {
   version?: string
   onOpenMCP: () => void
-  /** Absent in server mode, where the sync is not offered. */
+  /** Absent in server mode, where settings files are not offered. */
   onOpenSync?: () => void
-  /** How many changes are waiting for this person. Drawn on the button, because
-   *  the whole point of the pending list is that nothing loosens until somebody
-   *  looks at it — a queue with no badge is a queue nobody opens. */
+  /** How many imported changes are waiting for this person. Drawn on the button,
+   *  because the whole point of the waiting list is that nothing loosens until
+   *  somebody looks at it — a queue with no badge is a queue nobody opens. */
   syncPending?: number
 }) {
   const theme = useTheme()
@@ -174,8 +174,8 @@ export function ShellControls({
         MCP
       </button>
       {onOpenSync && (
-        <button className="ghost small-btn" onClick={onOpenSync} title={t('설정 동기화')}>
-          {t('동기화')}
+        <button className="ghost small-btn" onClick={onOpenSync} title={t('설정 파일로 주고받기')}>
+          {t('설정 파일')}
           {!!syncPending && syncPending > 0 && <span className="badge">{syncPending}</span>}
         </button>
       )}

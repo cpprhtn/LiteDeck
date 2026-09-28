@@ -55,7 +55,7 @@ export function SyncFilePanel({ onError }: { onError: (msg: string) => void }) {
 
   return (
     <div className="mcp-tabbody">
-      <nav className="mcp-tabs">
+      <div className="sync-choices sync-choices-row">
         <button
           data-on={mode === 'export' || undefined}
           onClick={() => {
@@ -63,7 +63,8 @@ export function SyncFilePanel({ onError }: { onError: (msg: string) => void }) {
             setDone(null)
           }}
         >
-          {t('파일로 내보내기')}
+          <strong>{t('파일로 내보내기')}</strong>
+          <span className="muted small">{t('이 기기의 호스트를 파일 하나로')}</span>
         </button>
         <button
           data-on={mode === 'import' || undefined}
@@ -72,9 +73,10 @@ export function SyncFilePanel({ onError }: { onError: (msg: string) => void }) {
             setSaved(null)
           }}
         >
-          {t('파일에서 가져오기')}
+          <strong>{t('파일에서 가져오기')}</strong>
+          <span className="muted small">{t('다른 기기에서 내보낸 파일을 읽습니다')}</span>
         </button>
-      </nav>
+      </div>
 
       {mode === 'export' && (
         <>
@@ -96,10 +98,6 @@ export function SyncFilePanel({ onError }: { onError: (msg: string) => void }) {
           <p className="warn-text">
             {t('이 패스프레이즈를 잃으면 파일을 열 수 없습니다. LiteDeck 도 열지 못합니다.')}
           </p>
-          <p className="muted small">
-            {t('비밀번호·개인키·sudo 암호·MCP 토큰은 파일에 들어가지 않습니다. 키는 지문으로만 적히고, 새 기기에서 그 키가 어디 있는지는 그 기기에서 고릅니다.')}
-          </p>
-
           <div className="sync-copy">
             <button
               className="primary small-btn"

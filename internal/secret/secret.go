@@ -25,22 +25,7 @@ const (
 	KindPassword   Kind = "password"   // login password
 	KindPassphrase Kind = "passphrase" // private key passphrase
 	KindSudo       Kind = "sudo"       // sudo password, opt-in only (§7.2)
-	// KindSyncVault is the settings-sync vault key, and the one kind that is not
-	// per host: its "host ID" is the fixed name SyncAccount. It is here rather
-	// than in a file because a machine with no credential store is usually a
-	// machine several people use, and the answer there is to ask for the
-	// passphrase every time — not to drop the key on disk.
-	KindSyncVault Kind = "sync_vault"
-	// KindSyncKey is the private half of a sync-only deploy key. Also not per
-	// host, and in the credential store for a second reason: on Windows, Go's
-	// Chmod only touches the read-only bit, so a 0600 key file there is not
-	// protected at all.
-	KindSyncKey Kind = "sync_key"
 )
-
-// SyncAccount is the account name the two sync secrets are filed under, in place
-// of a host ID.
-const SyncAccount = "litedeck-sync"
 
 // ErrNotFound reports that no secret is stored for that host and kind.
 var ErrNotFound = errors.New("secret: not stored")
