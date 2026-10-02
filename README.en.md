@@ -8,7 +8,8 @@
 <h1 align="center">LiteDeck</h1>
 
 <p align="center">
-  <b>Manage a remote server from a local native GUI over SSH alone, with nothing installed on the server.</b>
+  <b>A desktop app for managing the servers you reach over SSH, in one window</b><br>
+  Nothing gets installed on the server
 </p>
 
 <p align="center">
@@ -43,82 +44,30 @@
 
 ---
 
-> [!NOTE]
-> **Runs on macOS, Windows and Ubuntu** — all three confirmed by opening it there. What was tested
-> where is written down in [What is and is not verified](docs/support.en.md).
-> Try the irreversible actions — deleting files, killing processes — on a throwaway server first.
->
-> The documentation is primarily maintained in Korean; this file is kept in step with it.
+## What it does
 
-## Five principles
+Connect to a server over SSH once, and all of this is in the same window.
 
-1. **Zero server install.** No agent, no daemon, no package. What is left on the server is whatever you asked it to do
-2. **SSH only.** The SSH port you already have open. No web server, no relay
-3. **Nothing hidden.** Every command the GUI runs shows up verbatim in the Command Log. sudo is never added behind your back — it asks
-4. **No account, no telemetry, open source.** Nothing to sign up for, nothing collected, all source public
-5. **Lightweight.** Not Electron. A 6 MB download, 15 MB installed, cold start under a second (measured on v2.2.0; the macOS build is an Intel/ARM universal binary, so 12 MB and 29 MB there)
+| | |
+|---|---|
+| **Files** | Browse, upload, download, transfer whole folders. An interrupted transfer resumes |
+| **Editing** | A syntax-highlighting editor that shows you the difference from what is on the server before it saves |
+| **Services · processes · containers** | systemd units and Windows services, a task-manager-style process table, Docker and Podman containers and Compose projects |
+| **Monitoring** | CPU, memory, disk, network and NVIDIA GPUs, with trends over time and system events |
+| **Security · sessions** | Firewall and fail2ban status, who is connected right now, a summary of failed logins |
+| **Terminal** | A built-in terminal. Commands that open a file, like `vi nginx.conf`, open it in the app's editor instead |
+| **Settings sync** <sub>v2.3.0</sub> | Export your host list and approval policies as one encrypted file and take it to another machine |
 
-> One exception to the first. Saving from the editor writes a temp file in the same directory and
-> swaps it in with `rename`, so an interrupted save cannot leave the original half-written. On
-> success nothing is left behind. If the `rename` fails, the temp file's path is shown on screen and
-> the file is deliberately not deleted, which beats losing the edit.
+The full list, with the detail, is in [the feature document](docs/features.en.md).
 
-## What changed in 2.1.0
+## Why LiteDeck
 
-**Windows servers get the same tabs Linux ones do.** Until now the sessions and
-security tabs told you a Windows box could not answer. It could; the question just
-had to be asked differently.
+1. **Nothing to install on the server.** No agent, daemon or package — it works over the SSH port you already have open. What is left on the server is whatever you asked it to do
+2. **It shows you the commands it ran.** Everything you do on screen is recorded in the Command Log as the actual command. When something needs administrator rights (sudo), it asks first rather than adding it on its own
+3. **No account to sign up for.** Nothing about your use is collected, and the whole source is public
+4. **Lightweight.** Not Electron. About a 6 MB download and 15 MB installed, and it starts in under a second (measured on v2.3.0; the macOS build is an Intel/Apple Silicon universal binary, so 12 MB and 29 MB there)
 
-- **Pick a shell in the terminal** — cmd, PowerShell or WSL. A developer's machine
-  has all three, and getting cmd when you wanted PowerShell is not a matter of
-  taste: half the commands you know are not there. WSL distributions are read from
-  the registry, because `wsl -l` on a machine with none **prints its help and exits
-  zero** — parse that a line at a time and the menu offers "WSL · --online, -o"
-- **The sessions tab.** Windows OpenSSH does not create the `sshd: user@pts/0`
-  process the Linux parser reads. A session is the sshd child owned by the account
-  that logged in, and the client address comes from the OpenSSH event log rather
-  than the socket table, which attributes every connection on port 22 to the
-  listener. Ending one is `taskkill /F /T`, the whole tree: kill the single process
-  and the shell under it survives and the client stays connected
-- **The security tab.** Three firewall profiles with the one your live network is
-  in marked, the inbound rules that open a port (**with the ones something is
-  actually behind at the top**), the account lockout policy, Defender, and who is
-  knocking. Account lockout stands where fail2ban does, and **how it is weaker is
-  on the screen** — it locks the account, not the address, so an attack working
-  through account names never trips it
-- **The window it read is stated honestly.** The Windows OpenSSH log is circular
-  and 1 MB. On a measured server taking a password attack, 2,343 records covered
-  **77 minutes**. Calling that "the last 24 hours" makes an attack that has run all
-  day look like it just started, so the oldest record still in the log is what the
-  screen says instead
-- **A column nothing fills is not drawn.** Windows has no terminal device and no
-  idle time, and neither does a container that writes no utmp. Six columns of
-  dashes read as a broken table, not an honest one
-
-
-## Claude works your servers through this app
-
-MCP clients like Claude Code and Claude Desktop **sit where the GUI sat**: the same adapter, the same
-already-authenticated SSH connection, the same Command Log. They get 12 read tools and 6 write tools,
-and **file changes are held for approval by default** — the dialog shows a diff against what is on the
-server right now, which is information no client has. Per host you can raise that to confirming
-everything. The policy is owned by the app and cannot be relaxed from the client side. Files MCP
-changed can be rolled back, and nothing is installed on the server.
-
-**Running commands can be granted too** <sub>v1.7.0</sub> — anything the GUI cannot express
-eventually needs it. Like deleting, it is **enabled per server and off by default**. Once on it
-follows the same approval policy as every other write tool: if you mean to let it drive, the
-commands travel with everything else. Singling them out for a permanent prompt would empty the
-relaxed modes of meaning.
-
-```bash
-claude mcp add --transport http litedeck http://127.0.0.1:<port>/mcp \
-  --header "Authorization: Bearer <token>"
-```
-
-→ [MCP integration](docs/mcp.en.md)
-
-## Install
+## Install and connect
 
 Grab a build from the [releases page](https://github.com/cpprhtn/LiteDeck/releases).
 
@@ -136,23 +85,65 @@ Grab a build from the [releases page](https://github.com/cpprhtn/LiteDeck/releas
 > That is also why the first launch trips macOS Gatekeeper and Windows SmartScreen. How to get past
 > both is in [Install and server setup](docs/install.en.md).
 
-**Use it from a browser — server mode.** There is also a headless build you put on one server and
-open in a browser instead of running the desktop app — `litedeck-server-linux-amd64.tar.gz` ·
-`litedeck-server-linux-arm64.tar.gz`. Like Grafana, you just open a URL. Running it, exposing it and
-login are covered in [server mode](docs/server-mode.en.md).
+**First connection**
+
+1. Open the app and press **+ Add** at the top left. If you use `~/.ssh/config`, **Import** brings those hosts in at once
+2. Enter the address, the user and how to log in (SSH agent, key file or password)
+3. The first time you connect to a server, you are asked to confirm its host key fingerprint. Confirm it and the server's tabs open
 
 **On the server side.** Linux needs nothing if you can already SSH into it. Windows needs the OpenSSH
 server switched on. To reach a machine at home from outside, a mesh VPN beats opening a port on your
 router — [preparing the server](docs/install.en.md#preparing-the-server) ·
 [reaching it over Tailscale](docs/remote-access.en.md)
 
-## When this is the right tool
+**Use it from a web browser — server mode.** Instead of the desktop app, you can put LiteDeck on one
+server and open it in a web browser — `litedeck-server-linux-amd64.tar.gz` ·
+`litedeck-server-linux-arm64.tar.gz`. In that case LiteDeck runs as a web server and has a login
+page. Running it, exposing it and setting up the login are covered in
+[server mode](docs/server-mode.en.md).
 
-- You look after **a handful of servers**, not a fleet. You read logs, restart services and fix
+## MCP — working your servers through an AI tool
+
+MCP clients such as Claude Code and Claude Desktop can read and change your servers through LiteDeck.
+They use **the same SSH connection** as the screen, and the commands they run land in **the same
+Command Log**. Nothing is installed on the server for this either.
+
+- 12 read tools and 6 write tools
+- **File changes are confirmed before they happen, by default.** The dialog shows the difference from
+  what is on the server right now. Per server, you can raise that to confirming every change
+- The approval policy is set per server in LiteDeck, and cannot be changed from the AI client's side
+- Files an AI changed can be rolled back
+- Running commands and deleting files are switched on per server, and are off by default <sub>v1.7.0</sub>.
+  Once on, they follow the same approval policy as the other write tools
+
+```bash
+claude mcp add --transport http litedeck http://127.0.0.1:<port>/mcp \
+  --header "Authorization: Bearer <token>"
+```
+
+→ [MCP integration](docs/mcp.en.md)
+
+## Where it runs
+
+> [!NOTE]
+> **Runs on macOS, Windows and Ubuntu** — all three confirmed by opening it there. What was tested
+> where is written down in [What is and is not verified](docs/support.en.md).
+> Try the irreversible actions — deleting files, killing processes — on a throwaway server first.
+>
+> The documentation is primarily maintained in Korean; this file is kept in step with it.
+
+- **Servers it manages**: Linux with systemd (Ubuntu, Debian, Raspberry Pi and so on) and Windows
+  (with the OpenSSH server). Windows servers get the sessions and security tabs; the events tab is not
+  there yet
+- **Machines it runs on**: macOS, Windows 10/11, Linux (Ubuntu 24.04 or newer)
+
+**When this is the right tool**
+
+- You run somewhere between two and six servers yourself. You read logs, restart services and fix
   config files on them
-- You do not want to **install anything else** on those servers. SSH is already open; you would
+- You do not want to install anything else on those servers. SSH is already open, and you would
   like that to be enough
-- You want a GUI, but you want to **see what it ran**
+- You want a GUI, but you still want to see what it ran
 - You are not giving up your terminal. You just want the frequent things to be a click
 
 If you need dozens of servers at once, declarative state, or a real remote development environment,
