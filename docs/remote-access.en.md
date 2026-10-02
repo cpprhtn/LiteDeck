@@ -21,7 +21,7 @@ on your home machine from a café, restart a service, edit a config and save it.
 
 ## Read this first: Tailscale needs an account
 
-LiteDeck's fourth principle is "no account, no telemetry", and **Tailscale requires an
+LiteDeck has no account to sign up for and collects nothing, but **Tailscale requires an
 account with a coordination server on their infrastructure.** Traffic itself flows
 directly between your devices over WireGuard, but the thing that tells your devices
 about each other is theirs.

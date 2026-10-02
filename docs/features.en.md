@@ -88,10 +88,28 @@ authenticated yet. The client address cannot come from the socket table, which
 attributes every connection on port 22 to the listener, so it is matched by time
 against the OpenSSH event log.
 
-**Security** — three firewall profiles, the inbound rules that open a port, the
-account lockout policy and Defender. The policy is read with `secedit /export`
-rather than `net accounts`: the latter is localised, so a parser keyed on its
-labels reads a Korean machine as having no policy at all.
+Ending a session is `taskkill /F /T`, the whole process tree. Kill the single
+process and the shell under it survives, and the client stays connected.
+
+**Security** — three firewall profiles (with the one your network is in marked),
+the inbound rules that open a port (the ones something is actually listening behind
+come first), the account lockout policy, Defender, and the addresses that tried to
+connect. The policy is read with `secedit /export` rather than `net accounts`: the
+latter is localised, so a parser keyed on its labels reads a Korean machine as
+having no policy at all.
+
+Account lockout stands where fail2ban does on Linux, and **its limit is on the
+screen too**: it locks the account, not the address, so an attack that works
+through account names never trips it.
+
+**The period the log actually covers is stated.** The Windows OpenSSH log is
+circular and 1 MB. On a real server taking a password attack, 2,343 records covered
+77 minutes. Calling that "the last 24 hours" would make an attack that ran all day
+look as if it had just started, so the oldest time still in the log is shown instead.
+
+**A column with nothing to fill it is not drawn.** Windows has no terminal device
+and no idle time, and neither does a container that writes no utmp. A column of
+dashes in every row reads as a table with information missing.
 
 **Not yet** — the events tab. The Windows event log sits where journald does, but
 nothing reads it.
@@ -145,8 +163,11 @@ neither VS Code nor vi has to be installed there, and equally **nothing opens on
 
 <p align="center"><sub>Opening a file from the tree puts a syntax-highlighted editor beside it. Pressing save brings up <b>a diff against what is on the server right now</b>.</sub></p>
 
-Once you accept it, the write goes to a temp file and swaps in with `rename`, so an interrupted
-save cannot leave the original half-written.
+Once you accept it, the write goes to a temp file in the same directory and swaps in with
+`rename`, so an interrupted save cannot leave the original half-written, and nothing is left
+behind on success. If the `rename` fails, the temp file is deliberately kept and its path is shown
+on screen — which beats losing the edit. That temp file is the one exception to writing nothing on
+the server.
 
 > For contrast: VS Code Remote-SSH installs a server on your server. `vscode-server` eating
 > memory on a small VPS is a well-known problem. If you want a real remote IDE, that is the right

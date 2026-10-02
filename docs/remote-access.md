@@ -20,7 +20,7 @@ Tailscale을 쓰면 그 셋 다 안 해도 됩니다. 두 도구의 역할이 �
 
 ## 먼저 알아둘 것: Tailscale은 계정이 필요합니다
 
-LiteDeck의 원칙 4는 "로그인 없음, 수집 없음"인데 **Tailscale은 계정이 필요하고,
+LiteDeck은 가입할 계정이 없고 아무것도 수집하지 않지만, **Tailscale은 계정이 필요하고,
 조정 서버(coordination server)가 그들 인프라입니다.** 트래픽 자체는 기기 간
 WireGuard 암호화로 직접 흐르지만, 어떤 기기가 있는지를 중개하는 곳은 그들 쪽입니다.
 
