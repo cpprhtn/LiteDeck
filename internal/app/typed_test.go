@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/cpprhtn/LiteDeck/internal/adapter"
@@ -145,6 +146,30 @@ func TestHistorySurvivesARestart(t *testing.T) {
 	// standing anywhere, and restoring the path would claim otherwise.
 	if got := again.enter("h", "t", "ls", false); got.PWD != "" {
 		t.Errorf("a path survived the session that gave it meaning: %q", got.PWD)
+	}
+}
+
+// What the terminal offers back while typing comes from here, so a password on
+// a command line has to leave masked. The ordinary line beside it must not:
+// masking everything would also pass.
+func TestTypedHistoryMasksSecrets(t *testing.T) {
+	a := &App{typed: newTypedLog(t.TempDir())}
+	a.typed.enter("h", "t", "mysql -uroot -pS3cretPass1 -e status", false)
+	a.typed.enter("h", "t", "ss -plnt", false)
+
+	rows := a.TypedHistory("h")
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2", len(rows))
+	}
+	if strings.Contains(rows[1].Command, "S3cretPass1") || !strings.Contains(rows[1].Command, "••••") {
+		t.Errorf("password left in: %q", rows[1].Command)
+	}
+	if rows[0].Command != "ss -plnt" {
+		t.Errorf("an ordinary line was changed: %q", rows[0].Command)
+	}
+	// Only the copy handed out is masked; the log itself is this machine's.
+	if got := a.typed.list("h")[1].Command; !strings.Contains(got, "S3cretPass1") {
+		t.Errorf("the stored line was masked too: %q", got)
 	}
 }
 

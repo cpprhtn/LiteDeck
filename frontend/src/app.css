@@ -1909,9 +1909,46 @@ button.danger {
   visibility: visible;
 }
 .term-pane {
+  position: relative;
   width: 100%;
   height: 100%;
   padding: var(--sp-2) var(--sp-3);
+}
+/* The suggestions above the prompt. A picture over the terminal, never text
+   in it — see TerminalPane. */
+.term-suggest {
+  position: absolute;
+  z-index: 30;
+  max-width: calc(100% - var(--sp-2));
+  padding: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-2);
+  color: var(--fg-muted);
+  user-select: none;
+}
+.term-suggest[hidden] {
+  display: none;
+}
+.term-suggest-item {
+  overflow: hidden;
+  padding: 0 var(--sp-2);
+  border-radius: var(--radius-sm);
+  white-space: pre;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.term-suggest-item:hover {
+  background: var(--bg-hover);
+}
+.term-suggest-item.picked {
+  background: var(--bg-selected);
+  color: var(--fg);
+}
+.term-suggest-typed {
+  color: var(--fg);
+  font-weight: 600;
 }
 
 /* Split panes. Each is placed absolutely from the layout tree rather than
@@ -2031,6 +2068,15 @@ button.danger {
   align-items: center;
   gap: var(--sp-2);
   font-size: var(--text-sm);
+}
+.term-settings-group {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-top: var(--sp-1);
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--border);
 }
 
 /* A tab the server cannot serve is still reachable; the panel says why. */

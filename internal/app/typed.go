@@ -305,11 +305,20 @@ func (a *App) learnHome(hostID string) {
 }
 
 // TypedHistory is what was typed in this app's terminal on a host, newest first.
+//
+// Masked on the way out, the way the shell and sudo histories are. These lines
+// are offered back as suggestions while typing, unasked, on whatever screen is
+// being shared at the time; a password typed on a command line must not be one
+// of them. The file keeps the line as typed — it is this machine's own record.
 func (a *App) TypedHistory(hostID string) []TypedCommand {
 	if a.typed == nil {
 		return []TypedCommand{}
 	}
-	return a.typed.list(hostID)
+	rows := a.typed.list(hostID)
+	for i := range rows {
+		rows[i].Command, _ = adapter.MaskSecrets(rows[i].Command)
+	}
+	return rows
 }
 
 // TerminalCwd is where a terminal session is standing, as far as this can tell.
