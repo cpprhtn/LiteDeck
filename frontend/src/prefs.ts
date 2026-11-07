@@ -44,6 +44,10 @@ export interface Prefs {
   termCopyOnSelect: boolean
   /** Colour scheme; see termThemes.ts. */
   termTheme: string
+  /** Suggest the rest of a line from what was run on this host before. */
+  termSuggestHistory: boolean
+  /** Suggest the rest of a line from a list of common Linux commands. */
+  termSuggestCommands: boolean
   /** Width of the detail panel on the AI work screen, in px. A diff wants
    *  room; a long session wants the graph to have it instead. */
   aiDetailWidth: number
@@ -69,6 +73,8 @@ export const DEFAULTS: Prefs = {
   termLigatures: false,
   termCopyOnSelect: false,
   termTheme: 'app',
+  termSuggestHistory: true,
+  termSuggestCommands: true,
   aiDetailWidth: 400,
 }
 

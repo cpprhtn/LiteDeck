@@ -79,6 +79,12 @@ export class LineWatcher {
     return this.buf === '' && !this.blind
   }
 
+  /** The line as typed so far, or null once the shell has done something to it
+   *  this side cannot follow. */
+  get line(): string | null {
+    return this.blind ? null : this.buf
+  }
+
   /**
    * Called for every completed line, whether or not it could be read.
    *
@@ -127,6 +133,14 @@ export class LineWatcher {
     // Backspace, the one edit that can be tracked exactly.
     if (data === '\x7f' || data === '\b') {
       this.buf = this.buf.slice(0, -1)
+      return null
+    }
+    // Ctrl-C throws the line away and the shell starts a fresh one — in bash,
+    // zsh, fish, cmd.exe and PowerShell alike. Nothing ran, so nothing to
+    // report, but the next line is one this side can follow again.
+    if (data === '\x03') {
+      this.buf = ''
+      this.blind = false
       return null
     }
     // Anything else the shell will act on rather than insert. Escape sequences

@@ -29,6 +29,7 @@ import { onThemeChange } from './theme'
 import { isWebMode } from './webTransport'
 import { TERM_THEMES, termTheme } from './termThemes'
 import { onTermAction, type TermAction } from './termCommands'
+import { historyLoaded, loadHistory, rememberLatest, suggestions } from './termSuggest'
 import {
   countPanes,
   fill,
@@ -288,6 +289,13 @@ function TerminalPane({
   const themeId = usePref('termTheme')
   const copyRef = useRef(copyOnSelect)
   copyRef.current = copyOnSelect
+  const suggestHistory = usePref('termSuggestHistory')
+  const suggestCommands = usePref('termSuggestCommands')
+  const suggestRef = useRef({ history: suggestHistory, commands: suggestCommands })
+  suggestRef.current = { history: suggestHistory, commands: suggestCommands }
+  /** Works the suggestion out again — set by the effect below, called when a
+   *  setting changes so switching a source off takes its dim text with it. */
+  const rehint = useRef<() => void>(() => {})
 
   useEffect(() => {
     if (!hostRef.current) return
@@ -330,6 +338,26 @@ function TerminalPane({
     termRef.current = term
     fitRef.current = fit
 
+    // The suggestions: likely whole lines, listed just above the prompt.
+    //
+    // An element over the terminal rather than text written into it. Writing
+    // it would put characters on the screen the shell does not know about, and
+    // the next thing the shell drew would land on top of them or behind them.
+    // The list is only ever a picture; what → sends is the rest of the
+    // picked line, typed, and the shell echoes it like anything else.
+    const list = document.createElement('div')
+    list.className = 'term-suggest'
+    list.hidden = true
+    hostRef.current.appendChild(list)
+    /** The lines on offer, the line they were worked out for, and the pick. */
+    let hints: string[] = []
+    let hintFor = ''
+    let picked = 0
+    /** Esc put the list away for this line; typing anything brings it back. */
+    let dismissedFor: string | null = null
+    /** On screen right now — the only time a key may take it. */
+    let shown = false
+
     // Copy, paste, and the pane shortcuts, which the terminal has to bind for
     // itself.
     //
@@ -350,6 +378,36 @@ function TerminalPane({
         return false
       }
       if (e.type !== 'keydown') return true
+      // The list's keys while it is showing, and only then: with no list on
+      // the screen they are the shell's keys as always. ↑ ↓ pick only when
+      // there is something to pick between — with one line on offer, ↑ is
+      // still the shell's history.
+      //
+      // Not Tab. Tab is the shell's completion, and with history on there is a
+      // list up for nearly every prefix: taking it there turned `cd /us` into
+      // a whole remembered line instead of `cd /usr/`. → ends the line in every
+      // shell, so taking it costs nothing the shell would have done.
+      if (shown && hints.length && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && !e.isComposing) {
+        if (e.key === 'ArrowRight') {
+          e.preventDefault()
+          take(picked)
+          return false
+        }
+        if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && hints.length > 1) {
+          e.preventDefault()
+          const step = e.key === 'ArrowUp' ? -1 : 1
+          picked = (picked + step + hints.length) % hints.length
+          draw()
+          return false
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          dismissedFor = hintFor
+          hints = []
+          place()
+          return false
+        }
+      }
       const mac = getPlatform().isMac
       const combo = mac
         ? e.metaKey && !e.ctrlKey && !e.altKey
@@ -446,7 +504,10 @@ function TerminalPane({
     // tracked directory its confidence. Failures are swallowed: a history that
     // cannot be written is not a reason to break the terminal.
     typed.onEnter = ({ line, blind }) => {
-      void TypedEntered(info.hostId, info.id, line, blind).catch(() => {})
+      const entered = TypedEntered(info.hostId, info.id, line, blind).catch(() => {})
+      // The line as Go hands it back, not as typed: Go masks what looks like a
+      // password, and the suggestions must never offer one.
+      if (!blind && line) void entered.then(() => rememberLatest(info.hostId))
     }
     // Keystrokes go to the server one write at a time, in order.
     //
@@ -478,6 +539,117 @@ function TerminalPane({
 
     // Where on the screen the line being typed began, for reading it back.
     let lineStart: { x: number; y: number } | null = null
+
+    /** Fills the list in, the picked line marked. */
+    const draw = () => {
+      list.replaceChildren(
+        ...hints.map((line, n) => {
+          const item = document.createElement('div')
+          item.className = n === picked ? 'term-suggest-item picked' : 'term-suggest-item'
+          const head = document.createElement('span')
+          head.className = 'term-suggest-typed'
+          head.textContent = hintFor
+          const rest = document.createElement('span')
+          rest.textContent = line.slice(hintFor.length)
+          item.append(head, rest)
+          // Down, not click: a click would take the focus off the terminal
+          // first, and the keys after it would go nowhere.
+          item.addEventListener('mousedown', (e) => {
+            e.preventDefault()
+            take(n)
+          })
+          return item
+        }),
+      )
+    }
+    /** Types the rest of the n-th line. As typing, so the watcher, the Command
+     *  Log and the history see exactly what the shell does. */
+    const take = (n: number) => {
+      const line = hints[n]
+      if (line === undefined) return
+      const rest = line.slice(hintFor.length)
+      hints = []
+      place()
+      if (rest) term.input(rest, true)
+      term.focus()
+    }
+
+    /** Puts the list above the line being typed, or takes it away.
+     *
+     *  Shown only when the screen agrees with the keystrokes: the shell has
+     *  echoed exactly what was typed. Until the echo of a far server arrives,
+     *  while a password is typed blind, inside `less` or `vim`, or while the
+     *  view is scrolled back, it stays away. */
+    const place = () => {
+      const b = term.buffer.active
+      const screen = hostRef.current?.querySelector<HTMLElement>('.xterm-screen')
+      const host = hostRef.current
+      const ok =
+        hints.length > 0 &&
+        !!screen &&
+        !!host &&
+        !!lineStart &&
+        b.type === 'normal' &&
+        b.viewportY === b.baseY &&
+        readBack(term, lineStart) === hintFor.trimEnd()
+      if (!ok || !screen || !host || !lineStart) {
+        if (shown) list.hidden = true
+        shown = false
+        return
+      }
+      const sr = screen.getBoundingClientRect()
+      const hr = host.getBoundingClientRect()
+      const cw = sr.width / term.cols
+      const ch = sr.height / term.rows
+      const s = list.style
+      s.fontFamily = term.options.fontFamily ?? ''
+      s.fontSize = `${term.options.fontSize}px`
+      s.lineHeight = `${Math.round(ch)}px`
+      if (!shown) draw()
+      list.hidden = false
+      shown = true
+      // Under where the typing began when that is on this row; a line that
+      // has wrapped starts the list at the left edge.
+      const row = b.cursorY
+      const startRow = lineStart.y - b.baseY
+      const col = startRow === row ? lineStart.x : 0
+      const top = sr.top - hr.top + row * ch
+      const h = list.offsetHeight
+      const w = list.offsetWidth
+      // Above the line, where it covers output already read. Below when the
+      // prompt sits too near the top for that.
+      s.top = `${top - h >= 0 ? top - h - 2 : top + ch + 2}px`
+      s.left = `${Math.max(0, Math.min(sr.left - hr.left + col * cw, hr.width - w - 4))}px`
+    }
+    /** Works out the suggestions for the line as it now stands. */
+    const refresh = () => {
+      const line = typed.line
+      const want = suggestRef.current
+      if (want.history && !historyLoaded(info.hostId)) {
+        // The first keystroke on a host starts the read. When it lands, the
+        // line still being typed gets the history it was missing.
+        void loadHistory(info.hostId).then(() => {
+          if (typed.line === hintFor && hintFor) refresh()
+        })
+      }
+      if (line !== hintFor) dismissedFor = null
+      hintFor = line ?? ''
+      hints =
+        line && line !== dismissedFor
+          ? suggestions(info.hostId, line, {
+              history: want.history,
+              // The list is Linux's. cmd.exe and PowerShell have their own words.
+              commands: want.commands && posixRef.current,
+            })
+          : []
+      picked = 0
+      // Drawn again on every change: same length is not same lines.
+      if (shown) draw()
+      place()
+    }
+    rehint.current = refresh
+    // Every repaint, because that is when the echo lands and the cursor moves.
+    const offRender = term.onRender(place)
     const disposeInput = term.onData((data) => {
       const buf = term.buffer.active
       const enter = data === '\r' || data === '\n'
@@ -514,6 +686,8 @@ function TerminalPane({
         // it would never arrive — the line looked empty instead of showing
         // what was run. Half a second at most; a line that never shows up is
         // not a reason to keep anybody waiting.
+        hints = []
+        place()
         void chain.then(async () => {
           const want = c.line.trim()
           for (let i = 0; i < 25; i++) {
@@ -527,6 +701,7 @@ function TerminalPane({
         return
       }
       void send(data)
+      refresh()
     })
 
     // The remote side needs to know the size or full-screen programs draw at
@@ -582,6 +757,9 @@ function TerminalPane({
       observer.disconnect()
       if (resizeTimer) clearTimeout(resizeTimer)
       disposeInput.dispose()
+      offRender.dispose()
+      list.remove()
+      rehint.current = () => {}
       offSelect.dispose()
       links.dispose()
       offTheme()
@@ -613,6 +791,10 @@ function TerminalPane({
       /* not laid out yet; the observer will fit it when it is */
     }
   }, [fontSize, lineHeight, fontFamily, themeId])
+
+  useEffect(() => {
+    rehint.current()
+  }, [suggestHistory, suggestCommands])
 
   // The keyboard follows the pane. Mounting used to do this once, at the end of
   // the effect above, which was enough back when coming back to this tab meant
@@ -717,6 +899,8 @@ function TerminalSettings({ onClose }: { onClose: () => void }) {
   const ligatures = usePref('termLigatures')
   const copyOnSelect = usePref('termCopyOnSelect')
   const theme = usePref('termTheme')
+  const suggestHistory = usePref('termSuggestHistory')
+  const suggestCommands = usePref('termSuggestCommands')
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -785,6 +969,26 @@ function TerminalSettings({ onClose }: { onClose: () => void }) {
           onChange={(e) => setPref('termCopyOnSelect', e.target.checked)}
         />
         <span>{t('선택하면 바로 복사')}</span>
+      </label>
+      <div className="term-settings-group">
+        <span className="small">{t('입력 중 추천')}</span>
+        <span className="muted small">{t('↑ ↓ 로 고르고 → 로 채웁니다')}</span>
+      </div>
+      <label className="checkbox">
+        <input
+          type="checkbox"
+          checked={suggestHistory}
+          onChange={(e) => setPref('termSuggestHistory', e.target.checked)}
+        />
+        <span>{t('이 서버의 히스토리')}</span>
+      </label>
+      <label className="checkbox">
+        <input
+          type="checkbox"
+          checked={suggestCommands}
+          onChange={(e) => setPref('termSuggestCommands', e.target.checked)}
+        />
+        <span>{t('자주 쓰는 리눅스 명령어')}</span>
       </label>
       <p className="muted small">
         {t(
