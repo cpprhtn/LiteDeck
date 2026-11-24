@@ -119,7 +119,10 @@ safe ([`internal/mcp/http.go`](../internal/mcp/http.go)).
 - **With "stop asking" on, prompt injection wins.** Text planted in a log or a file can steer the
   model, and in that mode nobody sees it in time. What remains is not defence but **attribution and
   blast radius**: everything in the Command Log, the mode expiring on its own, and the fact that it
-  is set per host
+  is set per host. Even in that mode, reading a secret file, writing files such as
+  `authorized_keys`, cron or systemd units, and commands such as shell pipes, sudo and recursive
+  deletes still go to a person ([MCP doc](mcp.en.md#what-every-mode-asks-about)). Nothing off that
+  list is held back
 - **Only files can be undone.** A service restart or a killed process has no copy behind it. Those
   are the recoverable kind, which is why they are offered; recursive directory deletion and removing
   containers or images are not offered at all
@@ -127,6 +130,7 @@ safe ([`internal/mcp/http.go`](../internal/mcp/http.go)).
   default), and with it on the default mode still asks every time. "Don't ask overnight" **does**
   cover it, though: that mode is switched on for unattended work, and stopping at the first command
   would defeat the point — and killing a process or restarting a service is just as irreversible.
+  The commands on the floor above are the exception.
   The reason it exists at all is auditing: the same command typed in the terminal tab leaves
   nothing in the Command Log, and one that goes through MCP leaves all of it. The reasoning is in
   the [MCP doc](mcp.en.md)

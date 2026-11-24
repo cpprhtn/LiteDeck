@@ -58,6 +58,44 @@ type Tool struct {
 	// sees "no such unit" corrects itself, where a transport failure just stops
 	// it (§3.3 of the design note).
 	Handler func(ctx context.Context, args map[string]any) (any, error)
+	// Annotations are the hints a client reads to decide how to treat a call —
+	// whether to auto-approve it, whether to warn. Nil sends nothing, which the
+	// protocol reads as "may be destructive": the safe default for a tool
+	// nobody classified.
+	Annotations *Annotations
+}
+
+// Annotations are MCP tool hints (2025-03-26 and later).
+//
+// They are hints for the client, never inputs to LiteDeck's own gate: a
+// client is free to ignore them and a model cannot change them, so nothing on
+// this side reads them back. What they buy is the client's half of the
+// approval story — Claude Code and others can let readOnlyHint tools through
+// without a prompt and keep theirs for the changes, which is the split the
+// approval modes already make.
+//
+// Every field is sent, false included. The protocol's defaults for an absent
+// destructiveHint and openWorldHint are true, so leaving a false out would
+// say the opposite of what was meant.
+type Annotations struct {
+	ReadOnly    bool `json:"readOnlyHint"`
+	Destructive bool `json:"destructiveHint"`
+	Idempotent  bool `json:"idempotentHint"`
+	// OpenWorld is false for every LiteDeck tool: each one reaches a server the
+	// user registered and shared, not the internet at large.
+	OpenWorld bool `json:"openWorldHint"`
+}
+
+// ReadOnly is the annotation for a tool that only reads.
+func ReadOnly() *Annotations {
+	return &Annotations{ReadOnly: true, Idempotent: true}
+}
+
+// Changes is the annotation for a tool that changes a server. idempotent is
+// whether repeating the same call is harmless — start and stop are, a restart
+// or a shell line is not.
+func Changes(destructive, idempotent bool) *Annotations {
+	return &Annotations{Destructive: destructive, Idempotent: idempotent}
 }
 
 // Server speaks MCP. Transport is separate (see http.go).
@@ -197,11 +235,15 @@ func (s *Server) toolList() []map[string]any {
 	tools := s.Tools()
 	out := make([]map[string]any, 0, len(tools))
 	for _, t := range tools {
-		out = append(out, map[string]any{
+		entry := map[string]any{
 			"name":        t.Name,
 			"description": t.Description,
 			"inputSchema": t.InputSchema,
-		})
+		}
+		if t.Annotations != nil {
+			entry["annotations"] = t.Annotations
+		}
+		out = append(out, entry)
 	}
 	return out
 }

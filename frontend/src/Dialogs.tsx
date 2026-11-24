@@ -12,7 +12,7 @@ import {
   SetMCPHostDelete,
   SetMCPHostExec,
 } from './ipc'
-import { t } from './i18n'
+import { k, t } from './i18n'
 
 // The diff is the largest thing this dialog can show and most approvals never
 // need it, so it arrives with the first file write rather than at startup.
@@ -208,6 +208,7 @@ export function McpWriteDialog({
   }
 
   if (prompt.grant) return <McpGrantDialog prompt={prompt} answer={answer} denyRef={deny} />
+  if (prompt.tool === 'fs_read') return <McpSecretReadDialog prompt={prompt} answer={answer} denyRef={deny} />
 
   const isFileWrite = prompt.after !== undefined && prompt.path
   // A command follows the same modes as everything else here — the switch that
@@ -230,6 +231,8 @@ export function McpWriteDialog({
         </p>
 
         <p className="warn-text">{prompt.summary}</p>
+
+        <McpGuardNote prompt={prompt} />
 
         {prompt.command && (
           <>
@@ -259,15 +262,22 @@ export function McpWriteDialog({
             {t('거부')}
           </button>
           <span className="spacer" />
-          <button className="ghost" onClick={() => allowFor(60)}>
-            {t('허용 후 1시간 동안 묻지 않기')}
-          </button>
-          {/* The overnight option exists because that is when people actually
-              leave an agent running. An hour expiring at 3am blocks everything
-              until morning, which reads as the feature being broken. */}
-          <button className="ghost" onClick={() => allowFor(8 * 60)}>
-            {t('허용 후 8시간 동안 묻지 않기')}
-          </button>
+          {/* Left out for a guarded request: the relaxed mode does not cover
+              it, so offering to stop asking would be offering nothing — and
+              the next one would arrive as if the button had been broken. */}
+          {!prompt.guard && (
+            <>
+              <button className="ghost" onClick={() => allowFor(60)}>
+                {t('허용 후 1시간 동안 묻지 않기')}
+              </button>
+              {/* The overnight option exists because that is when people actually
+                  leave an agent running. An hour expiring at 3am blocks everything
+                  until morning, which reads as the feature being broken. */}
+              <button className="ghost" onClick={() => allowFor(8 * 60)}>
+                {t('허용 후 8시간 동안 묻지 않기')}
+              </button>
+            </>
+          )}
           <button className="danger" onClick={() => answer(true)}>
             {t('이번만 허용')}
           </button>
@@ -320,6 +330,8 @@ function McpGrantDialog({
             : t('이 서버는 AI의 명령 실행이 꺼져 있습니다(기본값). 허용할까요?')}
         </p>
 
+        <McpGuardNote prompt={prompt} />
+
         {del && prompt.path ? (
           <>
             {/* The file as it stands, not a diff: the save dialog's diff
@@ -353,6 +365,75 @@ function McpGrantDialog({
           {del
             ? t('지우기 전의 내용은 이 컴퓨터에 보관되어 AI 작업 화면에서 되돌릴 수 있습니다. 「계속 허용」은 MCP 연동 › 권한에서 다시 끌 수 있습니다.')
             : t('명령의 효과는 되돌릴 수 없습니다. 「계속 허용」은 MCP 연동 › 권한에서 다시 끌 수 있고, 켜 둔 뒤에도 실행 전에 묻는지는 변경 승인 모드를 따릅니다.')}
+        </p>
+      </div>
+    </Scrim>
+  )
+}
+
+/**
+ * Why a request is asked about in every approval mode (mcp_guard.go in Go).
+ *
+ * Said in so many words because this dialog arrives even after somebody chose
+ * "stop asking", and a dialog that seems to ignore that choice reads as a bug
+ * unless it explains itself.
+ */
+const GUARD_TEXT: Record<NonNullable<MCPWritePrompt['guard']>, string> = {
+  secret: k('키·토큰·비밀번호가 담겼을 수 있는 파일입니다. 내용이 AI 쪽으로 넘어가면 되돌릴 수 없습니다.'),
+  foothold: k('접속 권한이나 나중에 저절로 실행될 것을 정하는 파일입니다. 바뀐 뒤 알아챌 때까지 그대로 효력이 있습니다.'),
+  opaque: k('실행될 내용이 이 줄에 다 보이지 않습니다 — 다른 곳에서 받아 오거나 풀어낸 코드를 셸에 넘깁니다.'),
+  root: k('root 권한을 요청합니다. 이 서버가 비밀번호 없는 sudo를 허용한다면 그대로 root로 실행됩니다.'),
+  destructive: k('되돌릴 수 없고 서비스 하나의 범위를 넘는 변경입니다 — 루트·홈 재귀 삭제, 디스크 포맷, 서버 종료 같은 것입니다.'),
+}
+
+function McpGuardNote({ prompt }: { prompt: MCPWritePrompt }) {
+  if (!prompt.guard) return null
+  return (
+    <div className="mcp-guard">
+      <strong>{t('묻지 않기 모드에서도 항상 확인하는 항목입니다')}</strong>
+      <p>{t(GUARD_TEXT[prompt.guard])}</p>
+      {prompt.guardDetail && <code className="mono selectable">{prompt.guardDetail}</code>}
+    </div>
+  )
+}
+
+/**
+ * A file that probably holds a credential, about to be read (askToRead in Go).
+ *
+ * Its own dialog rather than the write one: nothing on the server changes, so
+ * "the MCP client wants to change the server" would be false, and there is no
+ * diff to show. What there is to say is where the contents go once allowed.
+ */
+function McpSecretReadDialog({
+  prompt,
+  answer,
+  denyRef,
+}: {
+  prompt: MCPWritePrompt
+  answer: (approved: boolean) => void
+  denyRef: React.RefObject<HTMLButtonElement | null>
+}) {
+  return (
+    <Scrim clickAway={false} onClose={() => answer(false)}>
+      <div className="dialog mcp-approve">
+        <h2>{t('AI가 비밀이 담겼을 수 있는 파일을 읽으려 합니다')}</h2>
+        <p className="muted">{prompt.host}</p>
+        <label className="muted small">{t('읽을 파일')}</label>
+        <code className="mono mcp-command selectable">{prompt.path}</code>
+        <p className="warn-text">
+          {t('허용하면 파일 내용이 MCP 클라이언트로 넘어가 AI의 대화 기록에 남습니다. 서버에서는 아무것도 바뀌지 않지만, 넘어간 내용은 되돌릴 수 없습니다.')}
+        </p>
+        <div className="dialog-actions mcp-approve-actions">
+          <button ref={denyRef} onClick={() => answer(false)}>
+            {t('거부')}
+          </button>
+          <span className="spacer" />
+          <button className="danger" onClick={() => answer(true)}>
+            {t('이번만 허용')}
+          </button>
+        </div>
+        <p className="muted small">
+          {t('이 확인은 승인 모드와 상관없이 뜹니다. 개인키·.env·키 저장소 같은 파일만 해당합니다.')}
         </p>
       </div>
     </Scrim>

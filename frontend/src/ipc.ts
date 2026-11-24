@@ -77,6 +77,11 @@ export interface MCPWritePrompt {
   /** Set when the tool is switched off for this host and the dialog is asking
    *  whether to allow it at all: 'delete' or 'exec'. */
   grant?: 'delete' | 'exec'
+  /** Set when this is asked about in every approval mode (mcp_guard.go in Go):
+   *  what kind of thing it is, and the part of the path or command that made it
+   *  one. "Stop asking" does not cover these, so the dialog leaves it out. */
+  guard?: 'secret' | 'foothold' | 'opaque' | 'root' | 'destructive'
+  guardDetail?: string
 }
 
 export interface WritePolicyView {

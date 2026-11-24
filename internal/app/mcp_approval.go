@@ -126,6 +126,11 @@ type MCPWritePrompt struct {
 	// "exec" — and the dialog is asking whether to allow it at all. See
 	// askGrant.
 	Grant string `json:"grant,omitempty"`
+	// Guard is set when this is asked about in every mode — one of the guard*
+	// kinds in mcp_guard.go — and GuardDetail is the part that tripped it. The
+	// dialog says why, and leaves out "stop asking", which would not cover it.
+	Guard       string `json:"guard,omitempty"`
+	GuardDetail string `json:"guardDetail,omitempty"`
 }
 
 // writeRequest is what a write tool hands the gate.
@@ -142,6 +147,9 @@ type writeRequest struct {
 	after   string
 	// grant marks a request for a switch that is off; see askGrant.
 	grant string
+	// guard is set by guardFor when the request is below the floor every mode
+	// shares.
+	guard guardReason
 }
 
 // approvalOutcome is why a write did or did not run. It reaches the model, so
@@ -200,6 +208,12 @@ func (a *App) policyFor(hostID string) config.MCPWritePolicy {
 // approveWrite is the gate every write tool passes through.
 func (a *App) approveWrite(req writeRequest) (out approvalOutcome, err error) {
 	defer func() { aiNoteFrom(req.ctx).setApproval(out, req.command) }()
+	// The floor comes before the mode, so no mode can be below it. See
+	// mcp_guard.go for what is on it and why.
+	if g := guardFor(req); g.any() {
+		req.guard = g
+		return a.askGuarded(req)
+	}
 	policy := a.policyFor(req.hostID)
 	if !asksAbout(policy.Mode, req.tool) {
 		a.log.AIWrite(req.hostID, req.summary, string(outcomeAuto))
@@ -225,6 +239,9 @@ func (a *App) approveWrite(req writeRequest) (out approvalOutcome, err error) {
 func (a *App) askGrant(req writeRequest, grant string) (out approvalOutcome, err error) {
 	defer func() { aiNoteFrom(req.ctx).setApproval(out, req.command) }()
 	req.grant = grant
+	// Asked anyway, but the person should still be told when the command is
+	// one of the kinds the floor exists for.
+	req.guard = guardFor(req)
 	out, err = a.askPerson(req)
 	if err == nil {
 		return out, nil
@@ -241,6 +258,39 @@ func (a *App) askGrant(req writeRequest, grant string) (out approvalOutcome, err
 	return out, fmt.Errorf("%s is switched off for this server, and the user chose not to allow "+
 		"it for this request. Do not retry; ask them what they want instead. It cannot be enabled "+
 		"from here", what)
+}
+
+// askGuarded asks about a request below the floor, and says so in the answer
+// when the person does not approve it.
+//
+// The explanation matters more than it looks. An agent told only "declined"
+// in the relaxed mode reasonably concludes the mode was not what the user
+// thought, and asks them to relax it further — which would change nothing.
+func (a *App) askGuarded(req writeRequest) (approvalOutcome, error) {
+	out, err := a.askPerson(req)
+	if err != nil {
+		return out, fmt.Errorf("%v. %s", err, req.guard.forModel())
+	}
+	return out, nil
+}
+
+// askToRead is the floor for fs_read: a file that probably holds a secret is
+// shown to the person before its contents go to the client.
+//
+// Reads never ask otherwise, and there is no mode for them, so this is the
+// whole of it. It goes through the same dialog bridge as the writes so a web
+// client that reconnects is asked again, and through the same log line so the
+// decision is on record next to the read it allowed.
+func (a *App) askToRead(ctx context.Context, hostID, path string, g guardReason) (out approvalOutcome, err error) {
+	defer func() { aiNoteFrom(ctx).setApproval(out, "") }()
+	return a.askGuarded(writeRequest{
+		ctx:     ctx,
+		hostID:  hostID,
+		tool:    "fs_read",
+		summary: "read " + path,
+		path:    path,
+		guard:   g,
+	})
 }
 
 // askPerson puts a change in front of the user and waits for the answer.
@@ -267,6 +317,7 @@ func (a *App) askPerson(req writeRequest) (approvalOutcome, error) {
 		Summary: req.summary, Command: req.command,
 		Path: req.path, Before: req.before, After: req.after,
 		Grant: req.grant,
+		Guard: req.guard.Kind, GuardDetail: req.guard.Detail,
 	}
 	a.approvals.mu.Lock()
 	if a.approvals.pending == nil {

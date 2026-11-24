@@ -63,12 +63,14 @@ This used to be on the deliberately-absent list. Three things took it off.
   Command Log. One that goes through MCP leaves the tool call, the command itself and its exit
   code. Refusing to run commands was reducing the record, not protecting it
 - **The line was already nominal.** `fs_write` can write `~/.bashrc` or `~/.ssh/authorized_keys`,
-  which is arbitrary code on the next login
+  which is arbitrary code on the next login. Writes like that are now on
+  [what every mode asks about](#what-every-mode-asks-about)
 
 **Approval follows the same modes as every other write tool.** The default asks before a command:
 `svc_control(restart, nginx.service)` is fully described by the call the client already showed, and
 a shell line is not — the dialog is the only place a person reads it. Turn on "don't ask overnight"
-and commands go through with everything else.
+and commands go through with everything else — except the ones under
+[what every mode asks about](#what-every-mode-asks-about).
 
 The first cut put commands outside the modes and made them always ask. That broke the split this
 page sets out — the toggle answers *does the tool exist*, the mode answers *does it interrupt you*
@@ -77,9 +79,36 @@ anywhere. Being irreversible is not what separates it either: `proc_signal` (KIL
 `svc_control` are equally irreversible and the modes already cover them.
 
 **What does not change is undo.** A command leaves no copy, so it never appears in the Changed
-files tab, and the dialog says so. `run_command` has no sudo and no way to ask for it — it runs as
-the login user with no tty, so anything wanting a password fails instead of waiting. What an
-arbitrary shell line would do with root is not bounded by anything.
+files tab, and the dialog says so. LiteDeck hands `run_command` no sudo password and there is no
+way to ask for one — it runs as the login user with no tty, so anything wanting a password fails
+instead of waiting. What an arbitrary shell line would do with root is not bounded by anything. A
+server that allows sudo without a password is the exception, so a line with sudo in it is asked
+about in every mode.
+
+### What every mode asks about
+
+"Don't ask" means **an allowed change does not stop anyone.** That is right for restarting nginx or
+editing its config: the change ends inside the server you had in mind, and a file can be put back.
+Three kinds of call do not end there, so they **raise the dialog even in the "don't ask" mode.**
+None of them are refused — adding a deploy key may be exactly what you wanted — but a person has to
+see it.
+
+| Kind | What | Why |
+|---|---|---|
+| Secrets | `fs_read` of a private key (`~/.ssh/id_*`, `ssh_host_*_key`), a `.env`, a key store such as `*.pem`/`*.key`, `~/.aws/credentials`, `.pgpass` and the like; `fs_write` over one; a command that touches one | The contents go to the client's transcript and the model provider. Undo does not reach them |
+| Footholds | Writing or deleting `authorized_keys`, `sudoers`, cron, systemd units, `sshd_config`, `pam.d`, `ld.so.preload` or a shell startup file such as `~/.bashrc`; a command that touches them, or runs `useradd`, `crontab` or `systemctl enable` | They outlast the session and run, or let someone in, when nobody is watching. The file can be restored, but what happened before anyone noticed stays done |
+| Commands | Pipes into a shell (`curl … \| sh`, `base64 -d \| bash`), `eval`, `bash <(…)`, `sudo`, `su`, `doas`, recursive deletes or `chmod -R` of `/`, a home directory or a protected path, `mkfs`, `dd of=/dev/…`, `shutdown`, `reboot` | What runs is not on the line, it reaches beyond one service, or it runs as root |
+
+LiteDeck never hands `run_command` a sudo password, but **on a server that allows sudo without one,
+it simply runs as root.** That is why sudo is on this list.
+
+This is **a floor, not a classifier.** Being on it does not refuse a call, and being off it does
+not let one run unasked — the default mode still asks about every command. A command hidden behind
+quoting or variables can slip past, and then things are exactly as they were before this existed.
+It can also fire on a line that only reads, such as `crontab -l`; the cost of that is one dialog in
+the "don't ask" mode. That dialog has no "stop asking" buttons, because they would not cover it.
+The answer the AI gets says that relaxing the mode would not change anything, so it does not ask
+you to relax it further.
 
 ## The AI work screen
 
@@ -166,6 +195,8 @@ those first, so nothing could put them back.
 | Change approval | **Only file changes are confirmed** by default, because the dialog shows a diff against what is on the server right now, which is information no client has. A restart just runs; the client already showed you the same thing |
 | Per host | A badge in the header: **ask always / files only / don't ask overnight**. While it is not asking the badge stays red, and the window **reverts on its own** |
 | Not settable remotely | No tool flips that switch and no parameter relaxes it. **A model has no way to request its own approval** |
+| A floor under the modes | Reading a secret, writing a file that grants access or runs later, and commands such as shell pipes, sudo and recursive deletes **are asked about even in the "don't ask" mode.** See [what every mode asks about](#what-every-mode-asks-about) |
+| Tool hints | Every tool sends MCP `annotations` (`readOnlyHint` and the rest), so a client can run the 12 reads without a prompt and keep its own for the 6 changes. They are hints only; LiteDeck's approval never reads them |
 | Reading ≠ writing | Sharing a server to be read does not make it changeable |
 | Binding | `127.0.0.1` only. No setting exposes it on another interface |
 | Auth | Bearer token, stored in settings, changed only by the rotate button |
