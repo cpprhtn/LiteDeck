@@ -85,7 +85,8 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 	// A change the user has to look at is described the way they would describe
 	// it, not the way the protocol does.
 	s.Register(mcp.Tool{
-		Name: "svc_control",
+		Name:        "svc_control",
+		Annotations: mcp.Changes(true, false),
 		Description: "Start, stop or restart a systemd unit or Windows service. Whether the " +
 			"user is asked first is their setting for this host: in the default mode this " +
 			"runs without a prompt, and every call appears in the app's Command Log either " +
@@ -130,7 +131,8 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 	})
 
 	s.Register(mcp.Tool{
-		Name: "container_control",
+		Name:        "container_control",
+		Annotations: mcp.Changes(true, false),
 		Description: "Start, stop or restart a container. Removal is not offered: it cannot be " +
 			"undone, and this tool set stays on the recoverable side of that line. " +
 			"Runs as root when the user has the sudo lock open for this host in " +
@@ -167,7 +169,8 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 	})
 
 	s.Register(mcp.Tool{
-		Name: "proc_signal",
+		Name:        "proc_signal",
+		Annotations: mcp.Changes(true, false),
 		Description: "Send TERM or KILL to a process. TERM first: KILL gives the process no " +
 			"chance to flush what it was writing. " +
 			"Runs as root when the user has the sudo lock open for this host in " +
@@ -213,9 +216,13 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 	})
 
 	s.Register(mcp.Tool{
-		Name: "fs_write",
+		Name:        "fs_write",
+		Annotations: mcp.Changes(true, true),
 		Description: "Replace a text file's contents. The user sees a diff against what is on " +
-			"the server right now before approving. Read the file first: this replaces the " +
+			"the server right now before approving. Files that grant access or run later — " +
+			"authorized_keys, sudoers, cron, systemd units, shell startup files such as " +
+			"~/.bashrc — and files holding a credential are shown to them in every approval " +
+			"mode. Read the file first: this replaces the " +
 			"whole file, it does not patch it. An answer carrying inPlace: true means the " +
 			"write could not be made atomic and the file was overwritten in place — it " +
 			"succeeded, but it was not crash-safe, and the user should be told.",
@@ -308,7 +315,8 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 	})
 
 	s.Register(mcp.Tool{
-		Name: "fs_delete",
+		Name:        "fs_delete",
+		Annotations: mcp.Changes(true, true),
 		Description: "Delete a single file. Directories are not accepted — a recursive delete " +
 			"is not something to do without looking at it, and it stays in the app. The file's " +
 			"contents are kept locally first, so the user can put it back. Deleting is off per " +
@@ -397,18 +405,26 @@ func (a *App) registerMCPWriteTools(s *mcp.Server) {
 	})
 
 	s.Register(mcp.Tool{
-		Name: "run_command",
+		Name:        "run_command",
+		Annotations: mcp.Changes(true, false),
 		Description: "Run a shell command on the server and return its output. Off unless the " +
 			"user turned it on for that server — where it is off, LiteDeck asks them (showing the " +
 			"command) and the call waits — and by default they are asked before each one. " +
 			"Nothing it does can be undone — no copy is kept, the way one is for a file write. " +
-			"There is no sudo here, and there is no way to ask for it: the command runs as the " +
-			"login user with no terminal attached, so anything that wants a password fails rather " +
-			"than waiting. The narrower tools do run as root while the user has the sudo lock " +
-			"open — an arbitrary shell line does not, because what it would do with root is not " +
-			"bounded by anything. Prefer the narrower tools " +
-			"when one of them answers the question: they are cheaper, they read as intent in the " +
-			"user's Command Log, and they cannot go wrong in a way nobody expected.",
+			"The command runs as the login user with no terminal and no stdin, so anything that " +
+			"prompts fails or hangs until the timeout. Write it to finish on its own: -y, " +
+			"--yes or --non-interactive where the program has one; --no-pager, or PAGER=cat " +
+			"and SYSTEMD_PAGER=cat; journalctl -n 200 rather than -f; ping -c 4; no editors, " +
+			"REPLs, top or nested shells. " +
+			"LiteDeck does not hand sudo a password here — the narrower tools run as root while " +
+			"the user has the sudo lock open, and an arbitrary shell line does not. A sudo that " +
+			"needs no password on this server would still work, so sudo, su and doas are shown " +
+			"to the user first in every approval mode, as are pipes into a shell, recursive " +
+			"deletes of / or a home directory, mkfs, shutdown and reboot, and commands that " +
+			"touch authorized_keys, sudoers, cron, systemd units or private keys. Prefer the " +
+			"narrower tools when one of them answers the question: they are cheaper, they read " +
+			"as intent in the user's Command Log, and they cannot go wrong in a way nobody " +
+			"expected.",
 		InputSchema: obj(map[string]any{
 			"hostId": hostArg,
 			"command": map[string]any{

@@ -58,8 +58,18 @@ without a prompt. The user can move a server to "ask about everything" or, for a
 to "ask about nothing". Assume nobody is watching: every call lands in the app's Command
 Log either way, and that is the guarantee, not the dialog.
 
+Some calls are shown to the user in every mode, including "ask about nothing": reading
+a file that probably holds a credential, writing or deleting a file that grants access or
+runs later (authorized_keys, sudoers, cron, systemd units, shell startup files), and
+run_command lines that use sudo, pipe into a shell, delete / or a home directory
+recursively, format a disk or power the server off. The answer says when that was the
+reason.
+
 There is no parameter here that skips a prompt and no tool that changes the policy.
 Asking to have it relaxed is not something this server can act on.
+
+run_command has no terminal and no stdin. Use non-interactive flags (-y, --no-pager,
+PAGER=cat) and commands that end on their own (journalctl -n 200, not -f).
 
 A declined write is a normal answer. Report it and stop — do not reword the request and
 try again, and do not look for another tool that achieves the same thing.

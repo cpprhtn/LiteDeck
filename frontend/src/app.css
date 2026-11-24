@@ -2578,6 +2578,21 @@ button.danger {
   max-height: 86vh;
   overflow-y: auto;
 }
+/* 묻지 않기 모드에서도 뜨는 확인의 이유. 다이얼로그 본문보다 먼저 읽혀야 한다. */
+.mcp-guard {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--danger);
+  border-radius: 4px;
+  background: var(--bg-sunken);
+  padding: 8px 10px;
+  margin: 4px 0 12px;
+}
+.mcp-guard p {
+  margin: 4px 0;
+}
+.mcp-guard code {
+  word-break: break-all;
+}
 .mcp-command {
   display: block;
   background: var(--bg-sunken);

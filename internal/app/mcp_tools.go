@@ -161,7 +161,8 @@ func (a *App) registerMCPTools(s *mcp.Server) {
 	}
 
 	s.Register(mcp.Tool{
-		Name: "hosts_list",
+		Name:        "hosts_list",
+		Annotations: mcp.ReadOnly(),
 		Description: "List the servers this LiteDeck can reach, and which of them the user has " +
 			"shared with AI clients. Start here: every other tool needs a hostId.",
 		InputSchema: obj(map[string]any{}),
@@ -197,7 +198,8 @@ func (a *App) registerMCPTools(s *mcp.Server) {
 	})
 
 	s.Register(mcp.Tool{
-		Name: "health_snapshot",
+		Name:        "health_snapshot",
+		Annotations: mcp.ReadOnly(),
 		Description: "One call for 'is this server alright': CPU, memory, disk, failed units, " +
 			"non-running containers and externally reachable ports. Prefer this over calling the " +
 			"narrower tools one by one — it is fewer round trips on a machine that may be small.",
@@ -212,7 +214,8 @@ func (a *App) registerMCPTools(s *mcp.Server) {
 	})
 
 	s.Register(mcp.Tool{
-		Name: "sys_stats",
+		Name:        "sys_stats",
+		Annotations: mcp.ReadOnly(),
 		Description: "CPU, memory, load and filesystem usage. health_snapshot already includes " +
 			"this; use it alone when that is all you need.",
 		InputSchema: obj(map[string]any{"hostId": hostArg}, "hostId"),
@@ -226,7 +229,8 @@ func (a *App) registerMCPTools(s *mcp.Server) {
 	})
 
 	s.Register(mcp.Tool{
-		Name: "svc_list",
+		Name:        "svc_list",
+		Annotations: mcp.ReadOnly(),
 		Description: "systemd units, or Windows services. Filter with state='failed' when " +
 			"diagnosing; the unfiltered list on a real server is hundreds of rows.",
 		InputSchema: obj(map[string]any{
@@ -303,7 +307,8 @@ func (a *App) registerMCPTools(s *mcp.Server) {
 	})
 
 	s.Register(mcp.Tool{
-		Name: "svc_logs",
+		Name:        "svc_logs",
+		Annotations: mcp.ReadOnly(),
 		Description: "Read a systemd unit's journal. This is what says *why* a service failed; " +
 			"svc_list only says that it did. Narrow with since and priority before raising lines.",
 		InputSchema: obj(map[string]any{
@@ -345,7 +350,8 @@ func (a *App) registerMCPTools(s *mcp.Server) {
 	})
 
 	s.Register(mcp.Tool{
-		Name: "container_logs",
+		Name:        "container_logs",
+		Annotations: mcp.ReadOnly(),
 		Description: "Read the tail of a container's log, the container equivalent of svc_logs. " +
 			"Get IDs and names from container_list.",
 		InputSchema: obj(map[string]any{
@@ -375,7 +381,8 @@ func (a *App) registerMCPTools(s *mcp.Server) {
 	})
 
 	s.Register(mcp.Tool{
-		Name: "proc_list",
+		Name:        "proc_list",
+		Annotations: mcp.ReadOnly(),
 		Description: "Running processes, heaviest first. Use grep for a known name rather than " +
 			"raising limit.",
 		InputSchema: obj(map[string]any{
@@ -445,6 +452,7 @@ func (a *App) registerMCPTools(s *mcp.Server) {
 
 	s.Register(mcp.Tool{
 		Name:        "container_list",
+		Annotations: mcp.ReadOnly(),
 		Description: "Docker or Podman containers with their state and published ports.",
 		InputSchema: obj(map[string]any{
 			"hostId": hostArg,
@@ -496,7 +504,8 @@ func (a *App) registerMCPTools(s *mcp.Server) {
 	})
 
 	s.Register(mcp.Tool{
-		Name: "net_ports",
+		Name:        "net_ports",
+		Annotations: mcp.ReadOnly(),
 		Description: "Listening sockets. exposedOnly=true is the security question: which ports " +
 			"answer from off the machine rather than only on loopback.",
 		InputSchema: obj(map[string]any{
@@ -562,6 +571,7 @@ func (a *App) registerMCPTools(s *mcp.Server) {
 
 	s.Register(mcp.Tool{
 		Name:        "fs_list",
+		Annotations: mcp.ReadOnly(),
 		Description: "List a directory over SFTP. Nothing is installed on the server to do this.",
 		InputSchema: obj(map[string]any{
 			"hostId": hostArg,
@@ -612,14 +622,18 @@ func (a *App) registerMCPTools(s *mcp.Server) {
 	})
 
 	s.Register(mcp.Tool{
-		Name: "fs_read",
+		Name:        "fs_read",
+		Annotations: mcp.ReadOnly(),
 		Description: "Read a text file over SFTP. Binary files and anything large are refused " +
-			"rather than truncated into nonsense.",
+			"rather than truncated into nonsense. Files that usually hold a credential — SSH " +
+			"private keys, .env files, key stores, ~/.aws/credentials and the like — are " +
+			"shown to the user first, in every approval mode, and the call waits for their " +
+			"answer. Do not read one unless the task needs its contents.",
 		InputSchema: obj(map[string]any{
 			"hostId": hostArg,
 			"path":   map[string]any{"type": "string", "description": "Absolute path to a text file. On Windows C:\\Users\\me\\a.txt works."},
 		}, "hostId", "path"),
-		Handler: func(_ context.Context, args map[string]any) (any, error) {
+		Handler: func(ctx context.Context, args map[string]any) (any, error) {
 			id, err := a.mcpHost(args)
 			if err != nil {
 				return nil, err
@@ -627,6 +641,14 @@ func (a *App) registerMCPTools(s *mcp.Server) {
 			path := a.mcpPath(id, args)
 			if path == "" {
 				return nil, fmt.Errorf("path is required")
+			}
+			// Before the read, not after: once the contents are in this
+			// answer they are in the client's transcript, and asking then
+			// would be asking about something already done.
+			if g := secretPath(path); g.any() {
+				if _, err := a.askToRead(ctx, id, path, g); err != nil {
+					return nil, err
+				}
 			}
 			f, err := a.ReadTextFile(id, path)
 			if err != nil {
@@ -654,6 +676,7 @@ func (a *App) registerMCPTools(s *mcp.Server) {
 
 	s.Register(mcp.Tool{
 		Name:        "sessions_list",
+		Annotations: mcp.ReadOnly(),
 		Description: "Who is logged in over SSH right now, including LiteDeck's own connection.",
 		InputSchema: obj(map[string]any{"hostId": hostArg}, "hostId"),
 		Handler: func(_ context.Context, args map[string]any) (any, error) {

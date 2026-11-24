@@ -367,3 +367,51 @@ func TestNotificationsGetNoReply(t *testing.T) {
 		t.Errorf("unknown method should be -32601, got %s", out)
 	}
 }
+
+// Annotations reach the wire with every field spelled out. The protocol reads
+// an absent destructiveHint or openWorldHint as true, so dropping the false
+// ones — what omitempty would do — would tell a client a read could destroy
+// something. A tool registered without annotations sends none, which reads as
+// "may be destructive": the safe default for something nobody classified.
+func TestAnnotationsAreSentInFull(t *testing.T) {
+	s := New()
+	noop := func(context.Context, map[string]any) (any, error) { return nil, nil }
+	s.Register(Tool{Name: "look", Description: "reads", InputSchema: map[string]any{"type": "object"},
+		Handler: noop, Annotations: ReadOnly()})
+	s.Register(Tool{Name: "poke", Description: "changes", InputSchema: map[string]any{"type": "object"},
+		Handler: noop, Annotations: Changes(true, false)})
+	s.Register(Tool{Name: "bare", Description: "unclassified", InputSchema: map[string]any{"type": "object"},
+		Handler: noop})
+
+	reply := s.Handle(context.Background(), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	var out struct {
+		Result struct {
+			Tools []struct {
+				Name        string                     `json:"name"`
+				Annotations map[string]json.RawMessage `json:"annotations"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(reply, &out); err != nil {
+		t.Fatalf("decode: %v\n%s", err, reply)
+	}
+	got := map[string]map[string]json.RawMessage{}
+	for _, tool := range out.Result.Tools {
+		got[tool.Name] = tool.Annotations
+	}
+
+	want := map[string]map[string]string{
+		"look": {"readOnlyHint": "true", "destructiveHint": "false", "idempotentHint": "true", "openWorldHint": "false"},
+		"poke": {"readOnlyHint": "false", "destructiveHint": "true", "idempotentHint": "false", "openWorldHint": "false"},
+	}
+	for name, fields := range want {
+		for field, value := range fields {
+			if v, ok := got[name][field]; !ok || string(v) != value {
+				t.Errorf("%s.%s = %s (present %v), want %s", name, field, v, ok, value)
+			}
+		}
+	}
+	if got["bare"] != nil {
+		t.Errorf("an unannotated tool sent annotations: %v", got["bare"])
+	}
+}
